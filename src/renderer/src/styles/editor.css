@@ -1,0 +1,305 @@
+/* File preview and editor workspace surfaces. */
+/* Editor area */
+.editor-area {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--fluent-color-neutral-stroke2);
+  background: var(--fluent-color-neutral-background1);
+}
+
+.editor-header {
+  display: grid;
+  grid-template-rows: auto auto;
+  min-width: 0;
+  border-bottom: 1px solid var(--fluent-color-neutral-stroke2);
+  background: var(--fluent-color-neutral-background2);
+}
+
+.editor-header-empty {
+  min-height: 0;
+  border-bottom: 0;
+}
+
+.editor-tabs {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 35px;
+}
+
+.editor-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(360px, 75%);
+  height: 35px;
+  border-right: 1px solid var(--fluent-color-neutral-stroke2);
+  background: var(--fluent-color-neutral-background1);
+  color: var(--fluent-color-neutral-foreground1);
+  font-size: 13px;
+  padding: 0 10px;
+}
+
+.editor-tab.active {
+  box-shadow: inset 0 2px 0 0 var(--fluent-color-brand-background);
+}
+
+.editor-tab span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border: 0;
+  border-radius: var(--fluent-radius-small);
+  background: transparent;
+  color: var(--fluent-color-neutral-foreground3);
+  cursor: pointer;
+  padding: 0;
+}
+
+.editor-tab-close:hover {
+  background: var(--fluent-color-neutral-background-hover);
+  color: var(--fluent-color-neutral-foreground1);
+}
+
+.editor-tab-dirty {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--fluent-color-neutral-foreground1);
+}
+
+.editor-tab-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-left: auto;
+  margin-right: 6px;
+  flex: none;
+  border: 0;
+  border-radius: var(--fluent-radius-small);
+  background: transparent;
+  color: var(--fluent-color-neutral-foreground3);
+  cursor: pointer;
+}
+
+.editor-tab-action:hover {
+  background: var(--fluent-color-neutral-background-hover);
+  color: var(--fluent-color-neutral-foreground1);
+}
+
+.editor-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  height: 24px;
+  overflow: hidden;
+  background: var(--fluent-color-neutral-background1);
+  color: var(--fluent-color-neutral-foreground3);
+  font-size: 12px;
+  padding: 0 10px;
+}
+
+.breadcrumb-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.breadcrumb-item:last-child {
+  color: var(--fluent-color-neutral-foreground2);
+}
+
+.breadcrumb-separator {
+  flex: none;
+  opacity: 0.6;
+}
+
+.inline-preview,
+.editor-empty-state {
+  min-width: 0;
+  min-height: 0;
+}
+
+.inline-preview {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  background: var(--fluent-color-neutral-background2);
+}
+
+.preview-summary,
+.inline-preview-summary {
+  margin: 0;
+  border-bottom: 1px solid var(--fluent-color-neutral-stroke2);
+  background: var(--fluent-color-neutral-background1);
+  padding: var(--fluent-spacing-m) var(--fluent-spacing-l);
+  color: var(--fluent-color-neutral-foreground2);
+  font-size: 12px;
+}
+
+.preview-scroll,
+.inline-preview-scroll {
+  height: 100%;
+}
+
+.preview-body,
+.inline-preview-body {
+  min-height: 100%;
+  padding: var(--fluent-spacing-xl);
+}
+
+.inline-preview-body pre {
+  min-height: calc(100vh - 142px);
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--fluent-font-family-monospace);
+  font-size: 12px;
+  line-height: 1.72;
+}
+
+.inline-preview-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+  border: 1px solid var(--fluent-color-neutral-stroke1);
+  border-radius: var(--fluent-radius-medium);
+}
+
+/* Monaco text editor */
+.text-editor-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.text-editor-hint-bar {
+  flex: none;
+  border-bottom: 1px solid var(--fluent-color-neutral-stroke2);
+  background: var(--fluent-color-neutral-background2);
+  color: var(--fluent-color-neutral-foreground3);
+  font-size: 12px;
+  padding: 5px 12px;
+}
+
+.text-editor-host {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.text-editor-loading {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--fluent-color-neutral-foreground3);
+  font-size: 13px;
+}
+
+.preview-markdown {
+  max-width: 720px;
+  color: var(--fluent-color-neutral-foreground1);
+  line-height: 1.72;
+}
+
+.preview-empty {
+  margin: 0;
+  color: var(--fluent-color-neutral-foreground3);
+}
+
+.unsupported-file-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.editor-empty-state {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: var(--fluent-spacing-l);
+  color: var(--fluent-color-neutral-foreground3);
+  text-align: center;
+  padding: var(--fluent-spacing-xxxl);
+}
+
+.editor-empty-state strong {
+  color: var(--fluent-color-neutral-foreground1);
+  font-size: 18px;
+}
+
+.editor-empty-state > span {
+  max-width: 520px;
+  line-height: 1.7;
+}
+
+.editor-empty-state.error {
+  color: var(--fluent-color-danger-foreground1);
+}
+
+.recent-artifact-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 210px));
+  gap: var(--fluent-spacing-m);
+  margin-top: var(--fluent-spacing-m);
+}
+
+@media (max-width: 1280px) {
+  .recent-artifact-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.recent-artifact-grid button {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--fluent-spacing-m);
+  min-height: 42px;
+  border: 1px solid var(--fluent-color-neutral-stroke2);
+  border-radius: var(--fluent-radius-medium);
+  background: var(--fluent-color-neutral-background1);
+  color: var(--fluent-color-neutral-foreground1);
+  cursor: pointer;
+  padding: 0 var(--fluent-spacing-l);
+}
+
+.recent-artifact-grid button:hover {
+  border-color: var(--fluent-color-brand-stroke);
+  background: var(--fluent-color-neutral-background-selected);
+}
+
+.recent-artifact-grid span {
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-artifact-grid small {
+  color: var(--fluent-color-neutral-foreground3);
+  font-size: 11px;
+  font-weight: 800;
+}

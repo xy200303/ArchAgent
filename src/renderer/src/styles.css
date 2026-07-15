@@ -1,0 +1,9 @@
+/** Preserves the historical cascade while loading styles by renderer responsibility. */
+@import "./styles/fluent-tokens.css";
+@import "./styles/workbench.css";
+@import "./styles/editor.css";
+@import "./styles/chat.css";
+@import "./styles/composer.css";
+@import "./styles/settings.css";
+@import "./styles/project-shell.css";
+@import "./styles/content.css";

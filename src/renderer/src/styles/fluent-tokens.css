@@ -1,0 +1,173 @@
+/* Microsoft Fluent Design tokens for ArchAgent */
+
+:root {
+  color-scheme: light;
+
+  /* Font */
+  --fluent-font-family-base: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --fluent-font-family-monospace: "Cascadia Code", "Consolas", "SF Mono", "JetBrains Mono", monospace;
+
+  /* Accent / Brand */
+  --fluent-color-brand-foreground1: #0f6cbd;
+  --fluent-color-brand-foreground2: #115ea3;
+  --fluent-color-brand-background: #0f6cbd;
+  --fluent-color-brand-background-hover: #115ea3;
+  --fluent-color-brand-background-active: #0f548c;
+  --fluent-color-brand-background-selected: #0f548c;
+  --fluent-color-brand-stroke: #0f6cbd;
+  --fluent-color-brand-stroke-hover: #115ea3;
+
+  /* Neutral backgrounds */
+  --fluent-color-neutral-background-static: #ffffff;
+  --fluent-color-neutral-background1: #ffffff;
+  --fluent-color-neutral-background2: #fafafa;
+  --fluent-color-neutral-background3: #f5f5f5;
+  --fluent-color-neutral-background4: #f0f0f0;
+  --fluent-color-neutral-background5: #ebebeb;
+  --fluent-color-neutral-background6: #e6e6e6;
+  --fluent-color-neutral-background-disabled: #f0f0f0;
+  --fluent-color-neutral-background-hover: #f5f5f5;
+  --fluent-color-neutral-background-pressed: #e0e0e0;
+  --fluent-color-neutral-background-selected: #e6f2fb;
+
+  /* Neutral foregrounds */
+  --fluent-color-neutral-foreground1: #242424;
+  --fluent-color-neutral-foreground2: #616161;
+  --fluent-color-neutral-foreground3: #808080;
+  --fluent-color-neutral-foreground4: #999999;
+  --fluent-color-neutral-foreground-disabled: #bdbdbd;
+  --fluent-color-neutral-foreground-inverted: #ffffff;
+
+  /* Neutral strokes */
+  --fluent-color-neutral-stroke1: #d1d1d1;
+  --fluent-color-neutral-stroke2: #e0e0e0;
+  --fluent-color-neutral-stroke3: #f0f0f0;
+  --fluent-color-neutral-stroke-hover: #c7c7c7;
+  --fluent-color-neutral-stroke-active: #b3b3b3;
+  --fluent-color-neutral-stroke-disabled: #e0e0e0;
+
+  /* Status */
+  --fluent-color-success-foreground1: #107c10;
+  --fluent-color-success-background1: #f1faf1;
+  --fluent-color-success-stroke1: #107c10;
+  --fluent-color-warning-foreground1: #8a6b00;
+  --fluent-color-warning-background1: #fff9e6;
+  --fluent-color-warning-stroke1: #fdb813;
+  --fluent-color-danger-foreground1: #c50f1f;
+  --fluent-color-danger-background1: #fdf3f4;
+  --fluent-color-danger-stroke1: #c50f1f;
+
+  /* Shadows (Fluent elevation) */
+  --fluent-shadow-2: 0 1px 2px 0 rgb(0 0 0 / 12%);
+  --fluent-shadow-4: 0 2px 4px 0 rgb(0 0 0 / 14%);
+  --fluent-shadow-8: 0 4px 8px 0 rgb(0 0 0 / 14%);
+  --fluent-shadow-16: 0 8px 16px 0 rgb(0 0 0 / 14%);
+  --fluent-shadow-64: 0 32px 64px 0 rgb(0 0 0 / 24%);
+
+  /* Radii */
+  --fluent-radius-none: 0;
+  --fluent-radius-small: 2px;
+  --fluent-radius-medium: 4px;
+  --fluent-radius-large: 6px;
+  --fluent-radius-xlarge: 8px;
+  --fluent-radius-circle: 999px;
+
+  /* Spacing */
+  --fluent-spacing-none: 0;
+  --fluent-spacing-xs: 2px;
+  --fluent-spacing-s: 4px;
+  --fluent-spacing-m: 8px;
+  --fluent-spacing-l: 12px;
+  --fluent-spacing-xl: 16px;
+  --fluent-spacing-xxl: 20px;
+  --fluent-spacing-xxxl: 24px;
+
+  /* Legacy color aliases mapped to Fluent tokens */
+  --color-ink: var(--fluent-color-neutral-foreground1);
+  --color-ink-strong: var(--fluent-color-neutral-foreground1);
+  --color-muted: var(--fluent-color-neutral-foreground2);
+  --color-subtle: var(--fluent-color-neutral-foreground3);
+  --color-canvas: var(--fluent-color-neutral-background3);
+  --color-surface: var(--fluent-color-neutral-background1);
+  --color-surface-soft: var(--fluent-color-neutral-background2);
+  --color-surface-raised: var(--fluent-color-neutral-background1);
+  --color-line: var(--fluent-color-neutral-stroke2);
+  --color-line-strong: var(--fluent-color-neutral-stroke1);
+  --color-primary: var(--fluent-color-brand-background);
+  --color-primary-strong: var(--fluent-color-brand-background-hover);
+  --color-primary-soft: var(--fluent-color-neutral-background-selected);
+  --color-teal: var(--fluent-color-success-foreground1);
+  --color-teal-soft: var(--fluent-color-success-background1);
+  --color-amber: var(--fluent-color-warning-foreground1);
+  --color-amber-soft: var(--fluent-color-warning-background1);
+  --color-green: var(--fluent-color-success-foreground1);
+  --color-green-soft: var(--fluent-color-success-background1);
+  --color-red: var(--fluent-color-danger-foreground1);
+  --color-red-soft: var(--fluent-color-danger-background1);
+  --shadow-panel: var(--fluent-shadow-16);
+  --shadow-card: var(--fluent-shadow-4);
+  --radius-sm: var(--fluent-radius-medium);
+  --radius-md: var(--fluent-radius-xlarge);
+  --radius-lg: var(--fluent-radius-xlarge);
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Accent / Brand */
+  --fluent-color-brand-foreground1: #479ef5;
+  --fluent-color-brand-foreground2: #62abf5;
+  --fluent-color-brand-background: #0f6cbd;
+  --fluent-color-brand-background-hover: #115ea3;
+  --fluent-color-brand-background-active: #0f548c;
+  --fluent-color-brand-background-selected: #0f548c;
+  --fluent-color-brand-stroke: #479ef5;
+  --fluent-color-brand-stroke-hover: #62abf5;
+
+  /* Neutral backgrounds */
+  --fluent-color-neutral-background-static: #1f1f1f;
+  --fluent-color-neutral-background1: #292929;
+  --fluent-color-neutral-background2: #242424;
+  --fluent-color-neutral-background3: #1f1f1f;
+  --fluent-color-neutral-background4: #1a1a1a;
+  --fluent-color-neutral-background5: #141414;
+  --fluent-color-neutral-background6: #0a0a0a;
+  --fluent-color-neutral-background-disabled: #292929;
+  --fluent-color-neutral-background-hover: #333333;
+  --fluent-color-neutral-background-pressed: #2b2b2b;
+  --fluent-color-neutral-background-selected: #082338;
+
+  /* Neutral foregrounds */
+  --fluent-color-neutral-foreground1: #ffffff;
+  --fluent-color-neutral-foreground2: #d6d6d6;
+  --fluent-color-neutral-foreground3: #adadad;
+  --fluent-color-neutral-foreground4: #8a8a8a;
+  --fluent-color-neutral-foreground-disabled: #5c5c5c;
+  --fluent-color-neutral-foreground-inverted: #242424;
+
+  /* Neutral strokes */
+  --fluent-color-neutral-stroke1: #616161;
+  --fluent-color-neutral-stroke2: #424242;
+  --fluent-color-neutral-stroke3: #292929;
+  --fluent-color-neutral-stroke-hover: #757575;
+  --fluent-color-neutral-stroke-active: #808080;
+  --fluent-color-neutral-stroke-disabled: #424242;
+
+  /* Status */
+  --fluent-color-success-foreground1: #54b054;
+  --fluent-color-success-background1: #1f3922;
+  --fluent-color-success-stroke1: #54b054;
+  --fluent-color-warning-foreground1: #fde300;
+  --fluent-color-warning-background1: #3a3000;
+  --fluent-color-warning-stroke1: #fde300;
+  --fluent-color-danger-foreground1: #f1707b;
+  --fluent-color-danger-background1: #3b1b1e;
+  --fluent-color-danger-stroke1: #f1707b;
+
+  /* Shadows (Fluent elevation) */
+  --fluent-shadow-2: 0 1px 2px 0 rgb(0 0 0 / 24%);
+  --fluent-shadow-4: 0 2px 4px 0 rgb(0 0 0 / 28%);
+  --fluent-shadow-8: 0 4px 8px 0 rgb(0 0 0 / 32%);
+  --fluent-shadow-16: 0 8px 16px 0 rgb(0 0 0 / 36%);
+  --fluent-shadow-64: 0 32px 64px 0 rgb(0 0 0 / 48%);
+}

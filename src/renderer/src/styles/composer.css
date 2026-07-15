@@ -1,0 +1,254 @@
+/* Composer interactions and shared command buttons. */
+/* Composer */
+.composer {
+  position: relative;
+  padding: 12px 16px;
+}
+
+.composer-box {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 8px;
+  border: 1px solid var(--color-line-strong);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+  padding: 12px 14px 10px;
+}
+
+.composer.dragging-files .composer-box {
+  background:
+    linear-gradient(135deg, rgb(20 85 217 / 6%), rgb(15 118 110 / 5%)),
+    var(--color-surface);
+}
+
+.composer textarea {
+  display: block;
+  width: 100%;
+  min-height: 56px;
+  max-height: 160px;
+  overflow-y: auto;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--color-ink);
+  padding: 4px 2px;
+  line-height: 1.6;
+  resize: none;
+  field-sizing: content;
+}
+
+.composer textarea::placeholder {
+  color: var(--color-muted);
+}
+
+.composer-drop-indicator {
+  position: absolute;
+  inset: 6px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  border: 1px dashed var(--color-primary);
+  border-radius: var(--radius-md);
+  background: rgb(255 255 255 / 92%);
+  color: var(--color-primary);
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: var(--shadow-card);
+  pointer-events: none;
+}
+
+.composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+}
+
+.attachment-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  max-width: 280px;
+  border: 1px solid var(--color-line);
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 1px 0 rgb(15 23 42 / 4%);
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+.attachment-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-chip button {
+  display: inline-grid;
+  place-items: center;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.attachment-remove {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+}
+
+.attachment-remove:hover {
+  background: #edf2f7;
+  color: #b42318;
+}
+
+
+.spacer {
+  flex: 1;
+}
+
+.composer .icon-action.attachment-button {
+  width: 34px;
+  height: 34px;
+  border: 1px solid transparent;
+  border-radius: var(--fluent-radius-circle);
+  background: transparent;
+  color: var(--color-muted);
+}
+
+.composer .icon-action.attachment-button:hover {
+  background: var(--color-surface-soft);
+  color: var(--color-primary);
+}
+
+.composer .send-action {
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  border-radius: var(--fluent-radius-circle);
+  padding: 0;
+}
+
+.composer .send-action svg {
+  margin-left: 1px;
+}
+
+.composer .secondary-action.stop-action {
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+}
+
+/* Buttons */
+.primary-action,
+.send-action,
+.danger-action,
+.secondary-action,
+.settings-button,
+.icon-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--fluent-spacing-s);
+  min-height: 34px;
+  border-radius: var(--fluent-radius-medium);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 0 var(--fluent-spacing-l);
+}
+
+.primary-action,
+.send-action {
+  border: 1px solid transparent;
+  background: var(--fluent-color-brand-background);
+  color: var(--fluent-color-neutral-foreground-inverted);
+}
+
+.primary-action:hover,
+.send-action:hover:not(:disabled) {
+  background: var(--fluent-color-brand-background-hover);
+}
+
+.primary-action:active,
+.send-action:active:not(:disabled) {
+  background: var(--fluent-color-brand-background-active);
+}
+
+.send-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.danger-action {
+  border: 1px solid transparent;
+  background: var(--fluent-color-danger-foreground1);
+  color: var(--fluent-color-neutral-foreground-inverted);
+}
+
+.danger-action:hover:not(:disabled) {
+  background: var(--fluent-color-danger-stroke1);
+}
+
+.danger-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.secondary-action,
+.settings-button,
+.icon-action {
+  border: 1px solid var(--fluent-color-neutral-stroke1);
+  background: var(--fluent-color-neutral-background1);
+  color: var(--fluent-color-neutral-foreground1);
+}
+
+.secondary-action:hover,
+.settings-button:hover,
+.icon-action:hover {
+  border-color: var(--fluent-color-brand-stroke);
+  background: var(--fluent-color-neutral-background-selected);
+  color: var(--fluent-color-brand-foreground1);
+}
+
+.session-menu-button {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--fluent-radius-small);
+  background: transparent;
+  color: var(--fluent-color-neutral-foreground3);
+  cursor: pointer;
+}
+
+.session-menu-button:hover {
+  background: var(--fluent-color-neutral-background-hover);
+  color: var(--fluent-color-neutral-foreground1);
+}
+
+.chat-header-actions .icon-action,
+.chat-header-actions .session-menu-button {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--fluent-color-neutral-stroke1);
+  background: var(--fluent-color-neutral-background1);
+}
+
+.chat-header-actions .session-menu-button:hover,
+.chat-header-actions .icon-action:hover {
+  border-color: var(--fluent-color-brand-stroke);
+  background: var(--fluent-color-neutral-background-selected);
+}

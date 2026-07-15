@@ -1,0 +1,633 @@
+/* Workbench shell, activity navigation, resource explorer, and shared scrollbars. */
+:root {
+  font-family: var(--fluent-font-family-base);
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  letter-spacing: 0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  min-width: 800px;
+  min-height: 540px;
+  overflow: hidden;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  border: 0;
+}
+
+button,
+[role="button"],
+textarea,
+input,
+select {
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[data-radix-collection-item]:focus-visible {
+  outline: 2px solid var(--fluent-color-brand-stroke);
+  outline-offset: 2px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+/* Layout: workbench shell */
+.workbench-shell {
+  display: grid;
+  grid-template-columns: 54px minmax(420px, 1fr) minmax(360px, 440px);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--fluent-color-neutral-background3);
+  color: var(--color-ink);
+}
+
+@media (max-width: 1280px) {
+  .workbench-shell {
+    grid-template-columns: 54px minmax(360px, 1fr) minmax(330px, 390px);
+  }
+}
+
+/* Activity bar */
+.activity-bar {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  align-items: start;
+  justify-items: center;
+  min-height: 0;
+  border-right: 1px solid var(--fluent-color-neutral-stroke2);
+  background: var(--fluent-color-neutral-background2);
+  padding: var(--fluent-spacing-m) 0;
+}
+
+.activity-menu-button,
+.activity-button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: var(--fluent-radius-medium);
+  color: var(--fluent-color-neutral-foreground2);
+}
+
+.activity-menu-button {
+  margin-bottom: var(--fluent-spacing-m);
+  border: 1px solid var(--fluent-color-neutral-stroke1);
+  background: var(--fluent-color-neutral-background1);
+  cursor: pointer;
+}
+
+.activity-menu-button:hover,
+.activity-menu-button[data-state="open"] {
+  border-color: var(--fluent-color-brand-stroke);
+  background: var(--fluent-color-neutral-background-selected);
+  color: var(--fluent-color-brand-foreground1);
+}
+
+.activity-nav,
+.activity-bottom {
+  display: grid;
+  gap: var(--fluent-spacing-s);
+}
+
+.activity-bottom {
+  align-self: end;
+}
+
+.activity-button {
+  background: transparent;
+  cursor: pointer;
+}
+
+.activity-button:hover,
+.activity-button.active {
+  background: var(--fluent-color-neutral-background-hover);
+  color: var(--fluent-color-neutral-foreground1);
+}
+
+.activity-button.active::before {
+  position: absolute;
+  left: -6px;
+  width: 3px;
+  height: 24px;
+  border-radius: var(--fluent-radius-circle);
+  background: var(--fluent-color-brand-background);
+  content: "";
+}
+
+.activity-badge {
+  position: absolute;
+  right: 2px;
+  bottom: 3px;
+  min-width: 17px;
+  height: 17px;
+  border-radius: var(--fluent-radius-circle);
+  background: var(--fluent-color-success-foreground1);
+  color: var(--fluent-color-neutral-foreground-inverted);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 17px;
+  text-align: center;
+  padding: 0 var(--fluent-spacing-xs);
+}
+
+/* Workbench menu dropdowns */
+.workbench-menu-content,
+.workbench-submenu {
+  min-width: 210px;
+  border: 1px solid var(--fluent-color-neutral-stroke1);
+  border-radius: var(--fluent-radius-medium);
+  background: var(--fluent-color-neutral-background-static);
+  color: var(--fluent-color-neutral-foreground1);
+  box-shadow: var(--fluent-shadow-16);
+  padding: var(--fluent-spacing-s);
+}
+
+.workbench-submenu {
+  min-width: 190px;
+}
+
+.workbench-menu-trigger {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  color: inherit;
+}
+
+.workbench-menu-trigger svg {
+  color: var(--fluent-color-neutral-foreground3);
+}
+
+.workbench-menu-content .dropdown-item,
+.workbench-submenu .dropdown-item {
+  min-height: 30px;
+  border-radius: var(--fluent-radius-small);
+  color: inherit;
+}
+
+.workbench-menu-content .dropdown-item[data-highlighted],
+.workbench-submenu .dropdown-item[data-highlighted] {
+  background: var(--fluent-color-neutral-background-selected);
+  color: var(--fluent-color-brand-foreground1);
+}
+
+/* Resource sidebar */
+.resource-sidebar {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  border-right: 1px solid var(--fluent-color-neutral-stroke2);
+  background: var(--fluent-color-neutral-background2);
+  color: var(--fluent-color-neutral-foreground1);
+}
+
+.resource-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 55px;
+  border-bottom: 1px solid var(--fluent-color-neutral-stroke2);
+  background: var(--fluent-color-neutral-background2);
+  padding: var(--fluent-spacing-m) var(--fluent-spacing-s) var(--fluent-spacing-s) var(--fluent-spacing-l);
+}
+
+.resource-header > div {
+  display: grid;
+  min-width: 0;
+  gap: var(--fluent-spacing-xs);
+}
+
+.resource-header strong {
+  color: var(--fluent-color-neutral-foreground1);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.resource-header span {
+  overflow: hidden;
+  color: var(--fluent-color-neutral-foreground3);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resource-icon-button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: var(--fluent-radius-medium);
+  background: transparent;
+  color: var(--fluent-color-neutral-foreground3);
+  cursor: pointer;
+}
+
+.resource-icon-button:hover {
+  background: var(--fluent-color-neutral-background-hover);
+  color: var(--fluent-color-neutral-foreground1);
+}
+
+.explorer-scroll {
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.explorer-scroll > [data-radix-scroll-area-viewport] {
+  height: 100%;
+}
+
+.explorer-viewport {
+  padding: var(--fluent-spacing-s) 0 var(--fluent-spacing-l);
+}
+
+.explorer-section {
+  margin-bottom: var(--fluent-spacing-m);
+}
+
+.explorer-section-trigger {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  width: 100%;
+  min-height: 30px;
+  border-radius: var(--fluent-radius-small);
+  background: transparent;
+  color: var(--fluent-color-neutral-foreground3);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-align: left;
+  cursor: pointer;
+  padding: 0 var(--fluent-spacing-m);
+}
+
+.explorer-section-trigger:hover {
+  background: var(--fluent-color-neutral-background-hover);
+  color: var(--fluent-color-neutral-foreground1);
+}
+
+.explorer-section-trigger small {
+  color: var(--fluent-color-neutral-foreground4);
+  font-size: 11px;
+}
+
+.explorer-section-content {
+  display: grid;
+  gap: var(--fluent-spacing-xs);
+  padding: var(--fluent-spacing-xs) 0 0;
+}
+
+.workspace-file-tree {
+  display: grid;
+  gap: 1px;
+}
+
+.workspace-file-children {
+  display: grid;
+  gap: 1px;
+}
+
+.workspace-tree-children {
+  display: grid;
+  gap: 1px;
+}
+
+.workspace-file-children .explorer-empty {
+  margin-left: 0;
+}
+
+.workspace-row {
+  display: grid;
+  grid-template-columns: 17px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--fluent-spacing-xs);
+  width: 100%;
+  min-height: 23px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--fluent-color-neutral-foreground2);
+  text-align: left;
+  cursor: default;
+  padding: 0 var(--fluent-spacing-m) 0 6px;
+}
+
+.workspace-tree-directory {
+  display: grid;
+  grid-template-columns: 17px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--fluent-spacing-xs);
+  width: 100%;
+  min-height: 23px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--fluent-color-neutral-foreground2);
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+  padding-right: var(--fluent-spacing-m);
+}
+
+.workspace-tree-directory:hover,
+.workspace-tree-directory:focus-visible {
+  background: var(--fluent-color-neutral-background-hover);
+}
+
+.workspace-tree-directory strong {
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 23px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-tree-directory svg {
+  color: var(--fluent-color-neutral-foreground3);
+}
+
+.explorer-file-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--fluent-spacing-s);
+  width: 100%;
+  min-height: 23px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--fluent-color-neutral-foreground2);
+  text-align: left;
+  cursor: default;
+  padding: 0 var(--fluent-spacing-m) 0 30px;
+}
+
+button.explorer-file-row {
+  cursor: pointer;
+}
+
+.workspace-row.active {
+  background: transparent;
+}
+
+.workspace-row:hover,
+.explorer-file-row:hover {
+  background: var(--fluent-color-neutral-background-hover);
+}
+
+.explorer-file-row.active {
+  background: var(--fluent-color-neutral-background-selected);
+  color: var(--fluent-color-brand-foreground1);
+}
+
+.explorer-file-row svg,
+.workspace-row svg {
+  color: var(--fluent-color-neutral-foreground3);
+}
+
+.explorer-file-row.active svg {
+  color: var(--fluent-color-brand-foreground1);
+}
+
+/* 按文件类型着色（选中状态下保持类型色，与 VS Code 文件图标一致） */
+svg.file-icon-image {
+  color: #a855f7;
+}
+
+svg.file-icon-sheet {
+  color: #16a34a;
+}
+
+svg.file-icon-pdf {
+  color: #dc2626;
+}
+
+svg.file-icon-doc {
+  color: #2563eb;
+}
+
+svg.file-icon-json {
+  color: #d97706;
+}
+
+svg.file-icon-md {
+  color: #64748b;
+}
+
+svg.file-icon-code {
+  color: #0891b2;
+}
+
+svg.file-icon-text {
+  color: #94a3b8;
+}
+
+svg.file-icon-default {
+  color: var(--fluent-color-neutral-foreground3);
+}
+
+.workspace-row strong,
+.explorer-file-row strong {
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 23px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-row strong {
+  font-weight: 650;
+}
+
+.explorer-empty {
+  color: var(--fluent-color-neutral-foreground3);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: var(--fluent-spacing-m) var(--fluent-spacing-m) var(--fluent-spacing-s) 30px;
+  padding: 0;
+}
+
+.explorer-context-menu {
+  position: fixed;
+  z-index: 140;
+  display: grid;
+  min-width: 168px;
+  border: 1px solid var(--fluent-color-neutral-stroke1);
+  border-radius: var(--fluent-radius-medium);
+  background: var(--fluent-color-neutral-background-static);
+  box-shadow: var(--fluent-shadow-16);
+  padding: var(--fluent-spacing-xs);
+}
+
+.explorer-context-menu button {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--fluent-spacing-m);
+  min-height: 30px;
+  border-radius: var(--fluent-radius-small);
+  background: transparent;
+  color: var(--fluent-color-neutral-foreground1);
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+  padding: 0 var(--fluent-spacing-m);
+}
+
+.explorer-context-menu button:hover,
+.explorer-context-menu button:focus-visible {
+  background: var(--fluent-color-neutral-background-hover);
+  color: var(--fluent-color-brand-foreground1);
+}
+
+.explorer-context-menu svg {
+  color: var(--fluent-color-neutral-foreground3);
+}
+
+.explorer-context-menu button:hover svg,
+.explorer-context-menu button:focus-visible svg {
+  color: var(--fluent-color-brand-foreground1);
+}
+
+.workspace-entry-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 150;
+  display: grid;
+  width: min(360px, calc(100vw - 32px));
+  gap: var(--fluent-spacing-m);
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--fluent-color-neutral-stroke1);
+  border-radius: var(--fluent-radius-large);
+  background: var(--fluent-color-neutral-background-static);
+  box-shadow: var(--fluent-shadow-64);
+  color: var(--fluent-color-neutral-foreground1);
+  padding: var(--fluent-spacing-xl);
+}
+
+.workspace-entry-dialog h2 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.workspace-entry-dialog > p {
+  margin: 0;
+  color: var(--fluent-color-neutral-foreground2);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.workspace-entry-dialog form {
+  display: grid;
+  gap: var(--fluent-spacing-m);
+}
+
+.workspace-entry-dialog label {
+  color: var(--fluent-color-neutral-foreground1);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.workspace-entry-dialog input {
+  width: 100%;
+  min-height: 32px;
+  box-sizing: border-box;
+  border: 1px solid var(--fluent-color-neutral-stroke1);
+  border-radius: var(--fluent-radius-medium);
+  background: var(--fluent-color-neutral-background1);
+  color: var(--fluent-color-neutral-foreground1);
+  font: inherit;
+  padding: 0 var(--fluent-spacing-m);
+}
+
+.workspace-entry-dialog input:focus-visible {
+  border-color: var(--fluent-color-brand-stroke);
+  outline: 2px solid var(--fluent-color-brand-stroke);
+  outline-offset: 1px;
+}
+
+.workspace-entry-error {
+  margin: 0;
+  color: var(--fluent-color-danger-foreground1);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.workspace-entry-dialog footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--fluent-spacing-m);
+  margin-top: var(--fluent-spacing-s);
+}
+
+/* Scrollbar */
+.scrollbar {
+  display: flex;
+  width: 10px;
+  touch-action: none;
+  user-select: none;
+}
+
+.scrollbar-thumb {
+  position: relative;
+  flex: 1;
+  border-radius: var(--fluent-radius-circle);
+  background: var(--fluent-color-neutral-stroke1);
+}
+
+.scrollbar-thumb:hover {
+  background: var(--fluent-color-neutral-stroke-hover);
+}
+
+.scrollbar-thumb::before {
+  position: absolute;
+  inset: 2px;
+  content: "";
+}

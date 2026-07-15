@@ -1,0 +1,246 @@
+/* Project picker, fatal states, notices, and global animations. */
+/* Project picker */
+.project-picker {
+  display: grid;
+  place-items: center;
+  height: 100vh;
+  background: var(--fluent-color-neutral-background2);
+}
+
+.project-picker-card {
+  display: grid;
+  gap: var(--fluent-spacing-l);
+  width: min(560px, calc(100vw - 48px));
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card), inset 0 1px 0 rgb(255 255 255 / 70%);
+  padding: 28px 30px;
+}
+
+.project-picker-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.project-picker-brand svg {
+  color: var(--color-primary);
+  flex: none;
+}
+
+.project-picker-brand strong {
+  display: block;
+  font-size: 18px;
+  color: var(--color-ink);
+}
+
+.project-picker-brand span {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+.project-picker-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.project-picker-recent {
+  display: grid;
+  gap: 8px;
+}
+
+.project-picker-recent-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-muted);
+}
+
+.project-picker-recent ul {
+  display: grid;
+  gap: 4px;
+  max-height: 260px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.project-picker-recent button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: var(--fluent-radius-medium);
+  background: transparent;
+  color: var(--color-ink);
+  cursor: pointer;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.project-picker-recent button:hover {
+  border-color: var(--color-line);
+  background: var(--color-surface-soft);
+}
+
+.project-picker-recent button svg {
+  color: var(--color-muted);
+  flex: none;
+}
+
+.recent-project-name {
+  font-weight: 600;
+  flex: none;
+}
+
+.recent-project-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.project-picker-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.project-picker-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px 6px;
+}
+
+.project-picker-link:hover {
+  color: var(--color-ink);
+}
+
+/* Bridge missing / app crash / app notice */
+.bridge-missing {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  height: 100vh;
+  gap: 10px;
+  background: var(--fluent-color-neutral-background2);
+  color: var(--fluent-color-neutral-foreground2);
+  text-align: center;
+}
+
+.bridge-missing strong {
+  color: var(--fluent-color-neutral-foreground1);
+  font-size: 18px;
+}
+
+.bridge-missing span,
+.bridge-missing small {
+  max-width: 640px;
+}
+
+.app-crash button {
+  border-radius: var(--fluent-radius-medium);
+  background: var(--fluent-color-brand-background);
+  color: var(--fluent-color-neutral-foreground-inverted);
+  cursor: pointer;
+  padding: var(--fluent-spacing-s) var(--fluent-spacing-l);
+}
+
+.app-notice {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  gap: var(--fluent-spacing-l);
+  max-width: min(560px, calc(100vw - 320px));
+  border: 1px solid var(--fluent-color-danger-stroke1);
+  border-radius: var(--fluent-radius-medium);
+  background: var(--fluent-color-danger-background1);
+  color: var(--fluent-color-danger-foreground1);
+  box-shadow: var(--fluent-shadow-16);
+  padding: var(--fluent-spacing-s) var(--fluent-spacing-m) var(--fluent-spacing-s) var(--fluent-spacing-l);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.app-notice button {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--fluent-radius-small);
+  background: transparent;
+  color: var(--fluent-color-danger-foreground1);
+  cursor: pointer;
+}
+
+.app-notice button:hover {
+  background: var(--fluent-color-neutral-background-hover);
+}
+
+/* Animations */
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes thinkingRowIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes thinkingSweep {
+  55%,
+  100% {
+    transform: translateX(110%);
+  }
+}
+
+@keyframes thinkingDot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.28;
+    transform: translateY(0) scale(0.9);
+  }
+
+  38% {
+    opacity: 1;
+    transform: translateY(-3px) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}
