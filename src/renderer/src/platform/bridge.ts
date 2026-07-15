@@ -14,6 +14,7 @@ const REQUIRED_BRIDGE_METHODS = [
   "attachment.pick",
   "artifact.list",
   "settings.get",
+  "scene.getSnapshot",
   "events.subscribe"
 ] as const;
 

@@ -30,6 +30,7 @@ import {
 } from "./agentRuntime";
 import { findBundledPythonRuntime } from "../runtime/bundledRuntime";
 import type { SessionMemoryEntry } from "../projects/sessionPersistence";
+import type { SceneCommandInput, SceneCommandResult } from "../../shared/modeling3d/sceneContracts";
 
 const MAX_DOCUMENT_CONTEXT_CHARS = 24000;
 const MAX_SESSION_MEMORY_CHARS = 90000;
@@ -55,6 +56,7 @@ export function createConversationService(options: {
   createId: (prefix: string) => string;
   now: () => string;
   loadEnv: () => AppSettings;
+  executeSceneCommand: (command: SceneCommandInput) => SceneCommandResult;
 }) {
   const abortControllers = new Map<string, AbortController>();
   let agentRuntime: AgentRuntime | undefined;
@@ -487,6 +489,7 @@ export function createConversationService(options: {
       formatSessionMemory,
       getSessionReadableFiles,
       getBundledPythonRuntime: () => findBundledPythonRuntime({ rootDir: options.projectRootDir, resourcesDir: options.resourcesDir }),
+      executeSceneCommand: options.executeSceneCommand,
       createArtifact: (sessionId, filePath) => {
         createArtifact(sessionId, filePath);
       }

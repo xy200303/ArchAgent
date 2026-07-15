@@ -9,6 +9,7 @@ import { ErrorBoundary } from "../../platform/ErrorBoundary";
 import { getErrorMessage } from "../../platform/bridge";
 import { formatBytes, getWorkspaceFileIconSpec, resolveMonacoLanguage } from "../../shared/presentation";
 import { PreviewLoadingPanel } from "./PreviewLoadingPanel";
+import type { ComponentLibraryRequest } from "../modeling3d/editor/componentLibraryContracts";
 
 const TextFileEditor = lazy(() =>
   import("./TextFileEditor").then((module) => ({ default: module.TextFileEditor }))
@@ -104,6 +105,8 @@ export function EditorWorkspace({
   selectedArtifactId,
   theme,
   mdMode,
+  componentRequest,
+  componentLibraryOpen,
   onPreviewArtifact,
   onSaveContent,
   onDirtyChange,
@@ -116,6 +119,8 @@ export function EditorWorkspace({
   selectedArtifactId?: string;
   theme: "light" | "dark";
   mdMode: "preview" | "edit";
+  componentRequest?: ComponentLibraryRequest;
+  componentLibraryOpen: boolean;
   onPreviewArtifact: (artifactId: string) => void;
   onSaveContent: (path: string, content: string) => Promise<void>;
   onDirtyChange: (dirty: boolean) => void;
@@ -153,7 +158,7 @@ export function EditorWorkspace({
   return (
     <ErrorBoundary>
       <Suspense fallback={<PreviewLoadingPanel />}>
-        <SpatialEditor />
+        <SpatialEditor api={api} componentRequest={componentRequest} componentLibraryOpen={componentLibraryOpen} />
       </Suspense>
     </ErrorBoundary>
   );

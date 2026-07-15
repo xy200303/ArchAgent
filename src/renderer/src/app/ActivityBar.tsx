@@ -5,6 +5,7 @@ import {
   Activity,
   ChevronRight,
   Files,
+  Boxes,
   FolderOpen,
   FolderPlus,
   Menu,
@@ -24,7 +25,10 @@ export function ActivityBar({
   onCreateProject,
   onCloseProject,
   onOpenArtifacts,
-  onOpenSettings
+  onOpenSettings,
+  activeSection,
+  onOpenExplorer,
+  onOpenComponentLibrary
 }: {
   metadata: AppMetadata;
   artifactCount: number;
@@ -35,6 +39,9 @@ export function ActivityBar({
   onCloseProject: () => void;
   onOpenArtifacts: () => void;
   onOpenSettings: () => void;
+  activeSection?: "explorer" | "components";
+  onOpenExplorer: () => void;
+  onOpenComponentLibrary: () => void;
 }): JSX.Element {
   return (
     <aside className="activity-bar" aria-label="主导航">
@@ -49,8 +56,11 @@ export function ActivityBar({
         onOpenSettings={onOpenSettings}
       />
       <nav className="activity-nav" aria-label="工作台导航">
-        <TooltipButton label="资源管理器" className="activity-button active" onClick={() => undefined}>
+        <TooltipButton label="资源管理器" className={activeSection === "explorer" ? "activity-button active" : "activity-button"} onClick={onOpenExplorer}>
           <Files size={20} />
+        </TooltipButton>
+        <TooltipButton label="构件库" className={activeSection === "components" ? "activity-button active" : "activity-button"} onClick={onOpenComponentLibrary}>
+          <Boxes size={20} />
         </TooltipButton>
         <TooltipButton label="新建设计对话" className="activity-button" onClick={onCreateConversation}>
           <Plus size={20} />

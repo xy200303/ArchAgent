@@ -27,6 +27,7 @@ import type {
   WorkspaceFileItem,
   WriteTextFileInput
 } from "../../shared/types";
+import type { SceneCommandInput, SceneCommandResult, SceneSnapshot } from "../../shared/modeling3d/sceneContracts";
 import { buildArtifactPreview } from "../files/artifactPreview";
 import { checkRuntime } from "../runtime/runtimeDiagnostics";
 
@@ -66,6 +67,8 @@ export function registerIpcHandlers(options: {
   resourcesDir?: string;
   rootDir: string;
   now: () => string;
+  getSceneSnapshot: () => SceneSnapshot;
+  executeSceneCommand: (command: SceneCommandInput) => SceneCommandResult;
 }): void {
   ipcMain.handle("app:metadata", options.getAppMetadata);
   ipcMain.handle("app:recent-projects", options.listRecentProjects);
@@ -130,6 +133,8 @@ export function registerIpcHandlers(options: {
       now: options.now
     })
   );
+  ipcMain.handle("scene:snapshot", options.getSceneSnapshot);
+  ipcMain.handle("scene:execute", (_event, command: SceneCommandInput) => options.executeSceneCommand(command));
 }
 
 function requireArtifact(artifacts: Map<string, ArtifactSummary>, artifactId: string): ArtifactSummary {

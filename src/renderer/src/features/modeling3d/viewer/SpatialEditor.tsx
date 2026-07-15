@@ -1,86 +1,149 @@
-/** Selects the WebGPU viewer or WebGL fallback based on runtime capability. */
-import { useEffect, useState, lazy, Suspense } from "react";
-import { SimpleWebGLFallback } from "./SimpleWebGLFallback";
-import type { JSX } from "react";
+/** Coordinates scene commands, snapshots, and the renderer-side Pascal viewport. */
+import { useEffect, useMemo, useState, type JSX } from "react";
+import type { ArchAgentApi } from "../../../../../shared/types";
+import type { SceneCommandInput, SceneSnapshot, SceneWallNode } from "../../../../../shared/modeling3d/sceneContracts";
+import { getErrorMessage } from "../../../platform/bridge";
+import { SceneNavigationPanel, SceneToolbar, WallInspector } from "../editor/SceneEditorPanels";
+import type { CameraCommand } from "../viewport/CameraPresetController";
+import type { CameraPreset } from "../viewport/cameraPresets";
+import { SceneViewport } from "../viewport/SceneViewport";
+import { useWallDrawing } from "../viewport/useWallDrawing";
+import type { ComponentLibraryRequest } from "../editor/componentLibraryContracts";
 
-const PascalViewer = lazy(() => import("./PascalViewer"));
-
-export function SpatialEditor(): JSX.Element {
-  const [mode, setMode] = useState<"checking" | "webgpu" | "webgl" | "error">("checking");
-  const [errorMessage, setErrorMessage] = useState<string>("");
+export function SpatialEditor({
+  api,
+  componentRequest,
+  componentLibraryOpen
+}: {
+  api: ArchAgentApi;
+  componentRequest?: ComponentLibraryRequest;
+  componentLibraryOpen: boolean;
+}): JSX.Element {
+  const [snapshot, setSnapshot] = useState<SceneSnapshot>();
+  const [selectedWallId, setSelectedWallId] = useState<string>();
+  const [panelMode, setPanelMode] = useState<"none" | "create-wall" | "selected">("none");
+  const [cameraCommand, setCameraCommand] = useState<CameraCommand>();
+  const [message, setMessage] = useState("");
+  const wallDrawing = useWallDrawing(async (command) => execute(command));
 
   useEffect(() => {
-    void checkWebGPU();
-  }, []);
+    let active = true;
+    void api.scene
+      .getSnapshot()
+      .then((nextSnapshot) => {
+        if (active) setSnapshot(nextSnapshot);
+      })
+      .catch((error: unknown) => {
+        if (active) setMessage(`场景加载失败：${getErrorMessage(error)}`);
+      });
+    const unsubscribe = api.events.subscribe((event) => {
+      if (event.type === "scene.command.applied" && active) setSnapshot(event.payload.snapshot);
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [api]);
 
-  async function checkWebGPU(): Promise<void> {
+  const selectedWall = useMemo(() => {
+    const node = selectedWallId ? snapshot?.nodes[selectedWallId] : undefined;
+    return node?.type === "wall" ? node : undefined;
+  }, [selectedWallId, snapshot]);
+
+  useEffect(() => {
+    if (componentRequest?.componentId === "wall") openWallCreation();
+  }, [componentRequest?.revision]);
+
+  async function execute(command: SceneCommandInput): Promise<void> {
     try {
-      const gpu = (navigator as unknown as { gpu?: { requestAdapter(): Promise<unknown | null> } }).gpu;
-      if (!gpu) {
-        throw new Error("当前浏览器/环境不支持 WebGPU。");
+      const result = await api.scene.execute(command);
+      if (!result.accepted) {
+        setMessage(result.message);
+        return;
       }
-      const adapter = await gpu.requestAdapter();
-      if (!adapter) {
-        throw new Error("WebGPU adapter 获取失败，可能是显卡驱动未安装或被禁用。");
+      setSnapshot(result.snapshot);
+      if (result.command.type === "wall.create" || result.command.type === "wall.update") {
+        setSelectedWallId(result.command.id);
+        if (!wallDrawing.active) setPanelMode("selected");
       }
-      setMode("webgpu");
+      if (result.command.type === "node.delete") {
+        setSelectedWallId(undefined);
+        setPanelMode("none");
+      }
+      setMessage("");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : String(error));
-      setMode("webgl");
+      setMessage(`场景操作失败：${getErrorMessage(error)}`);
     }
   }
 
-  function handlePascalError(message: string): void {
-    setErrorMessage(message);
-    setMode("error");
+  if (!snapshot) {
+    return <div className="spatial-editor spatial-editor-fallback"><strong>正在加载空间场景…</strong></div>;
   }
 
-  if (mode === "webgl") {
-    return (
-      <SimpleWebGLFallback>
-        {errorMessage ? (
-          <span className="spatial-editor-error-hint" title={errorMessage}>WebGPU 不可用，已降级</span>
-        ) : null}
-        <button type="button" className="primary-action" onClick={() => { setErrorMessage(""); void checkWebGPU(); }}>
-          重试 Pascal WebGPU
-        </button>
-      </SimpleWebGLFallback>
-    );
+  const showInspector = panelMode !== "none";
+
+  function selectWall(id?: string): void {
+    setSelectedWallId(id);
+    setPanelMode(id ? "selected" : "none");
   }
 
-  if (mode === "error") {
-    return (
-      <SimpleWebGLFallback>
-        <span className="spatial-editor-error-hint" title={errorMessage}>Pascal 启动失败</span>
-        <button type="button" className="primary-action" onClick={() => { setErrorMessage(""); setMode("webgpu"); }}>
-          重试 Pascal WebGPU
-        </button>
-      </SimpleWebGLFallback>
-    );
+  function openWallCreation(): void {
+    wallDrawing.cancel();
+    setSelectedWallId(undefined);
+    setPanelMode("create-wall");
   }
 
-  if (mode === "checking") {
-    return (
-      <div className="spatial-editor spatial-editor-fallback">
-        <strong>正在检查 WebGPU 支持…</strong>
-        <span>请稍候，若不支持将自动降级到 WebGL 预览。</span>
-      </div>
-    );
+  function activateSelectTool(): void {
+    wallDrawing.cancel();
+  }
+
+  function toggleWallDrawing(): void {
+    if (!wallDrawing.active) {
+      setSelectedWallId(undefined);
+      setPanelMode("none");
+    }
+    wallDrawing.toggle();
+  }
+
+  function setCameraPreset(preset: CameraPreset): void {
+    setCameraCommand((current) => ({ preset, revision: (current?.revision ?? 0) + 1 }));
   }
 
   return (
-    <div className="spatial-editor">
-      <div className="spatial-editor-notice">
-        <span>正在使用 Pascal WebGPU 模式</span>
-        <div className="spatial-editor-notice-actions">
-          <button type="button" className="secondary-action" onClick={() => setMode("webgl")}>
-            切换到 WebGL 预览
-          </button>
+    <section className="spatial-editor">
+      <SceneToolbar
+        wallDrawingActive={wallDrawing.active}
+        onToggleWallDrawing={toggleWallDrawing}
+        onSelectTool={activateSelectTool}
+        onCreateWall={openWallCreation}
+        onCameraPreset={setCameraPreset}
+        componentLibraryOpen={componentLibraryOpen}
+      />
+      {message ? <div className="scene-editor-message" role="status">{message}</div> : null}
+      <div className={`scene-editor-layout${showInspector ? " has-inspector" : ""}${componentLibraryOpen ? " no-navigation" : ""}`}>
+        {componentLibraryOpen ? null : <SceneNavigationPanel snapshot={snapshot} selectedWallId={selectedWallId} onSelectWall={selectWall} />}
+        <div className="scene-viewport">
+          <SceneViewport
+            snapshot={snapshot}
+            selectedWallId={selectedWallId}
+            onSelectWall={selectWall}
+            wallDrawingActive={wallDrawing.active}
+            wallDrawingDraft={wallDrawing.draft}
+            onWallDrawingPoint={wallDrawing.placePoint}
+            onWallDrawingPreview={wallDrawing.previewPoint}
+            cameraCommand={cameraCommand}
+          />
         </div>
+        {showInspector ? (
+          <WallInspector
+            wall={selectedWall}
+            onCreate={(command) => void execute(command)}
+            onUpdate={(command) => void execute(command)}
+            onDelete={(id) => void execute({ type: "node.delete", id })}
+            onClose={() => selectWall(undefined)}
+          />
+        ) : null}
       </div>
-      <Suspense fallback={<div className="spatial-editor-fallback">加载 Pascal 编辑器…</div>}>
-        <PascalViewer onError={handlePascalError} />
-      </Suspense>
-    </div>
+    </section>
   );
 }

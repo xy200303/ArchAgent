@@ -1,3 +1,5 @@
+import type { SceneCommandInput, SceneCommandResult, SceneSnapshot } from "./modeling3d/sceneContracts";
+
 export type MessageRole = "user" | "assistant";
 
 export type SessionStatus = "idle" | "running" | "completed" | "failed";
@@ -327,6 +329,11 @@ export type RendererEvent =
       type: "artifact.created";
       sessionId: string;
       payload: ArtifactSummary;
+    }
+  | {
+      id: string;
+      type: "scene.command.applied";
+      payload: Extract<SceneCommandResult, { accepted: true }>;
     };
 
 export interface ArchAgentApi {
@@ -381,6 +388,10 @@ export interface ArchAgentApi {
     get(): Promise<AppSettings>;
     save(input: UpdateAppSettingsInput): Promise<AppSettings>;
     checkRuntime(): Promise<RuntimeCheckResult>;
+  };
+  scene: {
+    getSnapshot(): Promise<SceneSnapshot>;
+    execute(command: SceneCommandInput): Promise<SceneCommandResult>;
   };
   events: {
     subscribe(listener: (event: RendererEvent) => void): () => void;

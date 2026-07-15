@@ -546,7 +546,8 @@ function createArchAgentPiTools(
             ].filter(Boolean) as string[],
             allowedReadFiles: host.getSessionReadableFiles(sessionId),
             execBashEnabled: activeSettings.agent.execBashEnabled,
-            bundledPythonRuntime: host.getBundledPythonRuntime()
+            bundledPythonRuntime: host.getBundledPythonRuntime(),
+            executeSceneCommand: host.executeSceneCommand
           });
 
           host.appendSessionMemory(sessionId, `工具 ${result.toolName}`, result.content);

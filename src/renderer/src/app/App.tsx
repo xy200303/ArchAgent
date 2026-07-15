@@ -38,6 +38,8 @@ import {
   getPreviewKey,
   type PreviewContent
 } from "../features/files/EditorWorkspace";
+import { ComponentLibraryPanel } from "../features/modeling3d/editor/ComponentLibraryPanel";
+import type { BuiltInComponentId, ComponentLibraryRequest } from "../features/modeling3d/editor/componentLibraryContracts";
 import { ProjectPicker } from "../features/projects/ProjectPicker";
 import { SettingsPanel } from "../features/settings/SettingsPanel";
 import { getErrorMessage, resolveArchAgentApi } from "../platform/bridge";
@@ -64,6 +66,8 @@ export function App(): JSX.Element {
   const [previewDirty, setPreviewDirty] = useState(false);
   const [mdEditMode, setMdEditMode] = useState(false);
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | undefined>();
+  const [activeSidePanel, setActiveSidePanel] = useState<"explorer" | "components">("explorer");
+  const [componentRequest, setComponentRequest] = useState<ComponentLibraryRequest>();
 
   const [appError, setAppError] = useState("");
   const [metadata, setMetadata] = useState<AppMetadata>(FALLBACK_APP_METADATA);
@@ -83,6 +87,11 @@ export function App(): JSX.Element {
     setPreview(undefined);
     setPreviewError("");
     setSelectedArtifactId(undefined);
+  }
+
+  function requestBuiltInComponent(componentId: BuiltInComponentId): void {
+    closePreview();
+    setComponentRequest((current) => ({ componentId, revision: (current?.revision ?? 0) + 1 }));
   }
 
   useEffect(() => {
@@ -243,7 +252,7 @@ export function App(): JSX.Element {
 
   return (
     <Tooltip.Provider delayDuration={350}>
-      <div className="workbench-shell">
+      <div className={activeSidePanel === "components" ? "workbench-shell with-component-library" : "workbench-shell"}>
         <ActivityBar
           metadata={metadata}
           artifactCount={artifacts.length}
@@ -254,7 +263,13 @@ export function App(): JSX.Element {
           onCloseProject={() => dispatch(setCurrentProject(undefined))}
           onOpenArtifacts={() => void openArtifactHistory()}
           onOpenSettings={() => dispatch(setSettingsOpen(true))}
+          activeSection={activeSidePanel}
+          onOpenExplorer={() => setActiveSidePanel("explorer")}
+          onOpenComponentLibrary={() => setActiveSidePanel("components")}
         />
+        {activeSidePanel === "components" ? (
+          <ComponentLibraryPanel onSelectComponent={requestBuiltInComponent} />
+        ) : null}
         <main className="editor-area">
           <EditorHeader
             preview={preview}
@@ -272,6 +287,8 @@ export function App(): JSX.Element {
             selectedArtifactId={selectedArtifactId}
             theme={settings?.theme ?? "light"}
             mdMode={mdEditMode ? "edit" : "preview"}
+            componentRequest={componentRequest}
+            componentLibraryOpen={activeSidePanel === "components"}
             onPreviewArtifact={(artifactId) => void previewArtifact(artifactId)}
             onSaveContent={(path, content) => savePreviewContent(path, content)}
             onDirtyChange={setPreviewDirty}

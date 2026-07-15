@@ -29,6 +29,7 @@ describe("renderer bridge", () => {
       artifact: { list() {} },
       runtime: { status() {}, scan() {} },
       settings: { get() {} },
+      scene: { getSnapshot() {} },
       events: { subscribe() {} }
     };
 

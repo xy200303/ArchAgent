@@ -2,7 +2,7 @@
 
 ## 1. 原则
 
-Renderer、人工编辑工具和 Agent 不直接跨进程修改 Pascal store。所有持久化变更通过 Main 进程的 `SceneCommandService` 执行，并返回新 revision 与已应用 patch。
+Renderer、人工编辑工具和 Agent 不直接跨进程修改 Pascal store、R3F Object3D 或项目文件。所有持久化变更通过 Main 进程的 `SceneCommandService` 执行，并返回新 revision 与已应用 patch。Pascal 与 R3F 都是场景快照的 Renderer 投影。
 
 ## 2. 共享类型
 
@@ -44,7 +44,7 @@ interface ArchAgentApi {
 }
 ```
 
-`getScene` 用于初始化与 revision 冲突恢复；`onSceneChanged` 只传递已提交变更。Renderer 应按 revision 顺序投影到 Pascal `useScene`。
+`getScene` 用于初始化与 revision 冲突恢复；`onSceneChanged` 只传递已提交变更。Renderer 应按 revision 顺序更新 R3F 主编辑视图，并将可映射的建筑节点投影到 Pascal `useScene`。Pascal 不支持的 MeshAsset 或材质字段仍必须由 R3F 保留显示。
 
 ## 4. Agent 工具
 

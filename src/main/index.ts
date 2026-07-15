@@ -11,6 +11,7 @@ import { getProcessResourcesDir } from "./runtime/bundledRuntime";
 import { createSettingsService } from "./config/settingsService";
 import { createProjectStateStore } from "./projects/projectStateStore";
 import { createProjectService } from "./projects/projectService";
+import { createSceneService } from "./modeling3d/sceneService";
 import type { SessionMemoryEntry } from "./projects/sessionPersistence";
 import { APP_DISPLAY_NAME, createAppMetadata } from "../shared/appMetadata";
 import type {
@@ -80,6 +81,7 @@ const rendererEvents = createRendererEventBus({
 const sendEvent = rendererEvents.sendEvent;
 const sendStreamItemUpdatedEvent = rendererEvents.sendStreamItemUpdated;
 const clearPendingStreamItemUpdatesForSession = rendererEvents.clearPendingSessionUpdates;
+const sceneService = createSceneService({ createId, broadcast: sendEvent });
 const createWindow = windowManager.createWindow;
 const settingsService = createSettingsService({ envLocalPath, envPath, projectRootDir, resourcesDir });
 const loadEnv = settingsService.load;
@@ -172,7 +174,8 @@ const conversationService = createConversationService({
   clearPendingStreamItemUpdatesForSession,
   createId,
   now,
-  loadEnv
+  loadEnv,
+  executeSceneCommand: sceneService.execute
 });
 const {
   createSession,
@@ -218,7 +221,9 @@ function registerIpc(): void {
     projectRootDir,
     resourcesDir,
     rootDir,
-    now
+    now,
+    getSceneSnapshot: sceneService.getSnapshot,
+    executeSceneCommand: sceneService.execute
   });
 }
 

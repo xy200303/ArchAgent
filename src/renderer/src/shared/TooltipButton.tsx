@@ -6,17 +6,21 @@ export function TooltipButton({
   label,
   className,
   onClick,
+  pressed,
+  disabled,
   children
 }: {
   label: string;
   className: string;
   onClick: () => void;
+  pressed?: boolean;
+  disabled?: boolean;
   children: ReactNode;
 }): JSX.Element {
   return (
     <Tooltip.Root>
       <Tooltip.Trigger asChild>
-        <button type="button" className={className} onClick={onClick}>
+        <button type="button" className={className} onClick={onClick} aria-label={label} aria-pressed={pressed} disabled={disabled}>
           {children}
         </button>
       </Tooltip.Trigger>

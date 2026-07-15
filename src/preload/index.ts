@@ -21,6 +21,7 @@ import type {
   WorkspaceFileItem,
   WriteTextFileInput
 } from "../shared/types";
+import type { SceneCommandInput } from "../shared/modeling3d/sceneContracts";
 
 const api: ArchAgentApi = {
   app: {
@@ -75,6 +76,10 @@ const api: ArchAgentApi = {
     get: () => ipcRenderer.invoke("settings:get"),
     save: (input: UpdateAppSettingsInput) => ipcRenderer.invoke("settings:save", input),
     checkRuntime: () => ipcRenderer.invoke("settings:check-runtime")
+  },
+  scene: {
+    getSnapshot: () => ipcRenderer.invoke("scene:snapshot"),
+    execute: (command: SceneCommandInput) => ipcRenderer.invoke("scene:execute", command)
   },
   events: {
     subscribe: (listener: (event: RendererEvent) => void) => {

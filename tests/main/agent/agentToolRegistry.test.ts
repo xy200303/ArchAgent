@@ -19,6 +19,9 @@ describe("agentToolRegistry", () => {
     expect(names).toContain("write_file");
     expect(names).toContain("send_file");
     expect(names).toContain("web_search");
+    expect(names).toContain("create_wall");
+    expect(names).toContain("update_wall");
+    expect(names).toContain("delete_node");
     expect(names).not.toContain("load_csv");
     expect(names).not.toContain("load_excel");
     expect(names).not.toContain("load_json");
@@ -51,6 +54,31 @@ describe("agentToolRegistry", () => {
     expect(result.summary).toContain("命令执行失败");
     expect(result.content).toContain("命令失败");
     expect(result.content).toContain("exit code: 2");
+  });
+
+  it("routes create_wall through the injected scene command executor", async () => {
+    const executeSceneCommand = vi.fn(() => ({
+      accepted: true as const,
+      command: {
+        type: "wall.create" as const,
+        id: "wall_agent",
+        parentId: "level_default",
+        name: "Agent 墙体",
+        start: [0, 0] as [number, number],
+        end: [2, 0] as [number, number],
+        height: 2.8,
+        thickness: 0.2,
+        materialPreset: "plaster" as const
+      },
+      snapshot: { revision: 1, rootNodeIds: ["site_default"], nodes: {} }
+    }));
+    const result = await executeAgentToolCall(
+      createToolCall("create_wall", { parent_id: "level_default", start: [0, 0], end: [2, 0] }),
+      createContext({ executeSceneCommand })
+    );
+
+    expect(executeSceneCommand).toHaveBeenCalledWith(expect.objectContaining({ type: "wall.create", parentId: "level_default" }));
+    expect(result.summary).toContain("wall_agent");
   });
 
   const itWindows = process.platform === "win32" ? it : it.skip;

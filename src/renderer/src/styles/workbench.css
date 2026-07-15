@@ -77,9 +77,17 @@ textarea:focus-visible,
   color: var(--color-ink);
 }
 
+.workbench-shell.with-component-library {
+  grid-template-columns: 54px minmax(212px, 248px) minmax(360px, 1fr) minmax(330px, 440px);
+}
+
 @media (max-width: 1280px) {
   .workbench-shell {
     grid-template-columns: 54px minmax(360px, 1fr) minmax(330px, 390px);
+  }
+
+  .workbench-shell.with-component-library {
+    grid-template-columns: 54px minmax(200px, 220px) minmax(320px, 1fr) minmax(300px, 360px);
   }
 }
 
@@ -165,6 +173,98 @@ textarea:focus-visible,
   line-height: 17px;
   text-align: center;
   padding: 0 var(--fluent-spacing-xs);
+}
+
+/* Built-in component library */
+.component-library-sidebar {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  border-right: 1px solid var(--fluent-color-neutral-stroke2);
+  background: var(--fluent-color-neutral-background2);
+  color: var(--fluent-color-neutral-foreground1);
+}
+
+.component-library-header {
+  display: flex;
+  align-items: center;
+  gap: var(--fluent-spacing-s);
+  min-height: 52px;
+  border-bottom: 1px solid var(--fluent-color-neutral-stroke2);
+  padding: 0 var(--fluent-spacing-m);
+}
+
+.component-library-header svg {
+  color: var(--fluent-color-brand-foreground1);
+}
+
+.component-library-header h2,
+.component-library-section h3 {
+  margin: 0;
+}
+
+.component-library-header h2 {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.component-library-section {
+  display: grid;
+  gap: var(--fluent-spacing-s);
+  padding: var(--fluent-spacing-m);
+}
+
+.component-library-section h3 {
+  color: var(--fluent-color-neutral-foreground3);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.component-library-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--fluent-spacing-s);
+}
+
+.component-library-item {
+  display: grid;
+  justify-items: start;
+  gap: 5px;
+  min-height: 92px;
+  border: 1px solid var(--fluent-color-neutral-stroke1);
+  border-radius: var(--fluent-radius-small);
+  background: var(--fluent-color-neutral-background1);
+  color: var(--fluent-color-neutral-foreground1);
+  cursor: pointer;
+  padding: var(--fluent-spacing-m);
+  text-align: left;
+}
+
+.component-library-item:hover {
+  border-color: var(--fluent-color-brand-stroke1);
+  background: var(--fluent-color-neutral-background-hover);
+  color: var(--fluent-color-brand-foreground1);
+}
+
+.component-library-item svg {
+  color: var(--fluent-color-brand-foreground1);
+}
+
+.component-library-item span {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.component-library-item small,
+.component-library-note {
+  color: var(--fluent-color-neutral-foreground3);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.component-library-note {
+  margin: 0;
+  padding: 0 var(--fluent-spacing-m) var(--fluent-spacing-m);
 }
 
 /* Workbench menu dropdowns */

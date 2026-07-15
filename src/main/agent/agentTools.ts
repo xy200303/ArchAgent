@@ -12,6 +12,9 @@ export type BuiltinToolName =
   | "web_search"
   | "exec_bash"
   | "send_file"
+  | "create_wall"
+  | "update_wall"
+  | "delete_node";
 
 export interface ReadToolResult {
   toolName: BuiltinToolName;

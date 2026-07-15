@@ -6,6 +6,7 @@ import { basename, extname, isAbsolute, join, relative, resolve } from "node:pat
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam, ChatCompletionMessageToolCall, ChatCompletionTool } from "openai/resources/chat/completions";
 import type { AppSettings } from "../../shared/types";
+import type { SceneCommandInput, SceneCommandResult, ScenePoint, WallMaterialPreset } from "../../shared/modeling3d/sceneContracts";
 import {
   MAX_VISION_IMAGE_BYTES,
   compactText,
@@ -46,6 +47,7 @@ export interface AgentToolExecutionContext {
   allowedReadFiles?: string[];
   execBashEnabled: boolean;
   bundledPythonRuntime?: BundledPythonRuntime;
+  executeSceneCommand?: (command: SceneCommandInput) => SceneCommandResult;
 }
 
 export interface AgentToolExecutionResult {
@@ -104,6 +106,30 @@ export function buildAgentChatTools(options: { includeExecBash: boolean; include
         name: "read_image",
         description: "识别本地图片或截图内容。",
         parameters: readImageSchema
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "create_wall",
+        description: "在指定楼层创建一段直墙。坐标单位为米，必须提供不同的起点和终点。",
+        parameters: createWallSchema
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "update_wall",
+        description: "修改现有墙体的名称、端点、尺寸或材质。只传需要修改的字段。",
+        parameters: updateWallSchema
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "delete_node",
+        description: "删除指定的墙体节点。",
+        parameters: deleteNodeSchema
       }
     }
   ];
@@ -187,6 +213,12 @@ export async function executeAgentToolCall(
       return executeSendFile(args, context);
     case "exec_bash":
       return executeBash(args, context);
+    case "create_wall":
+      return executeCreateWall(args, context);
+    case "update_wall":
+      return executeUpdateWall(args, context);
+    case "delete_node":
+      return executeDeleteNode(args, context);
     default:
       return {
         toolName: "read_file",
@@ -194,6 +226,76 @@ export async function executeAgentToolCall(
         content: `Unknown tool: ${String(toolName)}`
       };
   }
+}
+
+function executeCreateWall(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
+  const start = readPointArg(args, "start");
+  const end = readPointArg(args, "end");
+  if (!start || !end) return sceneToolFailure("create_wall", "墙体起点和终点必须是两个数字组成的数组。");
+  return executeSceneTool(
+    "create_wall",
+    {
+      type: "wall.create",
+      parentId: readStringArg(args, "parent_id") || "level_default",
+      name: readStringArg(args, "name") || undefined,
+      start,
+      end,
+      height: readOptionalNumberArg(args, "height"),
+      thickness: readOptionalNumberArg(args, "thickness"),
+      materialPreset: readOptionalMaterialPreset(args, "material_preset")
+    },
+    context
+  );
+}
+
+function executeUpdateWall(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
+  const id = readStringArg(args, "id");
+  if (!id) return sceneToolFailure("update_wall", "缺少墙体 ID。");
+  const start = readOptionalPointArg(args, "start");
+  const end = readOptionalPointArg(args, "end");
+  if (start === null || end === null) return sceneToolFailure("update_wall", "墙体端点必须是两个数字组成的数组。");
+  return executeSceneTool(
+    "update_wall",
+    {
+      type: "wall.update",
+      id,
+      ...(readStringArg(args, "name") ? { name: readStringArg(args, "name") } : {}),
+      ...(start ? { start } : {}),
+      ...(end ? { end } : {}),
+      ...(readOptionalNumberArg(args, "height") !== undefined ? { height: readOptionalNumberArg(args, "height") } : {}),
+      ...(readOptionalNumberArg(args, "thickness") !== undefined ? { thickness: readOptionalNumberArg(args, "thickness") } : {}),
+      ...(readOptionalMaterialPreset(args, "material_preset") ? { materialPreset: readOptionalMaterialPreset(args, "material_preset") } : {})
+    },
+    context
+  );
+}
+
+function executeDeleteNode(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
+  const id = readStringArg(args, "id");
+  if (!id) return sceneToolFailure("delete_node", "缺少节点 ID。");
+  return executeSceneTool("delete_node", { type: "node.delete", id }, context);
+}
+
+function executeSceneTool(
+  toolName: Extract<BuiltinToolName, "create_wall" | "update_wall" | "delete_node">,
+  command: SceneCommandInput,
+  context: AgentToolExecutionContext
+): AgentToolExecutionResult {
+  if (!context.executeSceneCommand) return sceneToolFailure(toolName, "当前应用未连接场景服务。");
+  const result = context.executeSceneCommand(command);
+  if (!result.accepted) return sceneToolFailure(toolName, result.message);
+
+  const nodeId = result.command.type === "node.delete" ? result.command.id : result.command.id;
+  const action = result.command.type === "wall.create" ? "已创建墙体" : result.command.type === "wall.update" ? "已更新墙体" : "已删除墙体";
+  return {
+    toolName,
+    summary: `${action}：${nodeId}`,
+    content: `${action}\n节点 ID：${nodeId}\n场景版本：${result.snapshot.revision}`
+  };
+}
+
+function sceneToolFailure(toolName: Extract<BuiltinToolName, "create_wall" | "update_wall" | "delete_node">, message: string): AgentToolExecutionResult {
+  return { toolName, summary: message, content: `${toolName} failed: ${message}` };
 }
 
 function executeTime(): AgentToolExecutionResult {
@@ -614,6 +716,35 @@ function readNumberArg(args: Record<string, unknown>, key: string, fallback: num
   return fallback;
 }
 
+function readOptionalNumberArg(args: Record<string, unknown>, key: string): number | undefined {
+  const value = args[key];
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) return Number(value);
+  return undefined;
+}
+
+function readPointArg(args: Record<string, unknown>, key: string): ScenePoint | undefined {
+  const value = args[key];
+  if (!Array.isArray(value) || value.length !== 2) {
+    return undefined;
+  }
+  const [x, y] = value;
+  if (typeof x !== "number" || !Number.isFinite(x) || typeof y !== "number" || !Number.isFinite(y)) return undefined;
+  return [x, y];
+}
+
+function readOptionalPointArg(args: Record<string, unknown>, key: string): ScenePoint | null | undefined {
+  if (!(key in args)) return undefined;
+  return readPointArg(args, key) ?? null;
+}
+
+function readOptionalMaterialPreset(args: Record<string, unknown>, key: string): WallMaterialPreset | undefined {
+  const value = readStringArg(args, key);
+  return ["brick", "concrete", "glass", "marble", "metal", "plaster", "tile", "white", "wood"].includes(value)
+    ? (value as WallMaterialPreset)
+    : undefined;
+}
+
 function parseToolArguments(value: string): Record<string, unknown> {
   if (!value.trim()) return {};
   try {
@@ -704,6 +835,50 @@ const execBashSchema = {
     command: { type: "string" }
   },
   required: ["command"],
+  additionalProperties: false
+} as const;
+const pointSchema = {
+  type: "array",
+  items: { type: "number" },
+  minItems: 2,
+  maxItems: 2
+} as const;
+const materialPresetSchema = {
+  type: "string",
+  enum: ["brick", "concrete", "glass", "marble", "metal", "plaster", "tile", "white", "wood"]
+} as const;
+const createWallSchema = {
+  type: "object",
+  properties: {
+    parent_id: { type: "string" },
+    name: { type: "string" },
+    start: pointSchema,
+    end: pointSchema,
+    height: { type: "number" },
+    thickness: { type: "number" },
+    material_preset: materialPresetSchema
+  },
+  required: ["start", "end"],
+  additionalProperties: false
+} as const;
+const updateWallSchema = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    name: { type: "string" },
+    start: pointSchema,
+    end: pointSchema,
+    height: { type: "number" },
+    thickness: { type: "number" },
+    material_preset: materialPresetSchema
+  },
+  required: ["id"],
+  additionalProperties: false
+} as const;
+const deleteNodeSchema = {
+  type: "object",
+  properties: { id: { type: "string" } },
+  required: ["id"],
   additionalProperties: false
 } as const;
 const rememberProjectSchema = {

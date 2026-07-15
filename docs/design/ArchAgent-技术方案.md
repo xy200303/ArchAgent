@@ -12,12 +12,14 @@ ArchAgent 是本地优先的 3D 智能建模工作台。首期让用户通过自
 | --- | --- | --- |
 | 桌面壳 | Electron + electron-vite | 本地文件、窗口、IPC 和安全边界 |
 | 前端 | React 19 + TypeScript | 编辑器工作台与对话界面 |
-| 建筑内核 | `@pascal-app/core` + `@pascal-app/viewer` | 建筑节点、几何系统、WebGPU 视口 |
-| 通用视口能力 | Three.js + React Three Fiber + Drei | 相机、导入资产和渲染扩展 |
+| 建筑语义适配 | `@pascal-app/core` + `@pascal-app/viewer` | 建筑节点投影、几何系统和可选 WebGPU 建筑视图 |
+| 编辑器交互壳 | Three.js + React Three Fiber + Drei | 主相机控制、选择、gizmo、通用资产和渲染扩展 |
 | 参数化构件 | JSCAD，后续可接 Replicad | 由 Agent 生成可复现的复杂构件 |
 | Agent | Pi Agent + Hy3 OpenAI-compatible API | 规划、工具调用、结果解释 |
 
-Pascal 的 `core/viewer` 是建筑语义内核，不是整个应用的数据边界。上游完整 `@pascal-app/editor` 用于参考工具、相机和选择交互；它依赖 Next.js 与上游未发布节点包，因此不直接嵌入 Electron/Vite 壳。
+Pascal 的 `core/viewer` 是建筑语义适配器，不是整个应用的数据边界或完整编辑器。上游完整 `@pascal-app/editor` 可用于参考工具、相机和选择交互；它依赖 Next.js 与上游未发布节点包，因此不直接嵌入 Electron/Vite 壳。R3F 是本项目的主交互视图，Pascal 只消费 Main 场景快照中可映射的建筑节点。
+
+`TangSY/aedifex` 同样仅作为 MIT 上游代码参考。它验证了建筑优先编辑器的能力拆分，但其完整应用、Zustand/Zundo 状态和 IndexedDB 持久化不能接入本项目。ArchAgent 只按能力逐项自研或重写，并保持 Main 进程的场景权威性。
 
 ## 3. 总体架构
 
@@ -29,8 +31,8 @@ graph LR
     M --> A[Pi Agent / Hy3]
     A --> M
     M -->|ScenePatch 事件| R
-    R --> P[Pascal useScene + Viewer]
-    R --> V[通用 Mesh Asset 视图]
+    R --> P[Pascal 建筑语义投影]
+    R --> V[R3F 主交互与通用 Mesh 视图]
     M --> F[项目文件与导出]
 ```
 
@@ -63,7 +65,7 @@ ProjectScene
     └── MeshAsset → GLB/OBJ、变换、材质覆盖、来源、挂载位置
 ```
 
-首期的 `MeshAsset` 可映射为 Pascal `ItemNode` 加项目资产元数据。这样静态人物、家具和装饰模型可以被放置、选中、变换、显隐和替换材质。以后需要骨骼动画、表情或行业专用节点时，再为资产增加专用适配器，不改变建筑场景契约。
+首期的 `MeshAsset` 由 R3F 作为主视图显示和交互；在语义可表达时可额外映射为 Pascal `ItemNode`。这样静态家具、装饰和参考模型不会受 Pascal 节点能力限制。以后需要骨骼动画、表情或行业专用节点时，再为资产增加专用适配器，不改变建筑场景契约。
 
 ## 5. 图像与外部数据
 
@@ -83,7 +85,7 @@ ProjectScene
 ## 7. 实施阶段
 
 1. **基础层**：`SceneDocument`、命令服务、版本校验、IPC、持久化和 Renderer 场景同步。
-2. **P0 编辑器**：相机、选择、场景树、属性面板、撤销重做、Wall/Door/Window/Slab。
-3. **P1 Agent**：结构化 ScenePatch、校验回馈、ghost preview、外部数据和户型图输入。
-4. **P2 资产**：GLB/OBJ 导入、Item/MeshAsset 放置、材质覆盖、JSCAD 构件重生成。
+2. **P0 编辑器**：墙体命令、场景树、属性面板与 Pascal 建筑投影。
+3. **P1 空间编辑**：自研 R3F 相机、选择和高亮；随后接入 gizmo、Wall/Door/Window/Slab、撤销重做、项目持久化与户型图输入。
+4. **P2 Agent 与资产**：结构化场景命令、ghost preview、GLB/OBJ 导入、材质覆盖、JSCAD 构件重生成。
 5. **后续插件域**：角色动画、IFC、通用 Mesh 编辑或其他行业模型各自通过适配器扩展。
