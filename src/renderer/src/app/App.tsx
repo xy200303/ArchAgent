@@ -1,17 +1,13 @@
 /** Composes the renderer shell and coordinates state across domain features. */
-import { useEffect, useState, type JSX } from "react";
+import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { X } from "lucide-react";
-import { useDispatch, useSelector } from "react-redux";
+import { shallowEqual, useDispatch, useSelector } from "react-redux";
 import { ActivityBar } from "./ActivityBar";
 import {
-  addAttachments,
   applyRendererEvent,
-  clearComposer,
-  removeAttachment,
   setArtifacts,
   setArtifactsOpen,
-  setComposer,
   setCurrentProject,
   setCurrentSession,
   setRecentProjects,
@@ -24,22 +20,16 @@ import {
 } from "./store";
 import { FALLBACK_APP_METADATA } from "../../../shared/appMetadata";
 import type { AppMetadata, ArtifactSummary, ArchAgentApi, ChatSession } from "../../../shared/types";
-import { Composer } from "../features/chat/Composer";
-import { ChatPanelHeader } from "../features/chat/ChatPanelHeader";
-import {
-  ArtifactHistoryPanel,
-  DeleteSessionDialog,
-  RenameSessionDialog
-} from "../features/chat/ChatDialogs";
-import { MessagePane } from "../features/chat/MessagePane";
+import { ArtifactHistoryDialog } from "../features/chat/ArtifactHistoryDialog";
+import { ChatWorkspace } from "../features/chat/ChatWorkspace";
 import {
   EditorHeader,
   EditorWorkspace,
   getPreviewKey,
   type PreviewContent
 } from "../features/files/EditorWorkspace";
-import { ComponentLibraryPanel } from "../features/modeling3d/editor/ComponentLibraryPanel";
 import type { BuiltInComponentId, ComponentLibraryRequest } from "../features/modeling3d/editor/componentLibraryContracts";
+import { useResizableChatPanel } from "../features/layout/useResizableChatPanel";
 import { ProjectPicker } from "../features/projects/ProjectPicker";
 import { SettingsPanel } from "../features/settings/SettingsPanel";
 import { getErrorMessage, resolveArchAgentApi } from "../platform/bridge";
@@ -48,32 +38,36 @@ import { getInitialProjectFromUrl } from "../shared/presentation";
 export function App(): JSX.Element {
   const dispatch = useDispatch<AppDispatch>();
   const {
-    sessions,
-    artifacts,
-    currentSessionId,
-    composer,
-    pendingAttachments,
     settings,
     settingsOpen,
     artifactsOpen,
     currentProject,
     recentProjects
   } = useSelector(
-    (state: RootState) => state.chat
+    (state: RootState) => ({
+      settings: state.chat.settings,
+      settingsOpen: state.chat.settingsOpen,
+      artifactsOpen: state.chat.artifactsOpen,
+      currentProject: state.chat.currentProject,
+      recentProjects: state.chat.recentProjects
+    }),
+    shallowEqual
   );
   const [preview, setPreview] = useState<PreviewContent | undefined>();
   const [previewError, setPreviewError] = useState("");
   const [previewDirty, setPreviewDirty] = useState(false);
   const [mdEditMode, setMdEditMode] = useState(false);
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | undefined>();
-  const [activeSidePanel, setActiveSidePanel] = useState<"explorer" | "components">("explorer");
+  const [activeSidePanel, setActiveSidePanel] = useState<"explorer" | "components" | undefined>("explorer");
   const [componentRequest, setComponentRequest] = useState<ComponentLibraryRequest>();
+  const workbenchRef = useRef<HTMLDivElement>(null);
+  const chatPanelResize = useResizableChatPanel({
+    rootRef: workbenchRef,
+    componentLibraryOpen: activeSidePanel === "components"
+  });
 
   const [appError, setAppError] = useState("");
   const [metadata, setMetadata] = useState<AppMetadata>(FALLBACK_APP_METADATA);
-  const [renameTarget, setRenameTarget] = useState<ChatSession | undefined>();
-  const [deleteTarget, setDeleteTarget] = useState<ChatSession | undefined>();
-  const currentSession = sessions.find((session) => session.id === currentSessionId);
   const bridge = resolveArchAgentApi(window.archAgent);
   const activePreviewKey = preview ? getPreviewKey(preview) : "";
 
@@ -83,16 +77,16 @@ export function App(): JSX.Element {
     setMdEditMode(false);
   }, [activePreviewKey]);
 
-  function closePreview(): void {
+  const closePreview = useCallback((): void => {
     setPreview(undefined);
     setPreviewError("");
     setSelectedArtifactId(undefined);
-  }
+  }, []);
 
-  function requestBuiltInComponent(componentId: BuiltInComponentId): void {
+  const requestBuiltInComponent = useCallback((componentId: BuiltInComponentId): void => {
     closePreview();
     setComponentRequest((current) => ({ componentId, revision: (current?.revision ?? 0) + 1 }));
-  }
+  }, [closePreview]);
 
   useEffect(() => {
     document.title = currentProject ? `${currentProject.name} - ${metadata.title}` : metadata.title;
@@ -170,7 +164,7 @@ export function App(): JSX.Element {
     }
   }
 
-  async function createConversation(): Promise<void> {
+  const createConversation = useCallback(async (): Promise<void> => {
     if (!api || !currentProject) return;
     try {
       const session = await api.session.create({ projectPath: currentProject.path });
@@ -179,23 +173,23 @@ export function App(): JSX.Element {
     } catch (error) {
       setAppError(`新建对话失败：${getErrorMessage(error)}`);
     }
-  }
+  }, [api, currentProject, dispatch]);
 
-  async function renameConversation(sessionId: string, title: string): Promise<void> {
+  const renameConversation = useCallback(async (sessionId: string, title: string): Promise<void> => {
     if (!api) return;
     const session = await api.session.rename({ sessionId, title });
     dispatch(upsertSession(session));
-  }
+  }, [api, dispatch]);
 
-  async function deleteConversation(sessionId: string): Promise<void> {
+  const deleteConversation = useCallback(async (sessionId: string): Promise<void> => {
     if (!api) return;
     await api.session.delete(sessionId);
     const nextSessions = currentProject ? await api.session.list(currentProject.path) : [];
     dispatch(setSessions(nextSessions));
     dispatch(setArtifacts(await listProjectArtifacts(api, nextSessions)));
-  }
+  }, [api, currentProject, dispatch]);
 
-  async function previewArtifact(artifactId: string): Promise<void> {
+  const previewArtifact = useCallback(async (artifactId: string): Promise<void> => {
     if (!api) return;
     setSelectedArtifactId(artifactId);
     setPreviewError("");
@@ -205,21 +199,28 @@ export function App(): JSX.Element {
       setPreview(undefined);
       setPreviewError(getErrorMessage(error));
     }
-  }
+  }, [api]);
 
   async function openArtifactHistory(): Promise<void> {
-    if (!api) return;
+    if (!api || !currentProject) return;
+    const sessions = await api.session.list(currentProject.path);
     dispatch(setArtifacts(await listProjectArtifacts(api, sessions)));
     dispatch(setArtifactsOpen(true));
   }
 
-  async function savePreviewContent(path: string, content: string): Promise<void> {
+  const savePreviewContent = useCallback(async (path: string, content: string): Promise<void> => {
     if (!api) return;
     await api.file.writeText({ path, content });
     setPreview((current) =>
       current && current.path === path ? { ...current, text: content, size: new Blob([content]).size } : current
     );
-  }
+  }, [api]);
+
+  const handleAppError = useCallback((message: string): void => setAppError(message), []);
+  const handlePreviewArtifact = useCallback((artifactId: string): void => {
+    void previewArtifact(artifactId);
+  }, [previewArtifact]);
+  const toggleMarkdownMode = useCallback((): void => setMdEditMode((value) => !value), []);
 
   if (!api) {
     return <MissingBridge detail={bridge.error} />;
@@ -252,10 +253,9 @@ export function App(): JSX.Element {
 
   return (
     <Tooltip.Provider delayDuration={350}>
-      <div className={activeSidePanel === "components" ? "workbench-shell with-component-library" : "workbench-shell"}>
+      <div ref={workbenchRef} className="workbench-shell">
         <ActivityBar
           metadata={metadata}
-          artifactCount={artifacts.length}
           hasProject={Boolean(currentProject)}
           onCreateConversation={createConversation}
           onOpenProject={() => void openProject()}
@@ -264,69 +264,62 @@ export function App(): JSX.Element {
           onOpenArtifacts={() => void openArtifactHistory()}
           onOpenSettings={() => dispatch(setSettingsOpen(true))}
           activeSection={activeSidePanel}
-          onOpenExplorer={() => setActiveSidePanel("explorer")}
-          onOpenComponentLibrary={() => setActiveSidePanel("components")}
+          onOpenExplorer={() =>
+            setActiveSidePanel((current) => (current === "explorer" ? undefined : "explorer"))
+          }
+          onOpenComponentLibrary={() =>
+            setActiveSidePanel((current) => (current === "components" ? undefined : "components"))
+          }
         />
-        {activeSidePanel === "components" ? (
-          <ComponentLibraryPanel onSelectComponent={requestBuiltInComponent} />
-        ) : null}
         <main className="editor-area">
           <EditorHeader
             preview={preview}
             projectPath={currentProject.path}
             dirty={previewDirty}
             mdEditMode={mdEditMode}
-            onToggleMdMode={() => setMdEditMode((value) => !value)}
+            onToggleMdMode={toggleMarkdownMode}
             onClose={closePreview}
           />
           <EditorWorkspace
             api={api}
             preview={preview}
             previewError={previewError}
-            artifacts={artifacts}
             selectedArtifactId={selectedArtifactId}
             theme={settings?.theme ?? "light"}
             mdMode={mdEditMode ? "edit" : "preview"}
             componentRequest={componentRequest}
-            componentLibraryOpen={activeSidePanel === "components"}
-            onPreviewArtifact={(artifactId) => void previewArtifact(artifactId)}
-            onSaveContent={(path, content) => savePreviewContent(path, content)}
+            sidebarMode={activeSidePanel}
+            onSelectBuiltInComponent={requestBuiltInComponent}
+            onPreviewArtifact={handlePreviewArtifact}
+            onSaveContent={savePreviewContent}
             onDirtyChange={setPreviewDirty}
-            onError={(message) => setAppError(message)}
+            onError={handleAppError}
           />
         </main>
-        <aside className="chat-panel">
-          <ChatPanelHeader
-            sessions={sessions}
-            currentSession={currentSession}
-            currentSessionId={currentSessionId}
-            settings={settings}
-            onCreateConversation={createConversation}
-            onSelectSession={(sessionId) => dispatch(setCurrentSession(sessionId))}
-            onRenameSession={(session) => setRenameTarget(session)}
-            onDeleteSession={(session) => setDeleteTarget(session)}
-          />
-          <MessagePane
-            api={api}
-            session={currentSession}
-            onPreviewArtifact={(artifactId) => void previewArtifact(artifactId)}
-            onError={(message) => setAppError(message)}
-          />
-          <Composer
-            api={api}
-            session={currentSession}
-            value={composer}
-            attachments={pendingAttachments}
-            onChange={(value) => dispatch(setComposer(value))}
-            onAddAttachments={(items) => dispatch(addAttachments({ attachments: items }))}
-            onRemoveAttachment={(id) => {
-              dispatch(removeAttachment(id));
-              void api.attachment.remove(id);
-            }}
-            onSent={(sessionId) => dispatch(clearComposer(sessionId))}
-            onError={(message) => setAppError(message)}
-          />
-        </aside>
+        <div
+          className="chat-panel-resizer"
+          role="separator"
+          aria-label="调整对话面板宽度"
+          aria-orientation="vertical"
+          aria-valuemin={chatPanelResize.minWidth}
+          aria-valuemax={chatPanelResize.maxWidth}
+          aria-valuenow={chatPanelResize.width}
+          aria-valuetext={`${chatPanelResize.width} 像素`}
+          tabIndex={0}
+          onKeyDown={chatPanelResize.onKeyDown}
+          onPointerCancel={chatPanelResize.onPointerCancel}
+          onPointerDown={chatPanelResize.onPointerDown}
+          onPointerMove={chatPanelResize.onPointerMove}
+          onPointerUp={chatPanelResize.onPointerUp}
+        />
+        <ChatWorkspace
+          api={api}
+          onCreateConversation={createConversation}
+          onPreviewArtifact={handlePreviewArtifact}
+          onError={handleAppError}
+          onRenameSession={renameConversation}
+          onDeleteSession={deleteConversation}
+        />
         {settingsOpen ? (
           <SettingsPanel
             api={api}
@@ -337,31 +330,7 @@ export function App(): JSX.Element {
           />
         ) : null}
         {artifactsOpen ? (
-          <ArtifactHistoryPanel
-            artifacts={artifacts}
-            sessions={sessions}
-            onClose={() => dispatch(setArtifactsOpen(false))}
-            api={api}
-            onError={(message) => setAppError(message)}
-            onPreviewArtifact={(artifactId) => {
-              dispatch(setArtifactsOpen(false));
-              void previewArtifact(artifactId);
-            }}
-          />
-        ) : null}
-        {renameTarget ? (
-          <RenameSessionDialog
-            session={renameTarget}
-            onClose={() => setRenameTarget(undefined)}
-            onRename={(sessionId, title) => renameConversation(sessionId, title)}
-          />
-        ) : null}
-        {deleteTarget ? (
-          <DeleteSessionDialog
-            session={deleteTarget}
-            onClose={() => setDeleteTarget(undefined)}
-            onDelete={(sessionId) => deleteConversation(sessionId)}
-          />
+          <ArtifactHistoryDialog api={api} onError={handleAppError} onPreviewArtifact={handlePreviewArtifact} />
         ) : null}
         {appError ? <AppNotice message={appError} onClose={() => setAppError("")} /> : null}
       </div>

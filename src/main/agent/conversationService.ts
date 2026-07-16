@@ -30,7 +30,7 @@ import {
 } from "./agentRuntime";
 import { findBundledPythonRuntime } from "../runtime/bundledRuntime";
 import type { SessionMemoryEntry } from "../projects/sessionPersistence";
-import type { SceneCommandInput, SceneCommandResult } from "../../shared/modeling3d/sceneContracts";
+import type { SceneCommandInput, SceneCommandResult, SceneSnapshot } from "../../shared/modeling3d/sceneContracts";
 
 const MAX_DOCUMENT_CONTEXT_CHARS = 24000;
 const MAX_SESSION_MEMORY_CHARS = 90000;
@@ -56,6 +56,7 @@ export function createConversationService(options: {
   createId: (prefix: string) => string;
   now: () => string;
   loadEnv: () => AppSettings;
+  getSceneSnapshot: () => SceneSnapshot;
   executeSceneCommand: (command: SceneCommandInput) => SceneCommandResult;
 }) {
   const abortControllers = new Map<string, AbortController>();
@@ -333,10 +334,10 @@ export function createConversationService(options: {
       "资料不足时先总结已知信息、指出缺口并继续澄清；不要在缺少房间尺寸、层高、门窗位置、功能分区或风格要求时直接给出确定方案。",
       "每当用户补充关键设计背景，优先调用 remember_project 沉淀已确认事实和待补充信息。项目档案应覆盖场景类型、空间尺寸、功能需求、门窗洞口、家具陈设、材质偏好、楼层关系和交付要求。",
       "事实证据规则：只有用户明确提供、图片/工具明确读到、或 remember_project 已记录为“已确认事实”的内容，才能在设计结论中写成确定事实；推断、经验规则和模型猜测必须标注为假设或建议。",
-      "设计规则：使用 create_site / create_building / create_level / create_wall / place_door / place_window / create_slab / create_zone / place_item 等工具构建场景；需要修改时用 update_node；需要导出时用 export_scene 生成 GLB / STL / OBJ / JSON 文件。",
-      "图片参考规则：当用户上传房间照片、草图或参考图时，如果当前 Chat 模型已配置支持图像输入，图片会随本轮用户消息直接提供给你；否则必须先调用 read_image 读取图片内容。可以调用 image_to_3d 将参考图转换为 3D 模型作为设计参考。",
-      "交付规则：3D 场景创建或修改后，视需要调用 export_scene 导出产物；生成文件后说明路径、格式、内容和下一步可验证方式。",
-      "工具调用由你按任务需要自主决策：寒暄、普通问答和资料澄清阶段不要默认创建节点；只有明确的设计意图、参考图片分析、沉淀项目档案、生成或导出模型确有需要时，才调用对应工具。",
+      "当前建模能力仅支持建筑墙体：get_scene 读取当前楼层和墙体；create_wall 创建墙体；update_wall 修改墙体；delete_node 删除墙体。修改或删除已有墙体前必须先调用 get_scene，并使用其返回的节点 ID。所有坐标单位为米，墙体必须创建在 level_default 下。",
+      "能力边界：当前不能创建门窗、楼板、屋顶、家具或通用 Mesh，不能导入/导出 GLB、OBJ、STL，也不能调用未在工具列表中提供的工具。遇到这些请求时，说明当前限制并给出所需的建筑参数，不得虚构已经完成的模型或导出文件。",
+      "图片参考规则：当用户上传房间照片、草图或参考图时，如果当前 Chat 模型已配置支持图像输入，图片会随本轮用户消息直接提供给你；否则调用 read_image 提取可见的墙线、尺寸或不确定项。图片只作为建筑建议，不能直接生成通用 3D 模型。",
+      "工具调用由你按任务需要自主决策：寒暄、普通问答和资料澄清阶段不要默认创建节点；只有用户明确要求创建或修改墙体且参数充分时才调用场景工具。场景命令成功后，说明受影响的节点 ID 和场景版本，Pascal 视图会自动同步。",
       "回复使用中文 Markdown，结论要区分事实、设计结果、假设和建议；必要时给出缺失资料清单。",
       `当前时间：${getCurrentTimeText()}`
     ].join("\n");
@@ -489,6 +490,7 @@ export function createConversationService(options: {
       formatSessionMemory,
       getSessionReadableFiles,
       getBundledPythonRuntime: () => findBundledPythonRuntime({ rootDir: options.projectRootDir, resourcesDir: options.resourcesDir }),
+      getSceneSnapshot: options.getSceneSnapshot,
       executeSceneCommand: options.executeSceneCommand,
       createArtifact: (sessionId, filePath) => {
         createArtifact(sessionId, filePath);

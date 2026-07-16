@@ -2,16 +2,17 @@
 import {
   BrickWall,
   Building2,
+  ChevronDown,
+  ChevronRight,
   Layers3,
-  Orbit,
-  Plus,
   Save,
-  Square,
   Trash2
 } from "lucide-react";
-import { useEffect, useState, type FormEvent, type JSX } from "react";
+import { memo, useEffect, useState, type FormEvent, type JSX } from "react";
 import type { SceneCommandInput, SceneSnapshot, SceneWallNode, WallMaterialPreset } from "../../../../../shared/modeling3d/sceneContracts";
 import { TooltipButton } from "../../../shared/TooltipButton";
+import { SceneToolbar } from "./SceneToolbar";
+import { WorkspaceSidePanel } from "./WorkspaceSidePanel";
 
 const MATERIAL_OPTIONS: Array<{ value: WallMaterialPreset; label: string }> = [
   { value: "plaster", label: "抹灰" },
@@ -25,7 +26,7 @@ const MATERIAL_OPTIONS: Array<{ value: WallMaterialPreset; label: string }> = [
   { value: "white", label: "白色" }
 ];
 
-export function SceneNavigationPanel({
+export const SceneNavigationPanel = memo(function SceneNavigationPanel({
   snapshot,
   selectedWallId,
   onSelectWall
@@ -35,11 +36,11 @@ export function SceneNavigationPanel({
   onSelectWall: (id: string) => void;
 }): JSX.Element {
   return (
-    <aside className="scene-navigation-panel" aria-label="编辑器导航">
+    <WorkspaceSidePanel label="编辑器导航" className="scene-navigation-panel">
       <SceneTreeContent snapshot={snapshot} selectedWallId={selectedWallId} onSelectWall={onSelectWall} />
-    </aside>
+    </WorkspaceSidePanel>
   );
-}
+});
 
 function SceneTreeContent({
   snapshot,
@@ -50,75 +51,92 @@ function SceneTreeContent({
   selectedWallId?: string;
   onSelectWall: (id: string) => void;
 }): JSX.Element {
+  const [sceneOpen, setSceneOpen] = useState(true);
+  const [buildingOpen, setBuildingOpen] = useState(true);
+  const [levelOpen, setLevelOpen] = useState(true);
+  const [wallsOpen, setWallsOpen] = useState(true);
   const level = Object.values(snapshot.nodes).find((node) => node.type === "level");
   const walls = Object.values(snapshot.nodes).filter((node): node is SceneWallNode => node.type === "wall");
 
   return (
     <div className="scene-tree-panel" aria-label="场景树">
-      <div className="scene-panel-heading">
+      <button
+        type="button"
+        className="scene-panel-heading scene-tree-toggle"
+        aria-expanded={sceneOpen}
+        aria-controls="scene-tree-root"
+        onClick={() => setSceneOpen((open) => !open)}
+      >
+        {sceneOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
         <Layers3 size={16} />
         <h2>场景</h2>
-      </div>
-      <div className="scene-tree-root">
-        <span><Building2 size={15} /> 主建筑</span>
-        <span className="scene-tree-level"><Layers3 size={15} /> {level?.name ?? "楼层"}</span>
-        <div className="scene-tree-group">
-          <span className="scene-tree-group-title"><BrickWall size={15} /> 墙体</span>
-          {walls.map((wall) => (
-            <button
-              key={wall.id}
-              type="button"
-              className={wall.id === selectedWallId ? "scene-tree-node selected" : "scene-tree-node"}
-              aria-pressed={wall.id === selectedWallId}
-              onClick={() => onSelectWall(wall.id)}
-            >
-              <BrickWall size={14} />
-              <span>{wall.name}</span>
-            </button>
-          ))}
+      </button>
+      {sceneOpen ? (
+        <div id="scene-tree-root" className="scene-tree-root">
+          <button
+            type="button"
+            className="scene-tree-toggle"
+            aria-expanded={buildingOpen}
+            aria-controls="scene-tree-building"
+            onClick={() => setBuildingOpen((open) => !open)}
+          >
+            {buildingOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            <Building2 size={15} />
+            <span>主建筑</span>
+          </button>
+          {buildingOpen ? (
+            <div id="scene-tree-building" className="scene-tree-branch">
+              <button
+                type="button"
+                className="scene-tree-toggle"
+                aria-expanded={levelOpen}
+                aria-controls="scene-tree-level"
+                onClick={() => setLevelOpen((open) => !open)}
+              >
+                {levelOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                <Layers3 size={15} />
+                <span>{level?.name ?? "楼层"}</span>
+              </button>
+              {levelOpen ? (
+                <div id="scene-tree-level" className="scene-tree-branch">
+                  <button
+                    type="button"
+                    className="scene-tree-toggle"
+                    aria-expanded={wallsOpen}
+                    aria-controls="scene-tree-walls"
+                    onClick={() => setWallsOpen((open) => !open)}
+                  >
+                    {wallsOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                    <BrickWall size={15} />
+                    <span>墙体</span>
+                  </button>
+                  {wallsOpen ? (
+                    <div id="scene-tree-walls" className="scene-tree-group">
+                      {walls.map((wall) => (
+                        <button
+                          key={wall.id}
+                          type="button"
+                          className={wall.id === selectedWallId ? "scene-tree-node selected" : "scene-tree-node"}
+                          aria-pressed={wall.id === selectedWallId}
+                          onClick={() => onSelectWall(wall.id)}
+                        >
+                          <BrickWall size={14} />
+                          <span>{wall.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
-      </div>
+      ) : null}
     </div>
   );
 }
 
-export function SceneToolbar({
-  onCreateWall,
-  onPascalCameraPreset,
-  componentLibraryOpen
-}: {
-  onCreateWall: () => void;
-  onPascalCameraPreset: (preset: "free" | "top") => void;
-  componentLibraryOpen: boolean;
-}): JSX.Element {
-  return (
-    <header className={componentLibraryOpen ? "scene-editor-toolbar library-mode" : "scene-editor-toolbar"}>
-      {componentLibraryOpen ? null : (
-        <div className="scene-toolbar-document">
-          <strong>空间编辑器</strong>
-          <span>主建筑 / 首层</span>
-        </div>
-      )}
-      <div className="scene-toolbar-tools" role="toolbar" aria-label="建模工具">
-        <span className="scene-preview-label">Pascal 建筑视图</span>
-      </div>
-      <div className="scene-toolbar-viewport" role="toolbar" aria-label="视图控制">
-        <TooltipButton label="自由视角" className="scene-tool-button" onClick={() => onPascalCameraPreset("free")}>
-          <Orbit size={17} />
-        </TooltipButton>
-        <TooltipButton label="顶视图" className="scene-tool-button" onClick={() => onPascalCameraPreset("top")}>
-          <Square size={17} />
-        </TooltipButton>
-        <button type="button" className="primary-action scene-create-wall-action" onClick={onCreateWall}>
-          <Plus size={16} />
-          参数创建
-        </button>
-      </div>
-    </header>
-  );
-}
-
-export function WallInspector({
+export const WallInspector = memo(function WallInspector({
   wall,
   onCreate,
   onUpdate,
@@ -154,12 +172,15 @@ export function WallInspector({
 
   return (
     <aside className="scene-inspector" aria-label={wall ? "墙体属性" : "新建墙体"}>
-      <div className="scene-panel-heading scene-inspector-heading">
-        <div><BrickWall size={16} /> <h2>{wall ? "墙体属性" : "新建墙体"}</h2></div>
+      <SceneToolbar
+        title={wall ? "墙体属性" : "新建墙体"}
+        icon={BrickWall}
+        className="scene-inspector-heading"
+      >
         <TooltipButton label="关闭属性面板" className="scene-inspector-close" onClick={onClose}>
           <span aria-hidden="true">×</span>
         </TooltipButton>
-      </div>
+      </SceneToolbar>
       <form className="wall-property-form" onSubmit={submit}>
         <label>
           <span>名称</span>
@@ -208,7 +229,7 @@ export function WallInspector({
       </form>
     </aside>
   );
-}
+});
 
 type WallDraft = {
   name: string;

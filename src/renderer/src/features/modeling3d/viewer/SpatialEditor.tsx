@@ -1,10 +1,14 @@
 /** Coordinates scene commands, snapshots, and the renderer-side Pascal viewport. */
-import { lazy, Suspense, useEffect, useMemo, useState, type JSX } from "react";
+import { Blocks, Layers3, Orbit, Plus, Square } from "lucide-react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type JSX } from "react";
 import type { ArchAgentApi } from "../../../../../shared/types";
 import type { SceneCommandInput, SceneSnapshot, SceneWallNode } from "../../../../../shared/modeling3d/sceneContracts";
 import { getErrorMessage } from "../../../platform/bridge";
-import { SceneNavigationPanel, SceneToolbar, WallInspector } from "../editor/SceneEditorPanels";
-import type { ComponentLibraryRequest } from "../editor/componentLibraryContracts";
+import { TooltipButton } from "../../../shared/TooltipButton";
+import { ComponentLibraryPanel } from "../editor/ComponentLibraryPanel";
+import { SceneNavigationPanel, WallInspector } from "../editor/SceneEditorPanels";
+import type { BuiltInComponentId, ComponentLibraryRequest } from "../editor/componentLibraryContracts";
+import { SceneToolbar } from "../editor/SceneToolbar";
 import { PascalPreviewBoundary } from "./PascalPreviewBoundary";
 import type { PascalCameraPreset } from "./PascalViewer";
 
@@ -13,11 +17,13 @@ const PascalViewer = lazy(() => import("./PascalViewer"));
 export function SpatialEditor({
   api,
   componentRequest,
-  componentLibraryOpen
+  sidebarMode,
+  onSelectBuiltInComponent
 }: {
   api: ArchAgentApi;
   componentRequest?: ComponentLibraryRequest;
-  componentLibraryOpen: boolean;
+  sidebarMode?: "explorer" | "components";
+  onSelectBuiltInComponent: (componentId: BuiltInComponentId) => void;
 }): JSX.Element {
   const [snapshot, setSnapshot] = useState<SceneSnapshot>();
   const [selectedWallId, setSelectedWallId] = useState<string>();
@@ -50,11 +56,29 @@ export function SpatialEditor({
     return node?.type === "wall" ? node : undefined;
   }, [selectedWallId, snapshot]);
 
+  const openWallCreation = useCallback((): void => {
+    setSelectedWallId(undefined);
+    setPanelMode("create-wall");
+  }, []);
+
+  const selectWall = useCallback((id?: string): void => {
+    setSelectedWallId(id);
+    setPanelMode(id ? "selected" : "none");
+  }, []);
+
+  const closeInspector = useCallback((): void => {
+    selectWall(undefined);
+  }, [selectWall]);
+
   useEffect(() => {
     if (componentRequest?.componentId === "wall") openWallCreation();
-  }, [componentRequest?.revision]);
+  }, [componentRequest?.revision, openWallCreation]);
 
-  async function execute(command: SceneCommandInput): Promise<void> {
+  const handlePascalError = useCallback((error: string): void => {
+    setMessage(`三维场景同步失败：${error}`);
+  }, []);
+
+  const execute = useCallback(async (command: SceneCommandInput): Promise<void> => {
     try {
       const result = await api.scene.execute(command);
       if (!result.accepted) {
@@ -74,41 +98,59 @@ export function SpatialEditor({
     } catch (error) {
       setMessage(`场景操作失败：${getErrorMessage(error)}`);
     }
-  }
+  }, [api]);
+
+  const createWall = useCallback((command: Extract<SceneCommandInput, { type: "wall.create" }>): void => {
+    void execute(command);
+  }, [execute]);
+
+  const updateWall = useCallback((command: Extract<SceneCommandInput, { type: "wall.update" }>): void => {
+    void execute(command);
+  }, [execute]);
+
+  const deleteWall = useCallback((id: string): void => {
+    void execute({ type: "node.delete", id });
+  }, [execute]);
 
   if (!snapshot) {
     return <div className="spatial-editor spatial-editor-fallback"><strong>正在加载空间场景…</strong></div>;
   }
 
   const showInspector = panelMode !== "none";
-
-  function selectWall(id?: string): void {
-    setSelectedWallId(id);
-    setPanelMode(id ? "selected" : "none");
-  }
-
-  function openWallCreation(): void {
-    setSelectedWallId(undefined);
-    setPanelMode("create-wall");
-  }
+  const componentLibraryOpen = sidebarMode === "components";
+  const sceneNavigationOpen = sidebarMode === "explorer";
 
   return (
     <section className="spatial-editor">
-      <SceneToolbar
-        onCreateWall={openWallCreation}
-        onPascalCameraPreset={setPascalCameraPreset}
-        componentLibraryOpen={componentLibraryOpen}
-      />
+      <SceneToolbar title={componentLibraryOpen ? "构件库" : "空间编辑器"} icon={componentLibraryOpen ? Blocks : Layers3}>
+        {componentLibraryOpen ? null : (
+          <div className="scene-toolbar-viewport" role="toolbar" aria-label="视图控制">
+            <TooltipButton label="自由视角" className="scene-tool-button" onClick={() => setPascalCameraPreset("free")}>
+              <Orbit size={17} />
+            </TooltipButton>
+            <TooltipButton label="顶视图" className="scene-tool-button" onClick={() => setPascalCameraPreset("top")}>
+              <Square size={17} />
+            </TooltipButton>
+            <button type="button" className="primary-action scene-create-wall-action" onClick={openWallCreation}>
+              <Plus size={16} />
+              参数创建
+            </button>
+          </div>
+        )}
+      </SceneToolbar>
       {message ? <div className="scene-editor-message" role="status">{message}</div> : null}
-      <div className={`scene-editor-layout${showInspector ? " has-inspector" : ""}${componentLibraryOpen ? " no-navigation" : ""}`}>
-        {componentLibraryOpen ? null : <SceneNavigationPanel snapshot={snapshot} selectedWallId={selectedWallId} onSelectWall={selectWall} />}
+      <div
+        className={`scene-editor-layout${showInspector ? " has-inspector" : ""}${componentLibraryOpen ? " component-library-mode" : ""}${sceneNavigationOpen ? "" : " no-navigation"}`}
+      >
+        {componentLibraryOpen ? <ComponentLibraryPanel onSelectComponent={onSelectBuiltInComponent} /> : null}
+        {sceneNavigationOpen ? <SceneNavigationPanel snapshot={snapshot} selectedWallId={selectedWallId} onSelectWall={selectWall} /> : null}
         <div className="scene-viewport">
           <PascalPreviewBoundary key={pascalPreviewKey} onRetry={() => setPascalPreviewKey((key) => key + 1)}>
-            <Suspense fallback={<div className="spatial-editor-fallback">正在加载 Pascal 建筑视图…</div>}>
+            <Suspense fallback={<div className="spatial-editor-fallback">正在加载三维视图…</div>}>
               <PascalViewer
                 snapshot={snapshot}
                 cameraPreset={pascalCameraPreset}
-                onError={(error) => setMessage(`Pascal 场景同步失败：${error}`)}
+                onError={handlePascalError}
               />
             </Suspense>
           </PascalPreviewBoundary>
@@ -116,10 +158,10 @@ export function SpatialEditor({
         {showInspector ? (
           <WallInspector
             wall={selectedWall}
-            onCreate={(command) => void execute(command)}
-            onUpdate={(command) => void execute(command)}
-            onDelete={(id) => void execute({ type: "node.delete", id })}
-            onClose={() => selectWall(undefined)}
+            onCreate={createWall}
+            onUpdate={updateWall}
+            onDelete={deleteWall}
+            onClose={closeInspector}
           />
         ) : null}
       </div>

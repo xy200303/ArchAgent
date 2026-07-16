@@ -12,6 +12,7 @@ export type BuiltinToolName =
   | "web_search"
   | "exec_bash"
   | "send_file"
+  | "get_scene"
   | "create_wall"
   | "update_wall"
   | "delete_node";

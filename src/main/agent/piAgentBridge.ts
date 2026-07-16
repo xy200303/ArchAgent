@@ -32,7 +32,7 @@ import type { AppSettings, StreamItem } from "../../shared/types";
 export { convertJsonSchemaToTypeBoxSchema } from "./piToolSchema";
 
 const ARCH_AGENT_PROVIDER = "archagent-hy3";
-const PI_TOOL_SCHEMA_VERSION = 7;
+const PI_TOOL_SCHEMA_VERSION = 8;
 const ZERO_USAGE = {
   input: 0,
   output: 0,
@@ -547,6 +547,7 @@ function createArchAgentPiTools(
             allowedReadFiles: host.getSessionReadableFiles(sessionId),
             execBashEnabled: activeSettings.agent.execBashEnabled,
             bundledPythonRuntime: host.getBundledPythonRuntime(),
+            getSceneSnapshot: host.getSceneSnapshot,
             executeSceneCommand: host.executeSceneCommand
           });
 

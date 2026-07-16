@@ -68,7 +68,7 @@ textarea:focus-visible,
 /* Layout: workbench shell */
 .workbench-shell {
   display: grid;
-  grid-template-columns: 54px minmax(420px, 1fr) minmax(360px, 440px);
+  grid-template-columns: 54px minmax(420px, 1fr) 8px minmax(320px, var(--chat-panel-width, 420px));
   width: 100%;
   height: 100%;
   min-height: 0;
@@ -77,18 +77,53 @@ textarea:focus-visible,
   color: var(--color-ink);
 }
 
-.workbench-shell.with-component-library {
-  grid-template-columns: 54px minmax(212px, 248px) minmax(360px, 1fr) minmax(330px, 440px);
-}
-
 @media (max-width: 1280px) {
   .workbench-shell {
-    grid-template-columns: 54px minmax(360px, 1fr) minmax(330px, 390px);
+    grid-template-columns: 54px minmax(360px, 1fr) 8px minmax(320px, var(--chat-panel-width, 420px));
   }
 
-  .workbench-shell.with-component-library {
-    grid-template-columns: 54px minmax(200px, 220px) minmax(320px, 1fr) minmax(300px, 360px);
-  }
+}
+
+.chat-panel-resizer {
+  position: relative;
+  z-index: 2;
+  min-height: 0;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+
+.chat-panel-resizer::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: var(--fluent-color-neutral-stroke2);
+  content: "";
+  transition: background-color 160ms ease, width 160ms ease;
+}
+
+.chat-panel-resizer:hover::before,
+.chat-panel-resizer:focus-visible::before,
+body.is-resizing-chat-panel .chat-panel-resizer::before {
+  width: 2px;
+  background: var(--fluent-color-brand-stroke);
+}
+
+.chat-panel-resizer:focus-visible::after {
+  position: absolute;
+  inset: 0;
+  outline: 2px solid var(--fluent-color-brand-stroke);
+  outline-offset: -2px;
+  content: "";
+}
+
+body.is-resizing-chat-panel,
+body.is-resizing-chat-panel * {
+  cursor: col-resize !important;
+  user-select: none !important;
 }
 
 /* Activity bar */
@@ -176,61 +211,43 @@ textarea:focus-visible,
 }
 
 /* Built-in component library */
-.component-library-sidebar {
-  min-width: 0;
-  min-height: 0;
-  overflow: auto;
-  border-right: 1px solid var(--fluent-color-neutral-stroke2);
-  background: var(--fluent-color-neutral-background2);
-  color: var(--fluent-color-neutral-foreground1);
-}
-
-.component-library-header {
-  display: flex;
-  align-items: center;
-  gap: var(--fluent-spacing-s);
-  min-height: 52px;
-  border-bottom: 1px solid var(--fluent-color-neutral-stroke2);
-  padding: 0 var(--fluent-spacing-m);
-}
-
-.component-library-header svg {
-  color: var(--fluent-color-brand-foreground1);
-}
-
-.component-library-header h2,
 .component-library-section h3 {
   margin: 0;
 }
 
-.component-library-header h2 {
-  font-size: 13px;
-  font-weight: 650;
-}
-
 .component-library-section {
   display: grid;
-  gap: var(--fluent-spacing-s);
-  padding: var(--fluent-spacing-m);
+  align-content: start;
+  min-height: 0;
+  flex: 1;
+  gap: var(--fluent-spacing-m);
+  overflow: auto;
+  padding: var(--fluent-spacing-l);
 }
 
 .component-library-section h3 {
   color: var(--fluent-color-neutral-foreground3);
   font-size: 11px;
-  font-weight: 650;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .component-library-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--fluent-spacing-s);
 }
 
 .component-library-item {
   display: grid;
-  justify-items: start;
-  gap: 5px;
-  min-height: 92px;
+  grid-template-columns: 28px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--fluent-spacing-m);
+  row-gap: 2px;
+  min-height: 70px;
+  align-self: start;
   border: 1px solid var(--fluent-color-neutral-stroke1);
   border-radius: var(--fluent-radius-small);
   background: var(--fluent-color-neutral-background1);
@@ -247,12 +264,14 @@ textarea:focus-visible,
 }
 
 .component-library-item svg {
+  grid-row: 1 / span 2;
   color: var(--fluent-color-brand-foreground1);
 }
 
 .component-library-item span {
+  align-self: end;
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 700;
 }
 
 .component-library-item small,
@@ -262,9 +281,14 @@ textarea:focus-visible,
   line-height: 1.45;
 }
 
+.component-library-item small {
+  align-self: start;
+}
+
 .component-library-note {
   margin: 0;
-  padding: 0 var(--fluent-spacing-m) var(--fluent-spacing-m);
+  border-top: 1px solid var(--fluent-color-neutral-stroke2);
+  padding: var(--fluent-spacing-m) var(--fluent-spacing-l);
 }
 
 /* Workbench menu dropdowns */

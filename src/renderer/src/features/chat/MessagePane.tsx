@@ -1,19 +1,18 @@
 /** Chat transcript rendering, process grouping, tool details, and artifact actions. */
-import { useEffect, useRef, type JSX } from "react";
+import { memo, useEffect, useMemo, useRef, type JSX } from "react";
 import * as Collapsible from "@radix-ui/react-collapsible";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as ScrollArea from "@radix-ui/react-scroll-area";
 import { IncremarkContent } from "@incremark/react";
 import {
-  Activity,
-  BarChart3,
   Bot,
+  BrickWall,
   CheckCircle2,
+  CircleAlert,
   ChevronDown,
   Database,
   Eye,
   File,
-  FileSpreadsheet,
   FolderOpen,
   Image,
   Loader2,
@@ -26,12 +25,11 @@ import type { ArchAgentApi, ChatSession, StreamItem } from "../../../../shared/t
 import { getErrorMessage } from "../../platform/bridge";
 import {
   groupStreamItemsForDisplay,
-  orderStreamItemsForDisplay,
   type ProcessStreamItem
 } from "./streamOrdering";
 import { formatToolPreview, isImageKind } from "../../shared/presentation";
 
-export function MessagePane({
+export const MessagePane = memo(function MessagePane({
   api,
   session,
   onPreviewArtifact,
@@ -43,15 +41,17 @@ export function MessagePane({
   onError: (message: string) => void;
 }): JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const orderedItems = session ? orderStreamItemsForDisplay(session.items) : [];
-  const displayBlocks = session ? groupStreamItemsForDisplay(session.items) : [];
+  const displayBlocks = useMemo(() => (session ? groupStreamItemsForDisplay(session.items) : []), [session?.items]);
   const shouldShowPendingThinking = Boolean(
-    session?.status === "running" && !orderedItems.some(isUnfinishedAssistantMessage)
+    session?.status === "running" && !session.items.some(isUnfinishedAssistantMessage)
   );
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [session?.items.length, session?.items.at(-1)]);
+    scrollRef.current?.scrollTo({
+      top: scrollRef.current.scrollHeight,
+      behavior: session?.status === "running" ? "auto" : "smooth"
+    });
+  }, [session?.items.length, session?.items.at(-1), session?.status]);
 
   return (
     <ScrollArea.Root className="message-scroll">
@@ -65,16 +65,16 @@ export function MessagePane({
             <span>描述你想要的房间或建筑场景，上传参考图片，Agent 会帮你在 3D 工作台中建模、预览并导出模型。</span>
             <div className="empty-capabilities" aria-label="分析能力">
               <span>
-                <FileSpreadsheet size={14} />
-                3D 建模
+                <BrickWall size={14} />
+                建筑墙体
               </span>
               <span>
-                <Activity size={14} />
-                实时预览
+                <Eye size={14} />
+                Pascal 预览
               </span>
               <span>
-                <BarChart3 size={14} />
-                模型导出
+                <Image size={14} />
+                参考图识别
               </span>
             </div>
           </div>
@@ -108,7 +108,7 @@ export function MessagePane({
       </ScrollArea.Scrollbar>
     </ScrollArea.Root>
   );
-}
+});
 
 function isUnfinishedAssistantMessage(item: StreamItem): boolean {
   return item.kind === "message" && item.role === "assistant" && !item.isFinished;
@@ -127,17 +127,19 @@ function PendingAssistantRow(): JSX.Element {
   );
 }
 
-function ProcessCard({
-  api,
-  items,
-  onPreviewArtifact,
-  onError
-}: {
+interface ProcessCardProps {
   api: ArchAgentApi;
   items: ProcessStreamItem[];
   onPreviewArtifact: (artifactId: string) => void;
   onError: (message: string) => void;
-}): JSX.Element {
+}
+
+const ProcessCard = memo(function ProcessCard({
+  api,
+  items,
+  onPreviewArtifact,
+  onError
+}: ProcessCardProps): JSX.Element {
   const status = resolveProcessCardStatus(items);
 
   return (
@@ -167,6 +169,18 @@ function ProcessCard({
       </Collapsible.Content>
     </Collapsible.Root>
   );
+}, areProcessCardPropsEqual);
+
+function areProcessCardPropsEqual(previous: ProcessCardProps, next: ProcessCardProps): boolean {
+  if (
+    previous.api !== next.api ||
+    previous.onPreviewArtifact !== next.onPreviewArtifact ||
+    previous.onError !== next.onError ||
+    previous.items.length !== next.items.length
+  ) {
+    return false;
+  }
+  return previous.items.every((item, index) => item === next.items[index]);
 }
 
 function ProcessCardStatusIcon({ status }: { status: "running" | "success" | "failed" }): JSX.Element {
@@ -208,7 +222,7 @@ function compactInlineText(value: string, maxLength = 48): string {
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
 }
 
-function StreamRow({
+const StreamRow = memo(function StreamRow({
   api,
   item,
   onPreviewArtifact,
@@ -238,12 +252,15 @@ function StreamRow({
     }
 
     const isUser = item.role === "user";
+    const failure = item.role === "assistant" && item.isFinished ? describeAgentFailure(item.content) : undefined;
     return (
       <article className={`message-row ${item.role}`}>
         {!isUser ? <div className="avatar"><Bot size={15} /></div> : null}
         <div className="message-body">
           {item.role === "assistant" ? (
-            item.content.trim() ? (
+            failure ? (
+              <AgentFailureCard failure={failure} />
+            ) : item.content.trim() ? (
               <IncremarkContent content={item.content} isFinished={item.isFinished} />
             ) : item.isFinished ? (
               null
@@ -284,6 +301,35 @@ function StreamRow({
       <span>{item.title}</span>
       {item.detail ? <small>{item.detail}</small> : null}
     </div>
+  );
+});
+
+function describeAgentFailure(content: string): { summary: string; details: string } | undefined {
+  const normalized = content.replace(/\s+/g, " ").trim();
+  if (!/生成中断|模型返回错误|\b(?:4\d\d|5\d\d)\b|does not exist|access to it/i.test(normalized)) return undefined;
+
+  const model = normalized.match(/(?:the\s+model|模型)\s*[“"']?([\w.-]+)/i)?.[1];
+  const summary = model && /does not exist|access to it|\b404\b/i.test(normalized)
+    ? `模型“${model}”不可用，或当前密钥没有访问权限。请在设置中更换可用模型，或确认服务商权限。`
+    : "本次生成未完成。请检查模型配置、网络连接或服务商权限后重试。";
+  return { summary, details: content.trim() };
+}
+
+function AgentFailureCard({ failure }: { failure: { summary: string; details: string } }): JSX.Element {
+  return (
+    <section className="agent-failure-card" role="alert">
+      <div className="agent-failure-heading">
+        <CircleAlert size={17} />
+        <div>
+          <strong>模型调用失败</strong>
+          <p>{failure.summary}</p>
+        </div>
+      </div>
+      <details className="agent-failure-details">
+        <summary>查看技术详情</summary>
+        <pre>{failure.details}</pre>
+      </details>
+    </section>
   );
 }
 

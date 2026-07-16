@@ -1,22 +1,18 @@
 /** Conversation selector and session actions for the chat panel header. */
-import type { JSX } from "react";
+import { memo, type JSX } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Select from "@radix-ui/react-select";
 import {
-  BrainCircuit,
   Check,
-  CheckCircle2,
   ChevronDown,
-  Loader2,
-  Menu,
   MoreHorizontal,
   PencilLine,
   Plus,
   Settings,
   Trash2
 } from "lucide-react";
-import type { AppSettings, ChatSession } from "../../../../shared/types";
-import { formatDateTime, statusLabel } from "../../shared/presentation";
+import type { ChatSession } from "../../../../shared/types";
+import { formatDateTime } from "../../shared/presentation";
 
 function SessionMoreMenu({
   session,
@@ -50,11 +46,10 @@ function SessionMoreMenu({
   );
 }
 
-export function ChatPanelHeader({
+export const ChatPanelHeader = memo(function ChatPanelHeader({
   sessions,
   currentSession,
   currentSessionId,
-  settings,
   onCreateConversation,
   onSelectSession,
   onRenameSession,
@@ -63,7 +58,6 @@ export function ChatPanelHeader({
   sessions: ChatSession[];
   currentSession?: ChatSession;
   currentSessionId?: string;
-  settings?: AppSettings;
   onCreateConversation: () => void;
   onSelectSession: (sessionId: string) => void;
   onRenameSession: (session: ChatSession) => void;
@@ -72,7 +66,6 @@ export function ChatPanelHeader({
   return (
     <header className="chat-panel-header">
       <div className="chat-session-select">
-        <span className="chat-session-label">会话</span>
         <Select.Root value={currentSessionId || ""} onValueChange={onSelectSession}>
           <Select.Trigger className="session-select-trigger" aria-label="选择设计会话">
             <Select.Value placeholder="选择会话" />
@@ -111,16 +104,6 @@ export function ChatPanelHeader({
           />
         ) : null}
       </div>
-      <div className="chat-session-meta">
-        <span>
-          <BrainCircuit size={13} />
-          {settings?.openai.chatModel || "模型未加载"}
-        </span>
-        <span className={currentSession?.status === "running" ? "running" : ""}>
-          {currentSession?.status === "running" ? <Loader2 size={13} className="spin" /> : <CheckCircle2 size={13} />}
-          {statusLabel(currentSession?.status || "idle")}
-        </span>
-      </div>
     </header>
   );
-}
+});

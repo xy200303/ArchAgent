@@ -18,7 +18,6 @@ import { TooltipButton } from "../shared/TooltipButton";
 
 export function ActivityBar({
   metadata,
-  artifactCount,
   hasProject,
   onCreateConversation,
   onOpenProject,
@@ -31,7 +30,6 @@ export function ActivityBar({
   onOpenComponentLibrary
 }: {
   metadata: AppMetadata;
-  artifactCount: number;
   hasProject: boolean;
   onCreateConversation: () => void;
   onOpenProject: () => void;
@@ -61,13 +59,6 @@ export function ActivityBar({
         </TooltipButton>
         <TooltipButton label="构件库" className={activeSection === "components" ? "activity-button active" : "activity-button"} onClick={onOpenComponentLibrary}>
           <Boxes size={20} />
-        </TooltipButton>
-        <TooltipButton label="新建设计对话" className="activity-button" onClick={onCreateConversation}>
-          <Plus size={20} />
-        </TooltipButton>
-        <TooltipButton label="产物历史" className="activity-button" onClick={onOpenArtifacts}>
-          <FolderOpen size={20} />
-          {artifactCount ? <span className="activity-badge">{artifactCount}</span> : null}
         </TooltipButton>
       </nav>
       <div className="activity-bottom">

@@ -2,7 +2,7 @@
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import type { ImageContent } from "@mariozechner/pi-ai";
 import type { AppSettings, ChatSession, StreamItem } from "../../shared/types";
-import type { SceneCommandInput, SceneCommandResult } from "../../shared/modeling3d/sceneContracts";
+import type { SceneCommandInput, SceneCommandResult, SceneSnapshot } from "../../shared/modeling3d/sceneContracts";
 import type { BundledPythonRuntime } from "../runtime/bundledRuntime";
 import { createPiAgentBridge } from "./piAgentBridge";
 
@@ -42,6 +42,7 @@ export interface AgentRuntimeHost {
   formatSessionMemory(sessionId: string): string;
   getSessionReadableFiles(sessionId: string): string[];
   getBundledPythonRuntime(): BundledPythonRuntime | undefined;
+  getSceneSnapshot(): SceneSnapshot;
   executeSceneCommand(command: SceneCommandInput): SceneCommandResult;
   createArtifact(sessionId: string, filePath: string): void;
 }

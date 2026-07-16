@@ -9,15 +9,17 @@ import {
   type JSX,
   type KeyboardEvent
 } from "react";
-import { ArrowDown, File, Files, Paperclip, Square, Trash2, Upload } from "lucide-react";
+import { ArrowUp, File, Files, Paperclip, Square, Trash2, Upload } from "lucide-react";
 import type { ArchAgentApi, AttachmentRef, ChatSession } from "../../../../shared/types";
 import { getErrorMessage } from "../../platform/bridge";
 import { TooltipButton } from "../../shared/TooltipButton";
 import { filesToAttachmentPayload } from "./attachmentPayload";
 
+export type ComposerSession = Pick<ChatSession, "id" | "status">;
+
 export function Composer(props: {
   api: ArchAgentApi;
-  session?: ChatSession;
+  session?: ComposerSession;
   value: string;
   attachments: AttachmentRef[];
   onChange: (value: string) => void;
@@ -144,11 +146,11 @@ export function Composer(props: {
           value={props.value}
           onChange={(event) => {
             props.onChange(event.target.value);
-            adjustTextareaHeight();
           }}
           onKeyDown={onKeyDown}
           onPaste={(event) => void onPaste(event)}
-          placeholder="描述分析目标，或粘贴/选择 CSV、Excel、JSON、PDF、图片和文本数据..."
+          aria-label="输入建筑建模需求"
+          placeholder="描述要创建或修改的建筑，例如：在一层北侧增加一段 3 米砖墙…"
         />
         {draggingFiles ? (
           <div className="composer-drop-indicator">
@@ -157,29 +159,30 @@ export function Composer(props: {
           </div>
         ) : null}
         <div className="composer-actions">
-          <TooltipButton label="选择数据文件或参考资料" className="icon-action attachment-button" onClick={chooseFiles}>
+          <TooltipButton label="添加户型图、参考图或结构化资料" className="icon-action attachment-button" onClick={chooseFiles}>
             <Paperclip size={18} />
           </TooltipButton>
           <div className="spacer" />
+          <span className="composer-shortcuts" aria-hidden="true">Enter 发送 · Shift + Enter 换行</span>
           {running ? (
             <TooltipButton
               label="停止当前 Agent 生成"
-              className="secondary-action stop-action"
+              className="send-action stop-send-action"
               onClick={() => void props.api.chat.abort(props.session!.id)}
             >
               <Square size={14} />
-              停止
             </TooltipButton>
-          ) : null}
-          <button
-            type="submit"
-            className="send-action"
-            disabled={!canSend || running}
-            aria-label="发送"
-            title="发送"
-          >
-            <ArrowDown size={18} />
-          </button>
+          ) : (
+            <button
+              type="submit"
+              className="send-action"
+              disabled={!canSend}
+              aria-label="发送"
+              title="发送"
+            >
+              <ArrowUp size={18} />
+            </button>
+          )}
         </div>
       </div>
     </form>

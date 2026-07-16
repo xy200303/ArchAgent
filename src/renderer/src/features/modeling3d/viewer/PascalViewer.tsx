@@ -1,7 +1,7 @@
 /** Mounts Pascal's WebGPU scene projection with host-owned camera controls. */
 import { CameraControls, type CameraControls as CameraControlsHandle } from "@react-three/drei";
 import { useThree } from "@react-three/fiber";
-import { useEffect, useRef, useState, type JSX } from "react";
+import { memo, useEffect, useRef, useState, type JSX } from "react";
 import { Color } from "three";
 import { useScene } from "@pascal-app/core";
 import { Viewer } from "@pascal-app/viewer";
@@ -55,7 +55,7 @@ function PascalCameraControls({ preset }: { preset: PascalCameraPreset }): JSX.E
   return <CameraControls ref={controls} makeDefault minDistance={1.5} maxDistance={50} smoothTime={0.22} />;
 }
 
-export default function PascalViewer({
+function PascalViewer({
   onError,
   snapshot,
   cameraPreset
@@ -87,3 +87,5 @@ export default function PascalViewer({
     </div>
   );
 }
+
+export default memo(PascalViewer);

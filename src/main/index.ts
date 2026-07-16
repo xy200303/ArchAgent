@@ -175,6 +175,7 @@ const conversationService = createConversationService({
   createId,
   now,
   loadEnv,
+  getSceneSnapshot: sceneService.getSnapshot,
   executeSceneCommand: sceneService.execute
 });
 const {

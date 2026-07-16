@@ -1,15 +1,15 @@
 /** File and 3D editor workspace, including preview routing and editor chrome. */
-import { lazy, Suspense, type JSX } from "react";
+import { lazy, memo, Suspense, type JSX } from "react";
 import * as ScrollArea from "@radix-ui/react-scroll-area";
 import * as Tabs from "@radix-ui/react-tabs";
 import { IncremarkContent } from "@incremark/react";
 import { ChevronRight, Eye, File, Files, FolderOpen, Image, PencilLine, X, XCircle } from "lucide-react";
-import type { ArchAgentApi, ArtifactPreview, ArtifactSummary } from "../../../../shared/types";
+import type { ArchAgentApi, ArtifactPreview } from "../../../../shared/types";
 import { ErrorBoundary } from "../../platform/ErrorBoundary";
 import { getErrorMessage } from "../../platform/bridge";
 import { formatBytes, getWorkspaceFileIconSpec, resolveMonacoLanguage } from "../../shared/presentation";
 import { PreviewLoadingPanel } from "./PreviewLoadingPanel";
-import type { ComponentLibraryRequest } from "../modeling3d/editor/componentLibraryContracts";
+import type { BuiltInComponentId, ComponentLibraryRequest } from "../modeling3d/editor/componentLibraryContracts";
 
 const TextFileEditor = lazy(() =>
   import("./TextFileEditor").then((module) => ({ default: module.TextFileEditor }))
@@ -21,7 +21,7 @@ const SpatialEditor = lazy(() =>
 export type WorkspacePreview = Omit<ArtifactPreview, "artifactId">;
 export type PreviewContent = ArtifactPreview | WorkspacePreview;
 
-export function EditorHeader({
+export const EditorHeader = memo(function EditorHeader({
   preview,
   projectPath,
   dirty,
@@ -83,7 +83,7 @@ export function EditorHeader({
       ) : null}
     </header>
   );
-}
+});
 
 function resolveBreadcrumbSegments(filePath: string | undefined, fileName: string, projectPath: string): string[] {
   if (!filePath) return [fileName];
@@ -97,16 +97,16 @@ function resolveBreadcrumbSegments(filePath: string | undefined, fileName: strin
   return relative.split("/").filter(Boolean);
 }
 
-export function EditorWorkspace({
+export const EditorWorkspace = memo(function EditorWorkspace({
   api,
   preview,
   previewError,
-  artifacts,
   selectedArtifactId,
   theme,
   mdMode,
   componentRequest,
-  componentLibraryOpen,
+  sidebarMode,
+  onSelectBuiltInComponent,
   onPreviewArtifact,
   onSaveContent,
   onDirtyChange,
@@ -115,12 +115,12 @@ export function EditorWorkspace({
   api: ArchAgentApi;
   preview?: PreviewContent;
   previewError: string;
-  artifacts: ArtifactSummary[];
   selectedArtifactId?: string;
   theme: "light" | "dark";
   mdMode: "preview" | "edit";
   componentRequest?: ComponentLibraryRequest;
-  componentLibraryOpen: boolean;
+  sidebarMode?: "explorer" | "components";
+  onSelectBuiltInComponent: (componentId: BuiltInComponentId) => void;
   onPreviewArtifact: (artifactId: string) => void;
   onSaveContent: (path: string, content: string) => Promise<void>;
   onDirtyChange: (dirty: boolean) => void;
@@ -158,11 +158,16 @@ export function EditorWorkspace({
   return (
     <ErrorBoundary>
       <Suspense fallback={<PreviewLoadingPanel />}>
-        <SpatialEditor api={api} componentRequest={componentRequest} componentLibraryOpen={componentLibraryOpen} />
+        <SpatialEditor
+          api={api}
+          componentRequest={componentRequest}
+          sidebarMode={sidebarMode}
+          onSelectBuiltInComponent={onSelectBuiltInComponent}
+        />
       </Suspense>
     </ErrorBoundary>
   );
-}
+});
 
 export function getPreviewKey(preview: PreviewContent): string {
   return ("artifactId" in preview && preview.artifactId) || preview.path || preview.name;

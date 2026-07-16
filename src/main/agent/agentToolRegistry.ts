@@ -6,7 +6,8 @@ import { basename, extname, isAbsolute, join, relative, resolve } from "node:pat
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam, ChatCompletionMessageToolCall, ChatCompletionTool } from "openai/resources/chat/completions";
 import type { AppSettings } from "../../shared/types";
-import type { SceneCommandInput, SceneCommandResult, ScenePoint, WallMaterialPreset } from "../../shared/modeling3d/sceneContracts";
+import type { SceneCommandInput, SceneCommandResult, ScenePoint, SceneSnapshot, WallMaterialPreset } from "../../shared/modeling3d/sceneContracts";
+import { summarizeSceneForAgent } from "../modeling3d/sceneSummary";
 import {
   MAX_VISION_IMAGE_BYTES,
   compactText,
@@ -47,6 +48,7 @@ export interface AgentToolExecutionContext {
   allowedReadFiles?: string[];
   execBashEnabled: boolean;
   bundledPythonRuntime?: BundledPythonRuntime;
+  getSceneSnapshot?: () => SceneSnapshot;
   executeSceneCommand?: (command: SceneCommandInput) => SceneCommandResult;
 }
 
@@ -59,6 +61,14 @@ export interface AgentToolExecutionResult {
 
 export function buildAgentChatTools(options: { includeExecBash: boolean; includeArtifactTools?: boolean }): ChatCompletionTool[] {
   const tools: ChatCompletionTool[] = [
+    {
+      type: "function",
+      function: {
+        name: "get_scene",
+        description: "读取当前建筑场景的版本、楼层和墙体参数。修改或删除已有墙体前必须先调用。",
+        parameters: emptyObjectSchema
+      }
+    },
     {
       type: "function",
       function: {
@@ -213,6 +223,8 @@ export async function executeAgentToolCall(
       return executeSendFile(args, context);
     case "exec_bash":
       return executeBash(args, context);
+    case "get_scene":
+      return executeGetScene(context);
     case "create_wall":
       return executeCreateWall(args, context);
     case "update_wall":
@@ -226,6 +238,14 @@ export async function executeAgentToolCall(
         content: `Unknown tool: ${String(toolName)}`
       };
   }
+}
+
+function executeGetScene(context: AgentToolExecutionContext): AgentToolExecutionResult {
+  if (!context.getSceneSnapshot) {
+    return { toolName: "get_scene", summary: "当前应用未连接场景服务。", content: "get_scene failed: scene service unavailable" };
+  }
+  const summary = summarizeSceneForAgent(context.getSceneSnapshot());
+  return { toolName: "get_scene", summary: "已读取当前建筑场景", content: summary };
 }
 
 function executeCreateWall(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {

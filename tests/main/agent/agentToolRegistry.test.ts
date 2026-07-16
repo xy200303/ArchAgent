@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ChatCompletionMessageToolCall } from "openai/resources/chat/completions";
 import { buildAgentChatTools, executeAgentToolCall, type AgentToolExecutionContext } from "../../../src/main/agent/agentToolRegistry";
+import { createSceneService } from "../../../src/main/modeling3d/sceneService";
 import type { AppSettings } from "../../../src/shared/types";
 
 describe("agentToolRegistry", () => {
@@ -19,6 +20,7 @@ describe("agentToolRegistry", () => {
     expect(names).toContain("write_file");
     expect(names).toContain("send_file");
     expect(names).toContain("web_search");
+    expect(names).toContain("get_scene");
     expect(names).toContain("create_wall");
     expect(names).toContain("update_wall");
     expect(names).toContain("delete_node");
@@ -79,6 +81,56 @@ describe("agentToolRegistry", () => {
 
     expect(executeSceneCommand).toHaveBeenCalledWith(expect.objectContaining({ type: "wall.create", parentId: "level_default" }));
     expect(result.summary).toContain("wall_agent");
+  });
+
+  it("returns the authoritative scene summary before an Agent edits walls", async () => {
+    const result = await executeAgentToolCall(
+      createToolCall("get_scene", {}),
+      createContext({
+        getSceneSnapshot: () => ({
+          revision: 3,
+          rootNodeIds: ["site_default"],
+          nodes: {
+            level_default: { id: "level_default", type: "level", name: "一层", parentId: "building_default", level: 0 },
+            wall_north: {
+              id: "wall_north",
+              type: "wall",
+              name: "北墙",
+              parentId: "level_default",
+              start: [0, 0],
+              end: [5, 0],
+              height: 2.8,
+              thickness: 0.2,
+              materialPreset: "plaster"
+            }
+          }
+        })
+      })
+    );
+
+    expect(result.summary).toBe("已读取当前建筑场景");
+    expect(result.content).toContain("场景版本：3");
+    expect(result.content).toContain("wall_north");
+  });
+
+  it("updates the SceneService snapshot when an Agent creates a wall", async () => {
+    const sceneService = createSceneService({
+      createId: () => "agent",
+      broadcast: vi.fn()
+    });
+    const context = createContext({
+      getSceneSnapshot: sceneService.getSnapshot,
+      executeSceneCommand: sceneService.execute
+    });
+
+    await executeAgentToolCall(createToolCall("get_scene", {}), context);
+    const result = await executeAgentToolCall(
+      createToolCall("create_wall", { parent_id: "level_default", name: "Agent 新墙", start: [1, 1], end: [3, 1] }),
+      context
+    );
+
+    expect(result.summary).toContain("wall_agent");
+    expect(sceneService.getSnapshot()).toMatchObject({ revision: 1, nodes: { wall_agent: { name: "Agent 新墙" } } });
   });
 
   const itWindows = process.platform === "win32" ? it : it.skip;

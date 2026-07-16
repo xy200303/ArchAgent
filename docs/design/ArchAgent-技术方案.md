@@ -56,6 +56,8 @@ Renderer 中 Pascal 的 `useScene` 是运行时渲染镜像：收到快照或 pa
   → Pascal 场景同步最新快照
 ```
 
+当前 Agent 工具先提供 `get_scene`、`create_wall`、`update_wall` 与 `delete_node`：修改或删除前先读取权威场景摘要，随后把校验后的命令交给 `SceneCommandService`。Door、Window、Slab 等工具应在对应场景命令和 Pascal 节点完成后再开放，禁止在系统提示中预告不存在的工具。
+
 ## 4. 场景模型
 
 ```text

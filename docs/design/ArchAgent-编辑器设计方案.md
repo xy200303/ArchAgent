@@ -149,6 +149,8 @@ Agent 工具是 `SceneCommand` 的受限领域入口，不直接调用 Pascal AP
 
 图片、户型图或外部结构化数据先生成候选命令和置信度；高影响操作使用 Ghost preview 或确认步骤。Agent 输出应包含受影响节点、revision 和失败时的校验原因。
 
+当前运行时工具集为 `get_scene`、`create_wall`、`update_wall`、`delete_node`。`get_scene` 返回只读的楼层与墙体摘要，供 Agent 取得真实节点 ID；Agent 不能直接写 Pascal store，也不能声称创建当前未支持的建筑节点或导出格式。
+
 ## 7. 文件组织
 
 ```text

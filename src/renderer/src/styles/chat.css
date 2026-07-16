@@ -3,16 +3,24 @@
 .chat-panel {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
+  width: 100%;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
   background: var(--fluent-color-neutral-background1);
+}
+
+.chat-session-header-slot {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
 }
 
 .chat-panel-header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--fluent-spacing-m);
-  min-height: 82px;
+  min-height: 0;
   border-bottom: 1px solid var(--fluent-color-neutral-stroke2);
   background: var(--fluent-color-neutral-background1);
   padding: var(--fluent-spacing-m);
@@ -21,13 +29,6 @@
 .chat-session-select {
   display: grid;
   min-width: 0;
-  gap: var(--fluent-spacing-xs);
-}
-
-.chat-session-label {
-  color: var(--fluent-color-neutral-foreground3);
-  font-size: 11px;
-  font-weight: 800;
 }
 
 .session-select-trigger {
@@ -35,7 +36,7 @@
   align-items: center;
   gap: 6px;
   width: 100%;
-  height: 32px;
+  height: 36px;
   border: 1px solid var(--fluent-color-neutral-stroke1);
   border-radius: var(--fluent-radius-medium);
   background: var(--fluent-color-neutral-background1);
@@ -131,38 +132,16 @@
 
 .chat-header-actions {
   display: flex;
-  align-items: end;
-  gap: var(--fluent-spacing-s);
-}
-
-.chat-session-meta {
-  display: flex;
-  grid-column: 1 / -1;
-  flex-wrap: wrap;
-  gap: var(--fluent-spacing-s);
-}
-
-.chat-session-meta span {
-  display: inline-flex;
   align-items: center;
-  gap: var(--fluent-spacing-xs);
-  min-height: 24px;
-  border: 1px solid var(--fluent-color-neutral-stroke2);
-  border-radius: var(--fluent-radius-circle);
-  background: var(--fluent-color-neutral-background1);
-  color: var(--fluent-color-neutral-foreground3);
-  font-size: 11px;
-  font-weight: 700;
-  padding: 0 var(--fluent-spacing-m);
-}
-
-.chat-session-meta span.running {
-  border-color: var(--fluent-color-warning-stroke1);
-  background: var(--fluent-color-warning-background1);
-  color: var(--fluent-color-warning-foreground1);
+  gap: var(--fluent-spacing-s);
 }
 
 .message-scroll {
+  position: relative;
+  align-self: stretch;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
   background: var(--fluent-color-neutral-background1);
@@ -170,7 +149,11 @@
 
 .message-pane {
   height: 100%;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 0;
+  overflow-x: hidden;
   padding: var(--fluent-spacing-xl);
 }
 
@@ -282,8 +265,7 @@
 
 .message-body {
   min-width: 0;
-  border-left: 2px solid var(--fluent-color-success-foreground1);
-  padding: 1px 0 1px var(--fluent-spacing-l);
+  padding: 1px 0;
   color: var(--fluent-color-neutral-foreground1);
   line-height: 1.72;
 }
@@ -300,7 +282,7 @@
 }
 
 .chat-panel .message-body {
-  padding-left: var(--fluent-spacing-l);
+  padding-left: 0;
 }
 
 .chat-panel .message-row.user .message-body {
@@ -309,7 +291,63 @@
 
 .message-body p {
   margin: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   white-space: pre-wrap;
+}
+
+.agent-failure-card {
+  max-width: 640px;
+  border: 1px solid var(--fluent-color-danger-stroke1);
+  border-radius: var(--fluent-radius-medium);
+  background: var(--fluent-color-danger-background1);
+  color: var(--fluent-color-neutral-foreground1);
+  padding: var(--fluent-spacing-m);
+}
+
+.agent-failure-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--fluent-spacing-s);
+  color: var(--fluent-color-danger-foreground1);
+}
+
+.agent-failure-heading strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.agent-failure-heading p {
+  margin: var(--fluent-spacing-xs) 0 0;
+  color: var(--fluent-color-neutral-foreground2);
+}
+
+.agent-failure-details {
+  margin-top: var(--fluent-spacing-m);
+  color: var(--fluent-color-neutral-foreground2);
+  font-size: 12px;
+}
+
+.agent-failure-details summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.agent-failure-details pre {
+  max-height: 180px;
+  overflow: auto;
+  margin: var(--fluent-spacing-s) 0 0;
+  border: 1px solid var(--fluent-color-danger-stroke1);
+  border-radius: var(--fluent-radius-small);
+  background: var(--fluent-color-neutral-background1);
+  color: var(--fluent-color-neutral-foreground2);
+  font-family: var(--fluent-font-family-monospace);
+  font-size: 11px;
+  line-height: 1.55;
+  padding: var(--fluent-spacing-s);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* Thinking indicator */
