@@ -282,6 +282,7 @@ html:not([data-theme="dark"]) .modal-panel {
   flex: 1 1 auto;
   min-height: 0;
   position: relative;
+  background: #f5f7fa;
 }
 
 .spatial-editor > canvas,
@@ -401,6 +402,29 @@ html:not([data-theme="dark"]) .modal-panel {
 
 .scene-toolbar-viewport {
   margin-left: auto;
+  gap: var(--fluent-spacing-s);
+}
+
+.scene-preview-label {
+  padding: 0 var(--fluent-spacing-s);
+  color: var(--fluent-color-neutral-foreground3);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.pascal-preview-fallback {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  height: 100%;
+  gap: var(--fluent-spacing-s);
+  padding: var(--fluent-spacing-xl);
+  color: var(--fluent-color-neutral-foreground3);
+  text-align: center;
+}
+
+.pascal-preview-fallback strong {
+  color: var(--fluent-color-neutral-foreground1);
 }
 
 .scene-tool-button {

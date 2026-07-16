@@ -2,12 +2,9 @@
 import {
   BrickWall,
   Building2,
-  Eye,
   Layers3,
-  MousePointer2,
-  PencilRuler,
+  Orbit,
   Plus,
-  RotateCcw,
   Save,
   Square,
   Trash2
@@ -15,7 +12,6 @@ import {
 import { useEffect, useState, type FormEvent, type JSX } from "react";
 import type { SceneCommandInput, SceneSnapshot, SceneWallNode, WallMaterialPreset } from "../../../../../shared/modeling3d/sceneContracts";
 import { TooltipButton } from "../../../shared/TooltipButton";
-import type { CameraPreset } from "../viewport/cameraPresets";
 
 const MATERIAL_OPTIONS: Array<{ value: WallMaterialPreset; label: string }> = [
   { value: "plaster", label: "抹灰" },
@@ -87,18 +83,12 @@ function SceneTreeContent({
 }
 
 export function SceneToolbar({
-  wallDrawingActive,
-  onToggleWallDrawing,
-  onSelectTool,
   onCreateWall,
-  onCameraPreset,
+  onPascalCameraPreset,
   componentLibraryOpen
 }: {
-  wallDrawingActive: boolean;
-  onToggleWallDrawing: () => void;
-  onSelectTool: () => void;
   onCreateWall: () => void;
-  onCameraPreset: (preset: CameraPreset) => void;
+  onPascalCameraPreset: (preset: "free" | "top") => void;
   componentLibraryOpen: boolean;
 }): JSX.Element {
   return (
@@ -110,40 +100,16 @@ export function SceneToolbar({
         </div>
       )}
       <div className="scene-toolbar-tools" role="toolbar" aria-label="建模工具">
-        <TooltipButton
-          label="选择工具"
-          className={wallDrawingActive ? "scene-tool-button" : "scene-tool-button active"}
-          onClick={onSelectTool}
-          pressed={!wallDrawingActive}
-        >
-          <MousePointer2 size={17} />
-        </TooltipButton>
-        <TooltipButton
-          label={wallDrawingActive ? "取消绘制墙体" : "绘制墙体"}
-          className={wallDrawingActive ? "scene-tool-button active" : "scene-tool-button"}
-          onClick={onToggleWallDrawing}
-          pressed={wallDrawingActive}
-        >
-          <PencilRuler size={17} />
-        </TooltipButton>
+        <span className="scene-preview-label">Pascal 建筑视图</span>
       </div>
       <div className="scene-toolbar-viewport" role="toolbar" aria-label="视图控制">
-        <TooltipButton label="透视视图" className="scene-tool-button" onClick={() => onCameraPreset("perspective")}>
-          <Eye size={17} />
+        <TooltipButton label="自由视角" className="scene-tool-button" onClick={() => onPascalCameraPreset("free")}>
+          <Orbit size={17} />
         </TooltipButton>
-        <TooltipButton label="顶视图" className="scene-tool-button" onClick={() => onCameraPreset("top")}>
+        <TooltipButton label="顶视图" className="scene-tool-button" onClick={() => onPascalCameraPreset("top")}>
           <Square size={17} />
         </TooltipButton>
-        <TooltipButton label="正视图" className="scene-tool-button" onClick={() => onCameraPreset("front")}>
-          <Building2 size={17} />
-        </TooltipButton>
-        <TooltipButton label="右视图" className="scene-tool-button" onClick={() => onCameraPreset("right")}>
-          <Layers3 size={17} />
-        </TooltipButton>
-        <TooltipButton label="重置相机" className="scene-tool-button" onClick={() => onCameraPreset("reset")}>
-          <RotateCcw size={17} />
-        </TooltipButton>
-        <button type="button" className="secondary-action scene-create-wall-action" onClick={onCreateWall}>
+        <button type="button" className="primary-action scene-create-wall-action" onClick={onCreateWall}>
           <Plus size={16} />
           参数创建
         </button>

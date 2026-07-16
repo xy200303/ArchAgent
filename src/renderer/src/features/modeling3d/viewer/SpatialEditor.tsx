@@ -1,14 +1,14 @@
 /** Coordinates scene commands, snapshots, and the renderer-side Pascal viewport. */
-import { useEffect, useMemo, useState, type JSX } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState, type JSX } from "react";
 import type { ArchAgentApi } from "../../../../../shared/types";
 import type { SceneCommandInput, SceneSnapshot, SceneWallNode } from "../../../../../shared/modeling3d/sceneContracts";
 import { getErrorMessage } from "../../../platform/bridge";
 import { SceneNavigationPanel, SceneToolbar, WallInspector } from "../editor/SceneEditorPanels";
-import type { CameraCommand } from "../viewport/CameraPresetController";
-import type { CameraPreset } from "../viewport/cameraPresets";
-import { SceneViewport } from "../viewport/SceneViewport";
-import { useWallDrawing } from "../viewport/useWallDrawing";
 import type { ComponentLibraryRequest } from "../editor/componentLibraryContracts";
+import { PascalPreviewBoundary } from "./PascalPreviewBoundary";
+import type { PascalCameraPreset } from "./PascalViewer";
+
+const PascalViewer = lazy(() => import("./PascalViewer"));
 
 export function SpatialEditor({
   api,
@@ -22,9 +22,9 @@ export function SpatialEditor({
   const [snapshot, setSnapshot] = useState<SceneSnapshot>();
   const [selectedWallId, setSelectedWallId] = useState<string>();
   const [panelMode, setPanelMode] = useState<"none" | "create-wall" | "selected">("none");
-  const [cameraCommand, setCameraCommand] = useState<CameraCommand>();
+  const [pascalCameraPreset, setPascalCameraPreset] = useState<PascalCameraPreset>("free");
+  const [pascalPreviewKey, setPascalPreviewKey] = useState(0);
   const [message, setMessage] = useState("");
-  const wallDrawing = useWallDrawing(async (command) => execute(command));
 
   useEffect(() => {
     let active = true;
@@ -64,7 +64,7 @@ export function SpatialEditor({
       setSnapshot(result.snapshot);
       if (result.command.type === "wall.create" || result.command.type === "wall.update") {
         setSelectedWallId(result.command.id);
-        if (!wallDrawing.active) setPanelMode("selected");
+        setPanelMode("selected");
       }
       if (result.command.type === "node.delete") {
         setSelectedWallId(undefined);
@@ -88,51 +88,30 @@ export function SpatialEditor({
   }
 
   function openWallCreation(): void {
-    wallDrawing.cancel();
     setSelectedWallId(undefined);
     setPanelMode("create-wall");
-  }
-
-  function activateSelectTool(): void {
-    wallDrawing.cancel();
-  }
-
-  function toggleWallDrawing(): void {
-    if (!wallDrawing.active) {
-      setSelectedWallId(undefined);
-      setPanelMode("none");
-    }
-    wallDrawing.toggle();
-  }
-
-  function setCameraPreset(preset: CameraPreset): void {
-    setCameraCommand((current) => ({ preset, revision: (current?.revision ?? 0) + 1 }));
   }
 
   return (
     <section className="spatial-editor">
       <SceneToolbar
-        wallDrawingActive={wallDrawing.active}
-        onToggleWallDrawing={toggleWallDrawing}
-        onSelectTool={activateSelectTool}
         onCreateWall={openWallCreation}
-        onCameraPreset={setCameraPreset}
+        onPascalCameraPreset={setPascalCameraPreset}
         componentLibraryOpen={componentLibraryOpen}
       />
       {message ? <div className="scene-editor-message" role="status">{message}</div> : null}
       <div className={`scene-editor-layout${showInspector ? " has-inspector" : ""}${componentLibraryOpen ? " no-navigation" : ""}`}>
         {componentLibraryOpen ? null : <SceneNavigationPanel snapshot={snapshot} selectedWallId={selectedWallId} onSelectWall={selectWall} />}
         <div className="scene-viewport">
-          <SceneViewport
-            snapshot={snapshot}
-            selectedWallId={selectedWallId}
-            onSelectWall={selectWall}
-            wallDrawingActive={wallDrawing.active}
-            wallDrawingDraft={wallDrawing.draft}
-            onWallDrawingPoint={wallDrawing.placePoint}
-            onWallDrawingPreview={wallDrawing.previewPoint}
-            cameraCommand={cameraCommand}
-          />
+          <PascalPreviewBoundary key={pascalPreviewKey} onRetry={() => setPascalPreviewKey((key) => key + 1)}>
+            <Suspense fallback={<div className="spatial-editor-fallback">正在加载 Pascal 建筑视图…</div>}>
+              <PascalViewer
+                snapshot={snapshot}
+                cameraPreset={pascalCameraPreset}
+                onError={(error) => setMessage(`Pascal 场景同步失败：${error}`)}
+              />
+            </Suspense>
+          </PascalPreviewBoundary>
         </div>
         {showInspector ? (
           <WallInspector
