@@ -181,6 +181,13 @@
   gap: var(--fluent-spacing-s);
 }
 
+.scene-toolbar-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--fluent-color-neutral-stroke2);
+  margin: 0 2px;
+}
+
 .pascal-preview-fallback {
   display: grid;
   place-items: center;
@@ -222,6 +229,66 @@
 .scene-tool-button:focus-visible {
   outline: 2px solid var(--fluent-color-brand-stroke);
   outline-offset: 1px;
+}
+
+.scene-camera-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  min-width: 132px;
+  border: 1px solid var(--fluent-color-neutral-stroke1);
+  border-radius: var(--fluent-radius-medium);
+  background: var(--fluent-color-neutral-background1);
+  color: var(--fluent-color-neutral-foreground1);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0 9px;
+}
+
+.scene-camera-trigger:hover,
+.scene-camera-trigger[data-state="open"] {
+  border-color: var(--fluent-color-brand-stroke);
+  background: var(--fluent-color-neutral-background-hover);
+}
+
+.scene-camera-trigger:focus-visible {
+  outline: 2px solid var(--fluent-color-brand-stroke);
+  outline-offset: 1px;
+}
+
+.scene-camera-trigger-label {
+  color: var(--fluent-color-neutral-foreground2);
+  font-weight: 500;
+}
+
+.scene-camera-trigger-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scene-camera-trigger > svg:last-child {
+  margin-left: auto;
+  color: var(--fluent-color-neutral-foreground3);
+}
+
+.scene-camera-menu {
+  min-width: 156px;
+}
+
+.scene-camera-menu-item {
+  min-height: 34px;
+}
+
+.scene-camera-menu-item > span {
+  flex: 1;
+}
+
+.scene-camera-selected-icon {
+  color: var(--fluent-color-brand-foreground1);
 }
 
 .scene-editor-message {
@@ -433,6 +500,10 @@
   background: var(--fluent-color-neutral-background1);
 }
 
+.scene-viewport.drawing canvas {
+  cursor: crosshair;
+}
+
 .scene-viewport > .spatial-editor-fallback,
 .scene-viewport > .pascal-viewer-host,
 .scene-viewport > .scene-r3f-viewport {
@@ -572,5 +643,15 @@
 
   .scene-toolbar-viewport {
     margin-left: 0;
+  }
+
+  .scene-camera-trigger {
+    min-width: 34px;
+    padding: 0 8px;
+  }
+
+  .scene-camera-trigger-label,
+  .scene-camera-trigger-value {
+    display: none;
   }
 }

@@ -4,14 +4,26 @@ import { useThree } from "@react-three/fiber";
 import { memo, useEffect, useRef, useState, type JSX } from "react";
 import { Color } from "three";
 import { useScene } from "@pascal-app/core";
-import { Viewer } from "@pascal-app/viewer";
+import { Viewer, useViewer } from "@pascal-app/viewer";
 import { registerArchAgentNodes } from "../nodes/pascalNodeDefinitions";
 import { toPascalScene } from "../scene/pascalSceneAdapter";
 import type { SceneSnapshot } from "../../../../../shared/modeling3d/sceneContracts";
+import { WallDrawingOverlay } from "./WallDrawingOverlay";
+import type { WallDrawingDraft } from "./useWallDrawing";
 
 registerArchAgentNodes();
 
-export type PascalCameraPreset = "free" | "top";
+export type PascalCameraPreset = "free" | "top" | "front" | "right";
+
+type CameraPosition = readonly [number, number, number];
+
+const CAMERA_TARGET: CameraPosition = [2.5, 1.2, 2];
+const CAMERA_PRESET_POSITIONS: Record<PascalCameraPreset, CameraPosition> = {
+  free: [11, 8, 11],
+  top: [2.5, 24, 2.01],
+  front: [2.5, 3, 16],
+  right: [16, 3, 2]
+};
 
 /** Aligns Pascal's internal canvas clear color with the R3F editor surface. */
 function PascalSceneBackground(): null {
@@ -41,28 +53,87 @@ function PascalGroundGrid(): JSX.Element {
   );
 }
 
-function PascalCameraControls({ preset }: { preset: PascalCameraPreset }): JSX.Element {
+/** Moves the host-owned camera without changing Pascal scene data. */
+function PascalCameraControls({
+  preset,
+  revision,
+  enabled,
+  focusTarget,
+  focusRevision
+}: {
+  preset: PascalCameraPreset;
+  revision: number;
+  enabled: boolean;
+  focusTarget?: [number, number, number];
+  focusRevision: number;
+}): JSX.Element {
   const controls = useRef<CameraControlsHandle>(null);
 
   useEffect(() => {
-    if (preset === "top") {
-      void controls.current?.setLookAt(2.5, 24, 2.01, 2.5, 1.2, 2, true);
-      return;
-    }
-    void controls.current?.setLookAt(11, 8, 11, 2.5, 1.2, 2, true);
-  }, [preset]);
+    const [cameraX, cameraY, cameraZ] = CAMERA_PRESET_POSITIONS[preset];
+    const [targetX, targetY, targetZ] = CAMERA_TARGET;
+    void controls.current?.setLookAt(cameraX, cameraY, cameraZ, targetX, targetY, targetZ, true);
+  }, [preset, revision]);
 
-  return <CameraControls ref={controls} makeDefault minDistance={1.5} maxDistance={50} smoothTime={0.22} />;
+  useEffect(() => {
+    if (!focusTarget) return;
+    void controls.current?.setLookAt(focusTarget[0] + 8, focusTarget[1] + 6, focusTarget[2] + 8, ...focusTarget, true);
+  }, [focusRevision, focusTarget]);
+
+  return <CameraControls ref={controls} makeDefault enabled={enabled} minDistance={1.5} maxDistance={50} smoothTime={0.22} />;
+}
+
+/** Keeps Pascal's native selection outline aligned with the single editor selection. */
+function PascalSelectionBridge({
+  selectedNodeId,
+  onSelectNode
+}: {
+  selectedNodeId?: string;
+  onSelectNode: (id?: string) => void;
+}): null {
+  const selectedIds = useViewer((state) => state.selection.selectedIds);
+
+  useEffect(() => {
+    const nextIds = selectedNodeId ? [selectedNodeId] : [];
+    const currentIds = useViewer.getState().selection.selectedIds;
+    if (currentIds.length !== nextIds.length || currentIds.some((id, index) => id !== nextIds[index])) {
+      useViewer.getState().setSelection({ selectedIds: nextIds });
+    }
+  }, [selectedNodeId]);
+
+  useEffect(() => {
+    onSelectNode(selectedIds.length === 1 ? selectedIds[0] : undefined);
+  }, [onSelectNode, selectedIds]);
+
+  return null;
 }
 
 function PascalViewer({
   onError,
   snapshot,
-  cameraPreset
+  cameraPreset,
+  cameraRevision,
+  wallDrawingActive,
+  wallDrawingDraft,
+  onWallDrawingPoint,
+  onWallDrawingPreview,
+  selectedNodeId,
+  onSelectNode,
+  focusTarget,
+  focusRevision
 }: {
   onError: (msg: string) => void;
   snapshot: SceneSnapshot;
   cameraPreset: PascalCameraPreset;
+  cameraRevision: number;
+  wallDrawingActive: boolean;
+  wallDrawingDraft?: WallDrawingDraft;
+  onWallDrawingPoint: (point: [number, number]) => void;
+  onWallDrawingPreview: (point: [number, number]) => void;
+  selectedNodeId?: string;
+  onSelectNode: (id?: string) => void;
+  focusTarget?: [number, number, number];
+  focusRevision: number;
 }): JSX.Element {
   const [ready, setReady] = useState(false);
 
@@ -79,10 +150,18 @@ function PascalViewer({
   if (!ready) return <div className="spatial-editor-fallback">构建场景中…</div>;
   return (
     <div className="pascal-viewer-host">
-      <Viewer selectionManager="custom" renderContext="viewer" sceneReadyKey={snapshot.revision}>
+      <Viewer selectionManager={wallDrawingActive ? "custom" : "default"} renderContext="viewer" sceneReadyKey={snapshot.revision}>
         <PascalSceneBackground />
         <PascalGroundGrid />
-        <PascalCameraControls preset={cameraPreset} />
+        <PascalCameraControls preset={cameraPreset} revision={cameraRevision} enabled={!wallDrawingActive} focusTarget={focusTarget} focusRevision={focusRevision} />
+        {!wallDrawingActive ? <PascalSelectionBridge selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} /> : null}
+        {wallDrawingActive ? (
+          <WallDrawingOverlay
+            draft={wallDrawingDraft}
+            onPoint={onWallDrawingPoint}
+            onPreview={onWallDrawingPreview}
+          />
+        ) : null}
       </Viewer>
     </div>
   );

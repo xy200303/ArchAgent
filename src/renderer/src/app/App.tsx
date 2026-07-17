@@ -94,6 +94,13 @@ export function App(): JSX.Element {
   const api = bridge.api;
 
   useEffect(() => {
+    if (!api || !currentProject) return;
+    void api.scene.activateProject(currentProject.path).catch((error: unknown) => {
+      setAppError(`场景项目加载失败：${getErrorMessage(error)}`);
+    });
+  }, [api, currentProject?.path]);
+
+  useEffect(() => {
     const initialProject = getInitialProjectFromUrl();
     if (initialProject) {
       dispatch(setCurrentProject(initialProject));

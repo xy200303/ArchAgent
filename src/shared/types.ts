@@ -1,4 +1,4 @@
-import type { SceneCommandInput, SceneCommandResult, SceneSnapshot } from "./modeling3d/sceneContracts";
+import type { SceneCommandInput, SceneCommandResult, SceneHistoryResult, SceneHistoryState, SceneSnapshot } from "./modeling3d/sceneContracts";
 
 export type MessageRole = "user" | "assistant";
 
@@ -334,6 +334,11 @@ export type RendererEvent =
       id: string;
       type: "scene.command.applied";
       payload: Extract<SceneCommandResult, { accepted: true }>;
+    }
+  | {
+      id: string;
+      type: "scene.snapshot.restored";
+      payload: SceneSnapshot;
     };
 
 export interface ArchAgentApi {
@@ -390,8 +395,12 @@ export interface ArchAgentApi {
     checkRuntime(): Promise<RuntimeCheckResult>;
   };
   scene: {
+    activateProject(projectPath: string): Promise<SceneSnapshot>;
     getSnapshot(): Promise<SceneSnapshot>;
     execute(command: SceneCommandInput): Promise<SceneCommandResult>;
+    getHistoryState(): Promise<SceneHistoryState>;
+    undo(): Promise<SceneHistoryResult>;
+    redo(): Promise<SceneHistoryResult>;
   };
   events: {
     subscribe(listener: (event: RendererEvent) => void): () => void;

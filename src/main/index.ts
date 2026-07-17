@@ -12,6 +12,7 @@ import { createSettingsService } from "./config/settingsService";
 import { createProjectStateStore } from "./projects/projectStateStore";
 import { createProjectService } from "./projects/projectService";
 import { createSceneService } from "./modeling3d/sceneService";
+import { loadProjectScene, saveProjectScene } from "./modeling3d/sceneProjectPersistence";
 import type { SessionMemoryEntry } from "./projects/sessionPersistence";
 import { APP_DISPLAY_NAME, createAppMetadata } from "../shared/appMetadata";
 import type {
@@ -81,7 +82,12 @@ const rendererEvents = createRendererEventBus({
 const sendEvent = rendererEvents.sendEvent;
 const sendStreamItemUpdatedEvent = rendererEvents.sendStreamItemUpdated;
 const clearPendingStreamItemUpdatesForSession = rendererEvents.clearPendingSessionUpdates;
-const sceneService = createSceneService({ createId, broadcast: sendEvent });
+const sceneService = createSceneService({
+  createId,
+  broadcast: sendEvent,
+  loadProjectSnapshot: loadProjectScene,
+  saveProjectSnapshot: saveProjectScene
+});
 const createWindow = windowManager.createWindow;
 const settingsService = createSettingsService({ envLocalPath, envPath, projectRootDir, resourcesDir });
 const loadEnv = settingsService.load;
@@ -224,7 +230,11 @@ function registerIpc(): void {
     rootDir,
     now,
     getSceneSnapshot: sceneService.getSnapshot,
-    executeSceneCommand: sceneService.execute
+    executeSceneCommand: sceneService.execute,
+    getSceneHistoryState: sceneService.getHistoryState,
+    undoScene: sceneService.undo,
+    redoScene: sceneService.redo,
+    activateSceneProject: sceneService.activateProject
   });
 }
 

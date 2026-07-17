@@ -65,10 +65,20 @@ export function buildAgentChatTools(options: { includeExecBash: boolean; include
       type: "function",
       function: {
         name: "get_scene",
-        description: "读取当前建筑场景的版本、楼层和墙体参数。修改或删除已有墙体前必须先调用。",
+        description: "读取当前建筑场景的版本、楼层及全部建筑构件参数。修改或删除已有构件前必须先调用。",
         parameters: emptyObjectSchema
       }
     },
+    { type: "function", function: { name: "create_ceiling", description: "在指定楼层创建一个多边形天花。高度单位为米。", parameters: createCeilingSchema } },
+    { type: "function", function: { name: "update_ceiling", description: "修改已有天花的名称、轮廓、高度或材质。", parameters: updateCeilingSchema } },
+    { type: "function", function: { name: "create_column", description: "在指定楼层创建结构柱。位置与尺寸单位为米。", parameters: createColumnSchema } },
+    { type: "function", function: { name: "update_column", description: "修改已有柱的位置、截面或尺寸。", parameters: updateColumnSchema } },
+    { type: "function", function: { name: "create_zone", description: "在指定楼层创建功能房间分区。轮廓坐标单位为米。", parameters: createZoneSchema } },
+    { type: "function", function: { name: "update_zone", description: "修改已有房间的名称、轮廓或颜色。", parameters: updateZoneSchema } },
+    { type: "function", function: { name: "create_stair", description: "在指定楼层创建直梯。位置、尺寸单位为米。", parameters: createStairSchema } },
+    { type: "function", function: { name: "update_stair", description: "修改已有直梯的位置、尺寸、踏步或扶手。", parameters: updateStairSchema } },
+    { type: "function", function: { name: "create_fence", description: "在指定楼层创建直线围栏。坐标、尺寸单位为米。", parameters: createFenceSchema } },
+    { type: "function", function: { name: "update_fence", description: "修改已有围栏的端点、尺寸、样式或材质。", parameters: updateFenceSchema } },
     {
       type: "function",
       function: {
@@ -150,11 +160,15 @@ export function buildAgentChatTools(options: { includeExecBash: boolean; include
         parameters: updateSlabSchema
       }
     },
+    { type: "function", function: { name: "create_door", description: "在指定墙体上创建门洞和门。偏移从墙体起点开始计算，单位为米。", parameters: createDoorSchema } },
+    { type: "function", function: { name: "update_door", description: "修改已有门的尺寸、沿墙偏移或材质。", parameters: updateDoorSchema } },
+    { type: "function", function: { name: "create_window", description: "在指定墙体上创建窗洞和窗。偏移从墙体起点开始计算，单位为米。", parameters: createWindowSchema } },
+    { type: "function", function: { name: "update_window", description: "修改已有窗的尺寸、沿墙偏移或材质。", parameters: updateWindowSchema } },
     {
       type: "function",
       function: {
         name: "delete_node",
-        description: "删除指定的墙体节点。",
+        description: "删除指定的墙体、楼板、门或窗节点。",
         parameters: deleteNodeSchema
       }
     }
@@ -249,6 +263,26 @@ export async function executeAgentToolCall(
       return executeCreateSlab(args, context);
     case "update_slab":
       return executeUpdateSlab(args, context);
+    case "create_ceiling":
+      return executeCreateCeiling(args, context);
+    case "update_ceiling":
+      return executeUpdateCeiling(args, context);
+    case "create_column": return executeCreateColumn(args, context);
+    case "update_column": return executeUpdateColumn(args, context);
+    case "create_zone": return executeCreateZone(args, context);
+    case "update_zone": return executeUpdateZone(args, context);
+    case "create_stair": return executeCreateStair(args, context);
+    case "update_stair": return executeUpdateStair(args, context);
+    case "create_fence": return executeCreateFence(args, context);
+    case "update_fence": return executeUpdateFence(args, context);
+    case "create_door":
+      return executeCreateDoor(args, context);
+    case "update_door":
+      return executeUpdateDoor(args, context);
+    case "create_window":
+      return executeCreateWindow(args, context);
+    case "update_window":
+      return executeUpdateWindow(args, context);
     case "delete_node":
       return executeDeleteNode(args, context);
     default:
@@ -346,6 +380,156 @@ function executeUpdateSlab(args: Record<string, unknown>, context: AgentToolExec
   );
 }
 
+function executeCreateCeiling(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
+  const polygon = readPolygonArg(args, "polygon");
+  if (!polygon) return sceneToolFailure("create_ceiling", "天花轮廓至少需要三个由两个数字组成的坐标点。 ");
+  return executeSceneTool("create_ceiling", { type: "ceiling.create", parentId: readStringArg(args, "parent_id") || "level_default", name: readStringArg(args, "name") || undefined, polygon, height: readOptionalNumberArg(args, "height"), materialPreset: readOptionalMaterialPreset(args, "material_preset") }, context);
+}
+
+function executeUpdateCeiling(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
+  const id = readStringArg(args, "id");
+  if (!id) return sceneToolFailure("update_ceiling", "缺少天花 ID。 ");
+  const polygon = "polygon" in args ? readPolygonArg(args, "polygon") : undefined;
+  if ("polygon" in args && !polygon) return sceneToolFailure("update_ceiling", "天花轮廓至少需要三个由两个数字组成的坐标点。 ");
+  return executeSceneTool("update_ceiling", { type: "ceiling.update", id, ...(readStringArg(args, "name") ? { name: readStringArg(args, "name") } : {}), ...(polygon ? { polygon } : {}), ...(readOptionalNumberArg(args, "height") !== undefined ? { height: readOptionalNumberArg(args, "height") } : {}), ...(readOptionalMaterialPreset(args, "material_preset") ? { materialPreset: readOptionalMaterialPreset(args, "material_preset") } : {}) }, context);
+}
+
+function executeCreateColumn(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
+  const position = readPoint3Arg(args, "position");
+  if (!position) return sceneToolFailure("create_column", "柱位置必须是三个数字组成的数组。 ");
+  return executeSceneTool("create_column", { type: "column.create", parentId: readStringArg(args, "parent_id") || "level_default", name: readStringArg(args, "name") || undefined, position, crossSection: readColumnCrossSection(args), height: readOptionalNumberArg(args, "height"), width: readOptionalNumberArg(args, "width"), depth: readOptionalNumberArg(args, "depth"), materialPreset: readOptionalMaterialPreset(args, "material_preset") }, context);
+}
+function executeUpdateColumn(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
+  const id = readStringArg(args, "id"); if (!id) return sceneToolFailure("update_column", "缺少柱 ID。 ");
+  const position = "position" in args ? readPoint3Arg(args, "position") : undefined; if ("position" in args && !position) return sceneToolFailure("update_column", "柱位置必须是三个数字组成的数组。 ");
+  return executeSceneTool("update_column", { type: "column.update", id, ...(position ? { position } : {}), ...(readColumnCrossSection(args) ? { crossSection: readColumnCrossSection(args) } : {}), ...(readOptionalNumberArg(args, "height") !== undefined ? { height: readOptionalNumberArg(args, "height") } : {}), ...(readOptionalNumberArg(args, "width") !== undefined ? { width: readOptionalNumberArg(args, "width") } : {}), ...(readOptionalNumberArg(args, "depth") !== undefined ? { depth: readOptionalNumberArg(args, "depth") } : {}), ...(readOptionalMaterialPreset(args, "material_preset") ? { materialPreset: readOptionalMaterialPreset(args, "material_preset") } : {}) }, context);
+}
+function executeCreateZone(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
+  const polygon = readPolygonArg(args, "polygon");
+  if (!polygon) return sceneToolFailure("create_zone", "房间轮廓至少需要三个由两个数字组成的坐标点。 ");
+  return executeSceneTool("create_zone", {
+    type: "zone.create",
+    parentId: readStringArg(args, "parent_id") || "level_default",
+    name: readStringArg(args, "name") || undefined,
+    polygon,
+    color: readColorArg(args, "color")
+  }, context);
+}
+
+function executeUpdateZone(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
+  const id = readStringArg(args, "id");
+  if (!id) return sceneToolFailure("update_zone", "缺少房间 ID。 ");
+  const polygon = "polygon" in args ? readPolygonArg(args, "polygon") : undefined;
+  if ("polygon" in args && !polygon) return sceneToolFailure("update_zone", "房间轮廓至少需要三个由两个数字组成的坐标点。 ");
+  return executeSceneTool("update_zone", {
+    type: "zone.update",
+    id,
+    ...(readStringArg(args, "name") ? { name: readStringArg(args, "name") } : {}),
+    ...(polygon ? { polygon } : {}),
+    ...(readColorArg(args, "color") ? { color: readColorArg(args, "color") } : {})
+  }, context);
+}
+
+function executeCreateStair(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
+  const position = readPoint3Arg(args, "position");
+  if (!position) return sceneToolFailure("create_stair", "楼梯位置必须是三个数字组成的数组。 ");
+  return executeSceneTool("create_stair", {
+    type: "stair.create",
+    parentId: readStringArg(args, "parent_id") || "level_default",
+    name: readStringArg(args, "name") || undefined,
+    position,
+    rotation: readOptionalNumberArg(args, "rotation"),
+    width: readOptionalNumberArg(args, "width"),
+    totalRise: readOptionalNumberArg(args, "total_rise"),
+    stepCount: readOptionalNumberArg(args, "step_count"),
+    thickness: readOptionalNumberArg(args, "thickness"),
+    railingMode: readRailingMode(args),
+    materialPreset: readOptionalMaterialPreset(args, "material_preset")
+  }, context);
+}
+
+function executeUpdateStair(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
+  const id = readStringArg(args, "id");
+  if (!id) return sceneToolFailure("update_stair", "缺少楼梯 ID。 ");
+  const position = "position" in args ? readPoint3Arg(args, "position") : undefined;
+  if ("position" in args && !position) return sceneToolFailure("update_stair", "楼梯位置必须是三个数字组成的数组。 ");
+  return executeSceneTool("update_stair", {
+    type: "stair.update",
+    id,
+    ...(readStringArg(args, "name") ? { name: readStringArg(args, "name") } : {}),
+    ...(position ? { position } : {}),
+    ...(readOptionalNumberArg(args, "rotation") !== undefined ? { rotation: readOptionalNumberArg(args, "rotation") } : {}),
+    ...(readOptionalNumberArg(args, "width") !== undefined ? { width: readOptionalNumberArg(args, "width") } : {}),
+    ...(readOptionalNumberArg(args, "total_rise") !== undefined ? { totalRise: readOptionalNumberArg(args, "total_rise") } : {}),
+    ...(readOptionalNumberArg(args, "step_count") !== undefined ? { stepCount: readOptionalNumberArg(args, "step_count") } : {}),
+    ...(readOptionalNumberArg(args, "thickness") !== undefined ? { thickness: readOptionalNumberArg(args, "thickness") } : {}),
+    ...(readRailingMode(args) ? { railingMode: readRailingMode(args) } : {}),
+    ...(readOptionalMaterialPreset(args, "material_preset") ? { materialPreset: readOptionalMaterialPreset(args, "material_preset") } : {})
+  }, context);
+}
+
+function executeCreateFence(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
+  const start = readPointArg(args, "start");
+  const end = readPointArg(args, "end");
+  if (!start || !end) return sceneToolFailure("create_fence", "围栏起点和终点必须是两个数字组成的数组。 ");
+  return executeSceneTool("create_fence", {
+    type: "fence.create",
+    parentId: readStringArg(args, "parent_id") || "level_default",
+    name: readStringArg(args, "name") || undefined,
+    start,
+    end,
+    height: readOptionalNumberArg(args, "height"),
+    thickness: readOptionalNumberArg(args, "thickness"),
+    style: readFenceStyle(args),
+    materialPreset: readOptionalMaterialPreset(args, "material_preset")
+  }, context);
+}
+
+function executeUpdateFence(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
+  const id = readStringArg(args, "id");
+  if (!id) return sceneToolFailure("update_fence", "缺少围栏 ID。 ");
+  const start = "start" in args ? readPointArg(args, "start") : undefined;
+  const end = "end" in args ? readPointArg(args, "end") : undefined;
+  if (("start" in args && !start) || ("end" in args && !end)) return sceneToolFailure("update_fence", "围栏端点必须是两个数字组成的数组。 ");
+  return executeSceneTool("update_fence", {
+    type: "fence.update",
+    id,
+    ...(readStringArg(args, "name") ? { name: readStringArg(args, "name") } : {}),
+    ...(start ? { start } : {}),
+    ...(end ? { end } : {}),
+    ...(readOptionalNumberArg(args, "height") !== undefined ? { height: readOptionalNumberArg(args, "height") } : {}),
+    ...(readOptionalNumberArg(args, "thickness") !== undefined ? { thickness: readOptionalNumberArg(args, "thickness") } : {}),
+    ...(readFenceStyle(args) ? { style: readFenceStyle(args) } : {}),
+    ...(readOptionalMaterialPreset(args, "material_preset") ? { materialPreset: readOptionalMaterialPreset(args, "material_preset") } : {})
+  }, context);
+}
+
+function executeCreateDoor(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
+  const wallId = readStringArg(args, "wall_id");
+  const offset = readOptionalNumberArg(args, "offset");
+  if (!wallId || offset === undefined) return sceneToolFailure("create_door", "门需要有效的 wall_id 和 offset。 ");
+  return executeSceneTool("create_door", { type: "door.create", wallId, offset, name: readStringArg(args, "name") || undefined, width: readOptionalNumberArg(args, "width"), height: readOptionalNumberArg(args, "height"), sillHeight: readOptionalNumberArg(args, "sill_height"), materialPreset: readOptionalMaterialPreset(args, "material_preset") }, context);
+}
+
+function executeUpdateDoor(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
+  const id = readStringArg(args, "id");
+  if (!id) return sceneToolFailure("update_door", "缺少门 ID。 ");
+  return executeSceneTool("update_door", { type: "door.update", id, ...(readStringArg(args, "name") ? { name: readStringArg(args, "name") } : {}), ...(readOptionalNumberArg(args, "offset") !== undefined ? { offset: readOptionalNumberArg(args, "offset") } : {}), ...(readOptionalNumberArg(args, "width") !== undefined ? { width: readOptionalNumberArg(args, "width") } : {}), ...(readOptionalNumberArg(args, "height") !== undefined ? { height: readOptionalNumberArg(args, "height") } : {}), ...(readOptionalNumberArg(args, "sill_height") !== undefined ? { sillHeight: readOptionalNumberArg(args, "sill_height") } : {}), ...(readOptionalMaterialPreset(args, "material_preset") ? { materialPreset: readOptionalMaterialPreset(args, "material_preset") } : {}) }, context);
+}
+
+function executeCreateWindow(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
+  const wallId = readStringArg(args, "wall_id");
+  const offset = readOptionalNumberArg(args, "offset");
+  if (!wallId || offset === undefined) return sceneToolFailure("create_window", "窗需要有效的 wall_id 和 offset。 ");
+  return executeSceneTool("create_window", { type: "window.create", wallId, offset, name: readStringArg(args, "name") || undefined, width: readOptionalNumberArg(args, "width"), height: readOptionalNumberArg(args, "height"), sillHeight: readOptionalNumberArg(args, "sill_height"), materialPreset: readOptionalMaterialPreset(args, "material_preset") }, context);
+}
+
+function executeUpdateWindow(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
+  const id = readStringArg(args, "id");
+  if (!id) return sceneToolFailure("update_window", "缺少窗 ID。 ");
+  return executeSceneTool("update_window", { type: "window.update", id, ...(readStringArg(args, "name") ? { name: readStringArg(args, "name") } : {}), ...(readOptionalNumberArg(args, "offset") !== undefined ? { offset: readOptionalNumberArg(args, "offset") } : {}), ...(readOptionalNumberArg(args, "width") !== undefined ? { width: readOptionalNumberArg(args, "width") } : {}), ...(readOptionalNumberArg(args, "height") !== undefined ? { height: readOptionalNumberArg(args, "height") } : {}), ...(readOptionalNumberArg(args, "sill_height") !== undefined ? { sillHeight: readOptionalNumberArg(args, "sill_height") } : {}), ...(readOptionalMaterialPreset(args, "material_preset") ? { materialPreset: readOptionalMaterialPreset(args, "material_preset") } : {}) }, context);
+}
+
 function executeDeleteNode(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
   const id = readStringArg(args, "id");
   if (!id) return sceneToolFailure("delete_node", "缺少节点 ID。");
@@ -353,7 +537,7 @@ function executeDeleteNode(args: Record<string, unknown>, context: AgentToolExec
 }
 
 function executeSceneTool(
-  toolName: Extract<BuiltinToolName, "create_wall" | "update_wall" | "create_slab" | "update_slab" | "delete_node">,
+  toolName: Extract<BuiltinToolName, "create_wall" | "update_wall" | "create_slab" | "update_slab" | "create_ceiling" | "update_ceiling" | "create_column" | "update_column" | "create_zone" | "update_zone" | "create_stair" | "update_stair" | "create_fence" | "update_fence" | "create_door" | "update_door" | "create_window" | "update_window" | "delete_node">,
   command: SceneCommandInput,
   context: AgentToolExecutionContext
 ): AgentToolExecutionResult {
@@ -366,6 +550,20 @@ function executeSceneTool(
     : result.command.type === "wall.update" ? "已更新墙体"
     : result.command.type === "slab.create" ? "已创建楼板"
     : result.command.type === "slab.update" ? "已更新楼板"
+    : result.command.type === "ceiling.create" ? "已创建天花"
+    : result.command.type === "ceiling.update" ? "已更新天花"
+    : result.command.type === "column.create" ? "已创建柱"
+    : result.command.type === "column.update" ? "已更新柱"
+    : result.command.type === "zone.create" ? "已创建房间"
+    : result.command.type === "zone.update" ? "已更新房间"
+    : result.command.type === "stair.create" ? "已创建楼梯"
+    : result.command.type === "stair.update" ? "已更新楼梯"
+    : result.command.type === "fence.create" ? "已创建围栏"
+    : result.command.type === "fence.update" ? "已更新围栏"
+    : result.command.type === "door.create" ? "已创建门"
+    : result.command.type === "door.update" ? "已更新门"
+    : result.command.type === "window.create" ? "已创建窗"
+    : result.command.type === "window.update" ? "已更新窗"
     : "已删除构件";
   return {
     toolName,
@@ -374,7 +572,7 @@ function executeSceneTool(
   };
 }
 
-function sceneToolFailure(toolName: Extract<BuiltinToolName, "create_wall" | "update_wall" | "create_slab" | "update_slab" | "delete_node">, message: string): AgentToolExecutionResult {
+function sceneToolFailure(toolName: Extract<BuiltinToolName, "create_wall" | "update_wall" | "create_slab" | "update_slab" | "create_ceiling" | "update_ceiling" | "create_column" | "update_column" | "create_zone" | "update_zone" | "create_stair" | "update_stair" | "create_fence" | "update_fence" | "create_door" | "update_door" | "create_window" | "update_window" | "delete_node">, message: string): AgentToolExecutionResult {
   return { toolName, summary: message, content: `${toolName} failed: ${message}` };
 }
 
@@ -813,6 +1011,31 @@ function readPointArg(args: Record<string, unknown>, key: string): ScenePoint | 
   return [x, y];
 }
 
+function readPoint3Arg(args: Record<string, unknown>, key: string): [number, number, number] | undefined {
+  const value = args[key];
+  return Array.isArray(value) && value.length === 3 && value.every((item) => typeof item === "number" && Number.isFinite(item)) ? [value[0], value[1], value[2]] : undefined;
+}
+
+function readColumnCrossSection(args: Record<string, unknown>): "round" | "square" | "rectangular" | undefined {
+  const value = readStringArg(args, "cross_section");
+  return value === "round" || value === "square" || value === "rectangular" ? value : undefined;
+}
+
+function readRailingMode(args: Record<string, unknown>): "none" | "left" | "right" | "both" | undefined {
+  const value = readStringArg(args, "railing_mode");
+  return value === "none" || value === "left" || value === "right" || value === "both" ? value : undefined;
+}
+
+function readFenceStyle(args: Record<string, unknown>): "slat" | "rail" | "privacy" | undefined {
+  const value = readStringArg(args, "style");
+  return value === "slat" || value === "rail" || value === "privacy" ? value : undefined;
+}
+
+function readColorArg(args: Record<string, unknown>, key: string): string | undefined {
+  const value = readStringArg(args, key);
+  return value && /^#[0-9a-fA-F]{6}$/.test(value) ? value : undefined;
+}
+
 function readPolygonArg(args: Record<string, unknown>, key: string): ScenePoint[] | undefined {
   const value = args[key];
   if (!Array.isArray(value) || value.length < 3) return undefined;
@@ -991,6 +1214,23 @@ const updateSlabSchema = {
   required: ["id"],
   additionalProperties: false
 } as const;
+const createCeilingSchema = { type: "object", properties: { parent_id: { type: "string" }, name: { type: "string" }, polygon: polygonSchema, height: { type: "number" }, material_preset: materialPresetSchema }, required: ["polygon"], additionalProperties: false } as const;
+const updateCeilingSchema = { type: "object", properties: { id: { type: "string" }, name: { type: "string" }, polygon: polygonSchema, height: { type: "number" }, material_preset: materialPresetSchema }, required: ["id"], additionalProperties: false } as const;
+const createColumnSchema = { type: "object", properties: { parent_id: { type: "string" }, name: { type: "string" }, position: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 }, cross_section: { type: "string", enum: ["round", "square", "rectangular"] }, height: { type: "number" }, width: { type: "number" }, depth: { type: "number" }, material_preset: materialPresetSchema }, required: ["position"], additionalProperties: false } as const;
+const updateColumnSchema = { type: "object", properties: { id: { type: "string" }, position: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 }, cross_section: { type: "string", enum: ["round", "square", "rectangular"] }, height: { type: "number" }, width: { type: "number" }, depth: { type: "number" }, material_preset: materialPresetSchema }, required: ["id"], additionalProperties: false } as const;
+const createZoneSchema = { type: "object", properties: { parent_id: { type: "string" }, name: { type: "string" }, polygon: polygonSchema, color: { type: "string" } }, required: ["polygon"], additionalProperties: false } as const;
+const updateZoneSchema = { type: "object", properties: { id: { type: "string" }, name: { type: "string" }, polygon: polygonSchema, color: { type: "string" } }, required: ["id"], additionalProperties: false } as const;
+const stairRailingModeSchema = { type: "string", enum: ["none", "left", "right", "both"] } as const;
+const point3Schema = { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 } as const;
+const createStairSchema = { type: "object", properties: { parent_id: { type: "string" }, name: { type: "string" }, position: point3Schema, rotation: { type: "number" }, width: { type: "number" }, total_rise: { type: "number" }, step_count: { type: "integer", minimum: 2 }, thickness: { type: "number" }, railing_mode: stairRailingModeSchema, material_preset: materialPresetSchema }, required: ["position"], additionalProperties: false } as const;
+const updateStairSchema = { type: "object", properties: { id: { type: "string" }, name: { type: "string" }, position: point3Schema, rotation: { type: "number" }, width: { type: "number" }, total_rise: { type: "number" }, step_count: { type: "integer", minimum: 2 }, thickness: { type: "number" }, railing_mode: stairRailingModeSchema, material_preset: materialPresetSchema }, required: ["id"], additionalProperties: false } as const;
+const fenceStyleSchema = { type: "string", enum: ["slat", "rail", "privacy"] } as const;
+const createFenceSchema = { type: "object", properties: { parent_id: { type: "string" }, name: { type: "string" }, start: pointSchema, end: pointSchema, height: { type: "number" }, thickness: { type: "number" }, style: fenceStyleSchema, material_preset: materialPresetSchema }, required: ["start", "end"], additionalProperties: false } as const;
+const updateFenceSchema = { type: "object", properties: { id: { type: "string" }, name: { type: "string" }, start: pointSchema, end: pointSchema, height: { type: "number" }, thickness: { type: "number" }, style: fenceStyleSchema, material_preset: materialPresetSchema }, required: ["id"], additionalProperties: false } as const;
+const createDoorSchema = { type: "object", properties: { wall_id: { type: "string" }, name: { type: "string" }, offset: { type: "number" }, width: { type: "number" }, height: { type: "number" }, sill_height: { type: "number" }, material_preset: materialPresetSchema }, required: ["wall_id", "offset"], additionalProperties: false } as const;
+const updateDoorSchema = { type: "object", properties: { id: { type: "string" }, name: { type: "string" }, offset: { type: "number" }, width: { type: "number" }, height: { type: "number" }, sill_height: { type: "number" }, material_preset: materialPresetSchema }, required: ["id"], additionalProperties: false } as const;
+const createWindowSchema = { type: "object", properties: { wall_id: { type: "string" }, name: { type: "string" }, offset: { type: "number" }, width: { type: "number" }, height: { type: "number" }, sill_height: { type: "number" }, material_preset: materialPresetSchema }, required: ["wall_id", "offset"], additionalProperties: false } as const;
+const updateWindowSchema = { type: "object", properties: { id: { type: "string" }, name: { type: "string" }, offset: { type: "number" }, width: { type: "number" }, height: { type: "number" }, sill_height: { type: "number" }, material_preset: materialPresetSchema }, required: ["id"], additionalProperties: false } as const;
 const deleteNodeSchema = {
   type: "object",
   properties: { id: { type: "string" } },

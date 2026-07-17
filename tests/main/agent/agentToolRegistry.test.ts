@@ -23,6 +23,10 @@ describe("agentToolRegistry", () => {
     expect(names).toContain("get_scene");
     expect(names).toContain("create_wall");
     expect(names).toContain("update_wall");
+    expect(names).toContain("create_stair");
+    expect(names).toContain("update_stair");
+    expect(names).toContain("create_fence");
+    expect(names).toContain("update_fence");
     expect(names).toContain("delete_node");
     expect(names).not.toContain("load_csv");
     expect(names).not.toContain("load_excel");
@@ -113,6 +117,51 @@ describe("agentToolRegistry", () => {
     expect(result.content).toContain("wall_north");
   });
 
+  it("includes door and window IDs so the Agent can edit created openings", async () => {
+    const result = await executeAgentToolCall(
+      createToolCall("get_scene", {}),
+      createContext({
+        getSceneSnapshot: () => ({
+          revision: 3,
+          rootNodeIds: ["site_default"],
+          nodes: {
+            level_default: { id: "level_default", type: "level", name: "一层", parentId: "building_default", level: 0 },
+            wall_north: { id: "wall_north", type: "wall", name: "北墙", parentId: "level_default", start: [0, 0], end: [5, 0], height: 2.8, thickness: 0.2, materialPreset: "plaster" },
+            door_entry: { id: "door_entry", type: "door", name: "入口门", parentId: "wall_north", wallId: "wall_north", offset: 1, width: 0.9, height: 2.1, sillHeight: 0, materialPreset: "wood" },
+            window_north: { id: "window_north", type: "window", name: "北窗", parentId: "wall_north", wallId: "wall_north", offset: 3, width: 1.2, height: 1.2, sillHeight: 0.9, materialPreset: "glass" }
+          }
+        })
+      })
+    );
+
+    expect(result.content).toContain("door_entry");
+    expect(result.content).toContain("window_north");
+  });
+
+  it("includes all current component-library node IDs in the Agent scene summary", async () => {
+    const result = await executeAgentToolCall(
+      createToolCall("get_scene", {}),
+      createContext({
+        getSceneSnapshot: () => ({
+          revision: 4,
+          rootNodeIds: ["site_default"],
+          nodes: {
+            level_default: { id: "level_default", type: "level", name: "一层", parentId: "building_default", level: 0 },
+            column_lobby: { id: "column_lobby", type: "column", name: "大厅柱", parentId: "level_default", position: [1, 0, 1], crossSection: "square", height: 2.8, width: 0.3, depth: 0.3, materialPreset: "concrete" },
+            zone_lobby: { id: "zone_lobby", type: "zone", name: "大厅", parentId: "level_default", polygon: [[0, 0], [3, 0], [3, 2], [0, 2]], color: "#0f6cbd" },
+            stair_lobby: { id: "stair_lobby", type: "stair", name: "大厅楼梯", parentId: "level_default", position: [2, 0, 2], rotation: 0, width: 1.2, totalRise: 2.8, stepCount: 16, thickness: 0.16, railingMode: "both", materialPreset: "concrete" },
+            fence_terrace: { id: "fence_terrace", type: "fence", name: "露台围栏", parentId: "level_default", start: [0, 4], end: [4, 4], height: 1.1, thickness: 0.08, style: "rail", materialPreset: "metal" }
+          }
+        })
+      })
+    );
+
+    expect(result.content).toContain("column_lobby");
+    expect(result.content).toContain("zone_lobby");
+    expect(result.content).toContain("stair_lobby");
+    expect(result.content).toContain("fence_terrace");
+  });
+
   it("updates the SceneService snapshot when an Agent creates a wall", async () => {
     const sceneService = createSceneService({
       createId: () => "agent",
@@ -131,6 +180,56 @@ describe("agentToolRegistry", () => {
 
     expect(result.summary).toContain("wall_agent");
     expect(sceneService.getSnapshot()).toMatchObject({ revision: 1, nodes: { wall_agent: { name: "Agent 新墙" } } });
+  });
+
+  it("creates and updates a stair through the Agent command boundary", async () => {
+    const sceneService = createSceneService({
+      createId: () => "agent",
+      broadcast: vi.fn()
+    });
+    const context = createContext({
+      getSceneSnapshot: sceneService.getSnapshot,
+      executeSceneCommand: sceneService.execute
+    });
+
+    const created = await executeAgentToolCall(
+      createToolCall("create_stair", {
+        parent_id: "level_default",
+        position: [1, 0, 1],
+        width: 1.2,
+        total_rise: 3,
+        step_count: 18,
+        railing_mode: "left"
+      }),
+      context
+    );
+    const updated = await executeAgentToolCall(
+      createToolCall("update_stair", { id: "stair_agent", width: 1.4, railing_mode: "both" }),
+      context
+    );
+
+    expect(created.summary).toContain("已创建楼梯");
+    expect(updated.summary).toContain("已更新楼梯");
+    expect(sceneService.getSnapshot().nodes.stair_agent).toMatchObject({ width: 1.4, railingMode: "both" });
+  });
+
+  it("creates a fence through the Agent command boundary", async () => {
+    const sceneService = createSceneService({ createId: () => "agent", broadcast: vi.fn() });
+    const context = createContext({ getSceneSnapshot: sceneService.getSnapshot, executeSceneCommand: sceneService.execute });
+
+    const result = await executeAgentToolCall(
+      createToolCall("create_fence", {
+        parent_id: "level_default",
+        start: [0, 4],
+        end: [4, 4],
+        height: 1.2,
+        style: "rail"
+      }),
+      context
+    );
+
+    expect(result.summary).toContain("已创建围栏");
+    expect(sceneService.getSnapshot().nodes.fence_agent).toMatchObject({ type: "fence", style: "rail" });
   });
 
   const itWindows = process.platform === "win32" ? it : it.skip;

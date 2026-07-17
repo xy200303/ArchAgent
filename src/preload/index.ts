@@ -78,8 +78,12 @@ const api: ArchAgentApi = {
     checkRuntime: () => ipcRenderer.invoke("settings:check-runtime")
   },
   scene: {
+    activateProject: (projectPath: string) => ipcRenderer.invoke("scene:activate-project", projectPath),
     getSnapshot: () => ipcRenderer.invoke("scene:snapshot"),
-    execute: (command: SceneCommandInput) => ipcRenderer.invoke("scene:execute", command)
+    execute: (command: SceneCommandInput) => ipcRenderer.invoke("scene:execute", command),
+    getHistoryState: () => ipcRenderer.invoke("scene:history-state"),
+    undo: () => ipcRenderer.invoke("scene:undo"),
+    redo: () => ipcRenderer.invoke("scene:redo")
   },
   events: {
     subscribe: (listener: (event: RendererEvent) => void) => {

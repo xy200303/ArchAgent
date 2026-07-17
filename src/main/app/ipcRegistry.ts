@@ -27,7 +27,7 @@ import type {
   WorkspaceFileItem,
   WriteTextFileInput
 } from "../../shared/types";
-import type { SceneCommandInput, SceneCommandResult, SceneSnapshot } from "../../shared/modeling3d/sceneContracts";
+import type { SceneCommandInput, SceneCommandResult, SceneHistoryResult, SceneHistoryState, SceneSnapshot } from "../../shared/modeling3d/sceneContracts";
 import { buildArtifactPreview } from "../files/artifactPreview";
 import { checkRuntime } from "../runtime/runtimeDiagnostics";
 
@@ -69,6 +69,10 @@ export function registerIpcHandlers(options: {
   now: () => string;
   getSceneSnapshot: () => SceneSnapshot;
   executeSceneCommand: (command: SceneCommandInput) => SceneCommandResult;
+  getSceneHistoryState: () => SceneHistoryState;
+  undoScene: () => SceneHistoryResult;
+  redoScene: () => SceneHistoryResult;
+  activateSceneProject: (projectPath: string) => SceneSnapshot;
 }): void {
   ipcMain.handle("app:metadata", options.getAppMetadata);
   ipcMain.handle("app:recent-projects", options.listRecentProjects);
@@ -134,7 +138,11 @@ export function registerIpcHandlers(options: {
     })
   );
   ipcMain.handle("scene:snapshot", options.getSceneSnapshot);
+  ipcMain.handle("scene:activate-project", (_event, projectPath: string) => options.activateSceneProject(projectPath));
   ipcMain.handle("scene:execute", (_event, command: SceneCommandInput) => options.executeSceneCommand(command));
+  ipcMain.handle("scene:history-state", options.getSceneHistoryState);
+  ipcMain.handle("scene:undo", options.undoScene);
+  ipcMain.handle("scene:redo", options.redoScene);
 }
 
 function requireArtifact(artifacts: Map<string, ArtifactSummary>, artifactId: string): ArtifactSummary {

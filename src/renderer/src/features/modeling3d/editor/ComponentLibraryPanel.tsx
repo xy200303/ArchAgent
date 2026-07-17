@@ -1,5 +1,5 @@
 /** Renders only built-in components that have a complete scene-command workflow. */
-import { BrickWall, PanelsTopLeft, type LucideIcon } from "lucide-react";
+import { BrickWall, Columns3, DoorOpen, Fence, MapPinned, PanelTop, PanelsTopLeft, type LucideIcon, PanelsTopLeft as WindowIcon, Waypoints } from "lucide-react";
 import { memo, type JSX } from "react";
 import type { BuiltInComponentId } from "./componentLibraryContracts";
 import { WorkspaceSidePanel } from "./WorkspaceSidePanel";
@@ -11,7 +11,14 @@ const AVAILABLE_COMPONENTS: Array<{
   icon: LucideIcon;
 }> = [
   { id: "wall", label: "墙体", description: "参数创建", icon: BrickWall },
-  { id: "slab", label: "楼板", description: "矩形参数创建", icon: PanelsTopLeft }
+  { id: "slab", label: "楼板", description: "矩形参数创建", icon: PanelsTopLeft },
+  { id: "ceiling", label: "天花", description: "矩形参数创建", icon: PanelTop },
+  { id: "column", label: "柱", description: "结构支撑", icon: Columns3 },
+  { id: "zone", label: "房间", description: "功能分区", icon: MapPinned },
+  { id: "stair", label: "楼梯", description: "直梯参数创建", icon: Waypoints },
+  { id: "fence", label: "围栏", description: "原生边界构件", icon: Fence },
+  { id: "door", label: "门", description: "绑定墙体开洞", icon: DoorOpen },
+  { id: "window", label: "窗", description: "绑定墙体开洞", icon: WindowIcon }
 ];
 
 export const ComponentLibraryPanel = memo(function ComponentLibraryPanel({
@@ -29,7 +36,7 @@ export const ComponentLibraryPanel = memo(function ComponentLibraryPanel({
           ))}
         </div>
       </section>
-      <p className="component-library-note">门窗将在墙洞关系校验完成后加入，避免创建无法验证的构件。</p>
+      <p className="component-library-note">门窗均绑定墙体并经过洞口重叠校验，确保建筑关系始终可验证。</p>
     </WorkspaceSidePanel>
   );
 });

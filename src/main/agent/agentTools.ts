@@ -17,6 +17,20 @@ export type BuiltinToolName =
   | "update_wall"
   | "create_slab"
   | "update_slab"
+  | "create_ceiling"
+  | "update_ceiling"
+  | "create_column"
+  | "update_column"
+  | "create_zone"
+  | "update_zone"
+  | "create_stair"
+  | "update_stair"
+  | "create_fence"
+  | "update_fence"
+  | "create_door"
+  | "update_door"
+  | "create_window"
+  | "update_window"
   | "delete_node";
 
 export interface ReadToolResult {

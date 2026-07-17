@@ -2,15 +2,22 @@
 import {
   BrickWall,
   Building2,
+  Columns3,
+  DoorOpen,
+  Fence,
   ChevronDown,
   ChevronRight,
   Layers3,
+  MapPinned,
   PanelsTopLeft,
+  PanelTop,
   Save,
-  Trash2
+  Trash2,
+  Waypoints,
+  type LucideIcon
 } from "lucide-react";
 import { memo, useEffect, useState, type FormEvent, type JSX } from "react";
-import type { SceneCommandInput, SceneSlabNode, SceneSnapshot, SceneWallNode, WallMaterialPreset } from "../../../../../shared/modeling3d/sceneContracts";
+import type { SceneCommandInput, SceneNode, SceneSnapshot, SceneWallNode, WallMaterialPreset } from "../../../../../shared/modeling3d/sceneContracts";
 import { TooltipButton } from "../../../shared/TooltipButton";
 import { SceneToolbar } from "./SceneToolbar";
 import { WorkspaceSidePanel } from "./WorkspaceSidePanel";
@@ -57,8 +64,7 @@ function SceneTreeContent({
   const [levelOpen, setLevelOpen] = useState(true);
   const [wallsOpen, setWallsOpen] = useState(true);
   const level = Object.values(snapshot.nodes).find((node) => node.type === "level");
-  const walls = Object.values(snapshot.nodes).filter((node): node is SceneWallNode => node.type === "wall");
-  const slabs = Object.values(snapshot.nodes).filter((node): node is SceneSlabNode => node.type === "slab");
+  const components = Object.values(snapshot.nodes).filter(isSceneComponent);
 
   return (
     <div className="scene-tree-panel" aria-label="场景树">
@@ -114,29 +120,13 @@ function SceneTreeContent({
                   </button>
                   {wallsOpen ? (
                     <div id="scene-tree-walls" className="scene-tree-group">
-                      {walls.map((wall) => (
-                        <button
-                          key={wall.id}
-                          type="button"
-                          className={wall.id === selectedNodeId ? "scene-tree-node selected" : "scene-tree-node"}
-                          aria-pressed={wall.id === selectedNodeId}
-                          onClick={() => onSelectNode(wall.id)}
-                        >
-                          <BrickWall size={14} />
-                          <span>{wall.name}</span>
-                        </button>
-                      ))}
-                      {slabs.map((slab) => (
-                        <button
-                          key={slab.id}
-                          type="button"
-                          className={slab.id === selectedNodeId ? "scene-tree-node selected" : "scene-tree-node"}
-                          aria-pressed={slab.id === selectedNodeId}
-                          onClick={() => onSelectNode(slab.id)}
-                        >
-                          <PanelsTopLeft size={14} />
-                          <span>{slab.name}</span>
-                        </button>
+                      {components.map((component) => (
+                        <SceneTreeNodeButton
+                          key={component.id}
+                          node={component}
+                          selected={component.id === selectedNodeId}
+                          onSelectNode={onSelectNode}
+                        />
                       ))}
                     </div>
                   ) : null}
@@ -147,6 +137,45 @@ function SceneTreeContent({
         </div>
       ) : null}
     </div>
+  );
+}
+
+const COMPONENT_ICON_BY_TYPE: Record<Exclude<SceneNode["type"], "site" | "building" | "level">, LucideIcon> = {
+  wall: BrickWall,
+  slab: PanelsTopLeft,
+  ceiling: PanelTop,
+  column: Columns3,
+  zone: MapPinned,
+  stair: Waypoints,
+  fence: Fence,
+  door: DoorOpen,
+  window: PanelsTopLeft
+};
+
+function isSceneComponent(node: SceneNode): node is Exclude<SceneNode, { type: "site" | "building" | "level" }> {
+  return node.type !== "site" && node.type !== "building" && node.type !== "level";
+}
+
+function SceneTreeNodeButton({
+  node,
+  selected,
+  onSelectNode
+}: {
+  node: Exclude<SceneNode, { type: "site" | "building" | "level" }>;
+  selected: boolean;
+  onSelectNode: (id: string) => void;
+}): JSX.Element {
+  const Icon = COMPONENT_ICON_BY_TYPE[node.type];
+  return (
+    <button
+      type="button"
+      className={selected ? "scene-tree-node selected" : "scene-tree-node"}
+      aria-pressed={selected}
+      onClick={() => onSelectNode(node.id)}
+    >
+      <Icon size={14} />
+      <span>{node.name}</span>
+    </button>
   );
 }
 

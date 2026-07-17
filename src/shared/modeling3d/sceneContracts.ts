@@ -46,6 +46,71 @@ export interface SceneSlabNode {
   materialPreset: WallMaterialPreset;
 }
 
+export interface SceneCeilingNode {
+  id: string;
+  type: "ceiling";
+  name: string;
+  parentId: string;
+  polygon: ScenePoint[];
+  height: number;
+  materialPreset: WallMaterialPreset;
+}
+
+export type ColumnCrossSection = "round" | "square" | "rectangular";
+
+export interface SceneColumnNode {
+  id: string;
+  type: "column";
+  name: string;
+  parentId: string;
+  position: [number, number, number];
+  crossSection: ColumnCrossSection;
+  height: number;
+  width: number;
+  depth: number;
+  materialPreset: WallMaterialPreset;
+}
+
+export interface SceneZoneNode {
+  id: string;
+  type: "zone";
+  name: string;
+  parentId: string;
+  polygon: ScenePoint[];
+  color: string;
+}
+
+export interface SceneStairNode {
+  id: string;
+  type: "stair";
+  name: string;
+  parentId: string;
+  position: [number, number, number];
+  rotation: number;
+  width: number;
+  totalRise: number;
+  stepCount: number;
+  thickness: number;
+  railingMode: "none" | "left" | "right" | "both";
+  materialPreset: WallMaterialPreset;
+}
+
+export type FenceStyle = "slat" | "rail" | "privacy";
+
+/** A free-standing boundary element rendered by Pascal's native fence system. */
+export interface SceneFenceNode {
+  id: string;
+  type: "fence";
+  name: string;
+  parentId: string;
+  start: ScenePoint;
+  end: ScenePoint;
+  height: number;
+  thickness: number;
+  style: FenceStyle;
+  materialPreset: WallMaterialPreset;
+}
+
 export interface SceneWallNode {
   id: string;
   type: "wall";
@@ -58,7 +123,33 @@ export interface SceneWallNode {
   materialPreset: WallMaterialPreset;
 }
 
-export type SceneNode = SceneSiteNode | SceneBuildingNode | SceneLevelNode | SceneSlabNode | SceneWallNode;
+export interface SceneDoorNode {
+  id: string;
+  type: "door";
+  name: string;
+  parentId: string;
+  wallId: string;
+  offset: number;
+  width: number;
+  height: number;
+  sillHeight: number;
+  materialPreset: WallMaterialPreset;
+}
+
+export interface SceneWindowNode {
+  id: string;
+  type: "window";
+  name: string;
+  parentId: string;
+  wallId: string;
+  offset: number;
+  width: number;
+  height: number;
+  sillHeight: number;
+  materialPreset: WallMaterialPreset;
+}
+
+export type SceneNode = SceneSiteNode | SceneBuildingNode | SceneLevelNode | SceneSlabNode | SceneCeilingNode | SceneColumnNode | SceneZoneNode | SceneStairNode | SceneFenceNode | SceneWallNode | SceneDoorNode | SceneWindowNode;
 
 export interface SceneSnapshot {
   revision: number;
@@ -108,6 +199,103 @@ export interface UpdateSlabCommandInput {
   materialPreset?: WallMaterialPreset;
 }
 
+export interface CreateCeilingCommandInput {
+  type: "ceiling.create";
+  id?: string;
+  parentId: string;
+  name?: string;
+  polygon: ScenePoint[];
+  height?: number;
+  materialPreset?: WallMaterialPreset;
+}
+
+export interface UpdateCeilingCommandInput {
+  type: "ceiling.update";
+  id: string;
+  name?: string;
+  polygon?: ScenePoint[];
+  height?: number;
+  materialPreset?: WallMaterialPreset;
+}
+
+export interface CreateColumnCommandInput {
+  type: "column.create";
+  id?: string;
+  parentId: string;
+  name?: string;
+  position: [number, number, number];
+  crossSection?: ColumnCrossSection;
+  height?: number;
+  width?: number;
+  depth?: number;
+  materialPreset?: WallMaterialPreset;
+}
+
+export interface UpdateColumnCommandInput {
+  type: "column.update";
+  id: string;
+  name?: string;
+  position?: [number, number, number];
+  crossSection?: ColumnCrossSection;
+  height?: number;
+  width?: number;
+  depth?: number;
+  materialPreset?: WallMaterialPreset;
+}
+
+export interface CreateZoneCommandInput { type: "zone.create"; id?: string; parentId: string; name?: string; polygon: ScenePoint[]; color?: string; }
+export interface UpdateZoneCommandInput { type: "zone.update"; id: string; name?: string; polygon?: ScenePoint[]; color?: string; }
+export interface CreateStairCommandInput { type: "stair.create"; id?: string; parentId: string; name?: string; position: [number, number, number]; rotation?: number; width?: number; totalRise?: number; stepCount?: number; thickness?: number; railingMode?: SceneStairNode["railingMode"]; materialPreset?: WallMaterialPreset; }
+export interface UpdateStairCommandInput { type: "stair.update"; id: string; name?: string; position?: [number, number, number]; rotation?: number; width?: number; totalRise?: number; stepCount?: number; thickness?: number; railingMode?: SceneStairNode["railingMode"]; materialPreset?: WallMaterialPreset; }
+export interface CreateFenceCommandInput { type: "fence.create"; id?: string; parentId: string; name?: string; start: ScenePoint; end: ScenePoint; height?: number; thickness?: number; style?: FenceStyle; materialPreset?: WallMaterialPreset; }
+export interface UpdateFenceCommandInput { type: "fence.update"; id: string; name?: string; start?: ScenePoint; end?: ScenePoint; height?: number; thickness?: number; style?: FenceStyle; materialPreset?: WallMaterialPreset; }
+
+export interface CreateDoorCommandInput {
+  type: "door.create";
+  id?: string;
+  wallId: string;
+  name?: string;
+  offset: number;
+  width?: number;
+  height?: number;
+  sillHeight?: number;
+  materialPreset?: WallMaterialPreset;
+}
+
+export interface UpdateDoorCommandInput {
+  type: "door.update";
+  id: string;
+  offset?: number;
+  name?: string;
+  width?: number;
+  height?: number;
+  sillHeight?: number;
+  materialPreset?: WallMaterialPreset;
+}
+
+export interface CreateWindowCommandInput {
+  type: "window.create";
+  id?: string;
+  wallId: string;
+  name?: string;
+  offset: number;
+  width?: number;
+  height?: number;
+  sillHeight?: number;
+  materialPreset?: WallMaterialPreset;
+}
+
+export interface UpdateWindowCommandInput {
+  type: "window.update";
+  id: string;
+  offset?: number;
+  name?: string;
+  width?: number;
+  height?: number;
+  sillHeight?: number;
+  materialPreset?: WallMaterialPreset;
+}
+
 export interface DeleteNodeCommandInput {
   type: "node.delete";
   id: string;
@@ -118,13 +306,41 @@ export type SceneCommandInput =
   | UpdateWallCommandInput
   | CreateSlabCommandInput
   | UpdateSlabCommandInput
+  | CreateCeilingCommandInput
+  | UpdateCeilingCommandInput
+  | CreateColumnCommandInput
+  | UpdateColumnCommandInput
+  | CreateZoneCommandInput
+  | UpdateZoneCommandInput
+  | CreateStairCommandInput
+  | UpdateStairCommandInput
+  | CreateFenceCommandInput
+  | UpdateFenceCommandInput
+  | CreateDoorCommandInput
+  | UpdateDoorCommandInput
+  | CreateWindowCommandInput
+  | UpdateWindowCommandInput
   | DeleteNodeCommandInput;
 
 export type SceneCommand =
   | (CreateWallCommandInput & { id: string; name: string; height: number; thickness: number; materialPreset: WallMaterialPreset })
   | (CreateSlabCommandInput & { id: string; name: string; elevation: number; materialPreset: WallMaterialPreset })
+  | (CreateCeilingCommandInput & { id: string; name: string; height: number; materialPreset: WallMaterialPreset })
+  | (CreateColumnCommandInput & { id: string; name: string; crossSection: ColumnCrossSection; height: number; width: number; depth: number; materialPreset: WallMaterialPreset })
+  | (CreateZoneCommandInput & { id: string; name: string; color: string })
+  | (CreateStairCommandInput & { id: string; name: string; rotation: number; width: number; totalRise: number; stepCount: number; thickness: number; railingMode: SceneStairNode["railingMode"]; materialPreset: WallMaterialPreset })
+  | (CreateFenceCommandInput & { id: string; name: string; height: number; thickness: number; style: FenceStyle; materialPreset: WallMaterialPreset })
+  | (CreateDoorCommandInput & { id: string; name: string; width: number; height: number; sillHeight: number; materialPreset: WallMaterialPreset })
+  | (CreateWindowCommandInput & { id: string; name: string; width: number; height: number; sillHeight: number; materialPreset: WallMaterialPreset })
   | UpdateWallCommandInput
   | UpdateSlabCommandInput
+  | UpdateCeilingCommandInput
+  | UpdateColumnCommandInput
+  | UpdateZoneCommandInput
+  | UpdateStairCommandInput
+  | UpdateFenceCommandInput
+  | UpdateDoorCommandInput
+  | UpdateWindowCommandInput
   | DeleteNodeCommandInput;
 
 export interface SceneCommandSuccess {
@@ -140,3 +356,13 @@ export interface SceneCommandFailure {
 }
 
 export type SceneCommandResult = SceneCommandSuccess | SceneCommandFailure;
+
+export interface SceneHistoryState {
+  canUndo: boolean;
+  canRedo: boolean;
+}
+
+export interface SceneHistoryResult extends SceneHistoryState {
+  accepted: boolean;
+  snapshot: SceneSnapshot;
+}
