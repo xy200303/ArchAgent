@@ -6,17 +6,12 @@
   position: fixed;
   inset: 0;
   z-index: 120;
-  background: rgb(0 0 0 / 32%);
+  background: rgb(0 0 0 / 40%);
   backdrop-filter: blur(2px);
 }
 
 .settings-backdrop {
   z-index: 100;
-}
-
-.settings-panel-backdrop {
-  background: rgb(0 0 0 / 44%);
-  backdrop-filter: blur(5px);
 }
 
 .settings-panel {
@@ -58,7 +53,7 @@
   margin: 0;
   color: var(--fluent-color-neutral-foreground1);
   font-size: 20px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .settings-subtitle {
@@ -225,7 +220,7 @@
 .modal-panel input:focus,
 .modal-panel select:focus {
   border-color: var(--fluent-color-brand-stroke);
-  box-shadow: 0 0 0 2px rgb(15 108 189 / 16%);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--fluent-color-brand-stroke) 30%, transparent);
 }
 
 .switch-row {

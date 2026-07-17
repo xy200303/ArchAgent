@@ -14,7 +14,7 @@
   border: 1px solid var(--color-line);
   border-radius: var(--radius-lg);
   background: var(--color-surface);
-  box-shadow: var(--shadow-card), inset 0 1px 0 rgb(255 255 255 / 70%);
+  box-shadow: var(--shadow-card);
   padding: 28px 30px;
 }
 
@@ -180,7 +180,7 @@
   place-items: center;
   width: 24px;
   height: 24px;
-  border-radius: var(--fluent-radius-small);
+  border-radius: var(--fluent-radius-medium);
   background: transparent;
   color: var(--fluent-color-danger-foreground1);
   cursor: pointer;

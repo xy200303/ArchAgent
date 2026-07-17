@@ -48,11 +48,11 @@
 }
 
 .session-select-trigger:hover {
-  border-color: var(--fluent-color-neutral-stroke1-hover);
+  border-color: var(--fluent-color-neutral-stroke-hover);
 }
 
 .session-select-trigger:focus-visible {
-  outline: 2px solid var(--fluent-color-stroke-focus2);
+  outline: 2px solid var(--fluent-color-brand-stroke);
   outline-offset: 1px;
 }
 
@@ -205,7 +205,7 @@
   background: var(--fluent-color-neutral-background1);
   color: var(--fluent-color-neutral-foreground1);
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 600;
   padding: 0 var(--fluent-spacing-l);
 }
 
@@ -331,7 +331,7 @@
 
 .agent-failure-details summary {
   cursor: pointer;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .agent-failure-details pre {
@@ -339,7 +339,7 @@
   overflow: auto;
   margin: var(--fluent-spacing-s) 0 0;
   border: 1px solid var(--fluent-color-danger-stroke1);
-  border-radius: var(--fluent-radius-small);
+  border-radius: var(--fluent-radius-medium);
   background: var(--fluent-color-neutral-background1);
   color: var(--fluent-color-neutral-foreground2);
   font-family: var(--fluent-font-family-monospace);
@@ -454,15 +454,21 @@
   padding: var(--fluent-spacing-s) var(--fluent-spacing-m);
 }
 
+.process-card-toolbar > svg {
+  flex: none;
+}
+
 .process-card[data-state="closed"] .process-card-toolbar {
   border-bottom: 0;
 }
 
 .process-card-title {
+  flex: none;
   font-weight: 700;
 }
 
 .process-card-count {
+  flex: none;
   border-radius: var(--fluent-radius-circle);
   background: var(--fluent-color-neutral-background-selected);
   color: var(--fluent-color-brand-foreground1);
@@ -483,11 +489,12 @@
 
 .process-card-toggle {
   display: inline-grid;
+  flex: none;
   place-items: center;
   width: 28px;
   height: 28px;
   border: 1px solid var(--fluent-color-neutral-stroke1);
-  border-radius: var(--fluent-radius-small);
+  border-radius: var(--fluent-radius-medium);
   background: var(--fluent-color-neutral-background1);
   color: var(--fluent-color-brand-foreground1);
   cursor: pointer;
@@ -545,6 +552,8 @@
 .process-message-body {
   min-width: 0;
   line-height: 1.65;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .process-message-body p {
@@ -556,6 +565,10 @@
   align-items: center;
   gap: var(--fluent-spacing-m);
   min-height: 18px;
+}
+
+.tool-row-main > svg {
+  flex: none;
 }
 
 .tool-row.success {
@@ -582,17 +595,21 @@
 }
 
 .tool-name {
-  font-weight: 650;
+  flex: none;
+  font-weight: 600;
 }
 
 .tool-summary {
   min-width: 0;
   flex: 1;
   color: var(--fluent-color-neutral-foreground2);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .tool-detail-trigger {
   display: inline-flex;
+  flex: none;
   align-items: center;
   gap: var(--fluent-spacing-xs);
   margin-left: auto;
@@ -649,7 +666,15 @@
   word-break: break-word;
 }
 
+.file-row > span:not(.file-kind) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .file-kind {
+  flex: none;
   margin-left: auto;
   border-radius: var(--fluent-radius-circle);
   background: var(--fluent-color-success-background1);
@@ -667,7 +692,7 @@
   gap: var(--fluent-spacing-xs);
   min-height: 26px;
   border: 1px solid var(--fluent-color-neutral-stroke1);
-  border-radius: var(--fluent-radius-small);
+  border-radius: var(--fluent-radius-medium);
   background: var(--fluent-color-neutral-background1);
   color: var(--fluent-color-brand-foreground1);
   cursor: pointer;
@@ -683,6 +708,7 @@
 
 .file-actions {
   display: inline-flex;
+  flex: none;
   align-items: center;
   gap: var(--fluent-spacing-xs);
 }
@@ -693,7 +719,7 @@
   width: 28px;
   height: 28px;
   border: 1px solid var(--fluent-color-neutral-stroke1);
-  border-radius: var(--fluent-radius-small);
+  border-radius: var(--fluent-radius-medium);
   background: var(--fluent-color-neutral-background1);
   color: var(--fluent-color-brand-foreground1);
   padding: 0;
@@ -708,7 +734,15 @@
   color: var(--fluent-color-neutral-foreground2);
 }
 
+.stage-row > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .stage-row small {
+  flex: none;
   margin-left: auto;
   color: var(--fluent-color-neutral-foreground3);
 }

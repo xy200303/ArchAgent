@@ -175,13 +175,18 @@ body.is-resizing-chat-panel * {
 
 .activity-button {
   background: transparent;
+  color: var(--fluent-color-neutral-foreground3);
   cursor: pointer;
 }
 
-.activity-button:hover,
-.activity-button.active {
+.activity-button:hover {
   background: var(--fluent-color-neutral-background-hover);
   color: var(--fluent-color-neutral-foreground1);
+}
+
+.activity-button.active {
+  background: var(--fluent-color-neutral-background-hover);
+  color: var(--fluent-color-brand-foreground1);
 }
 
 .activity-button.active::before {
@@ -204,17 +209,13 @@ body.is-resizing-chat-panel * {
   background: var(--fluent-color-success-foreground1);
   color: var(--fluent-color-neutral-foreground-inverted);
   font-size: 10px;
-  font-weight: 800;
+  font-weight: 700;
   line-height: 17px;
   text-align: center;
   padding: 0 var(--fluent-spacing-xs);
 }
 
 /* Built-in component library */
-.component-library-section h3 {
-  margin: 0;
-}
-
 .component-library-section {
   display: grid;
   align-content: start;
@@ -249,7 +250,7 @@ body.is-resizing-chat-panel * {
   min-height: 70px;
   align-self: start;
   border: 1px solid var(--fluent-color-neutral-stroke1);
-  border-radius: var(--fluent-radius-small);
+  border-radius: var(--fluent-radius-medium);
   background: var(--fluent-color-neutral-background1);
   color: var(--fluent-color-neutral-foreground1);
   cursor: pointer;
@@ -258,7 +259,7 @@ body.is-resizing-chat-panel * {
 }
 
 .component-library-item:hover {
-  border-color: var(--fluent-color-brand-stroke1);
+  border-color: var(--fluent-color-brand-stroke);
   background: var(--fluent-color-neutral-background-hover);
   color: var(--fluent-color-brand-foreground1);
 }
@@ -360,7 +361,7 @@ body.is-resizing-chat-panel * {
 .resource-header strong {
   color: var(--fluent-color-neutral-foreground1);
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0;
 }
 
@@ -417,7 +418,7 @@ body.is-resizing-chat-panel * {
   background: transparent;
   color: var(--fluent-color-neutral-foreground3);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0;
   text-align: left;
   cursor: pointer;
@@ -605,7 +606,7 @@ svg.file-icon-default {
 }
 
 .workspace-row strong {
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .explorer-empty {
