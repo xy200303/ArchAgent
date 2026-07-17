@@ -5,11 +5,12 @@ import {
   ChevronDown,
   ChevronRight,
   Layers3,
+  PanelsTopLeft,
   Save,
   Trash2
 } from "lucide-react";
 import { memo, useEffect, useState, type FormEvent, type JSX } from "react";
-import type { SceneCommandInput, SceneSnapshot, SceneWallNode, WallMaterialPreset } from "../../../../../shared/modeling3d/sceneContracts";
+import type { SceneCommandInput, SceneSlabNode, SceneSnapshot, SceneWallNode, WallMaterialPreset } from "../../../../../shared/modeling3d/sceneContracts";
 import { TooltipButton } from "../../../shared/TooltipButton";
 import { SceneToolbar } from "./SceneToolbar";
 import { WorkspaceSidePanel } from "./WorkspaceSidePanel";
@@ -28,28 +29,28 @@ const MATERIAL_OPTIONS: Array<{ value: WallMaterialPreset; label: string }> = [
 
 export const SceneNavigationPanel = memo(function SceneNavigationPanel({
   snapshot,
-  selectedWallId,
-  onSelectWall
+  selectedNodeId,
+  onSelectNode
 }: {
   snapshot: SceneSnapshot;
-  selectedWallId?: string;
-  onSelectWall: (id: string) => void;
+  selectedNodeId?: string;
+  onSelectNode: (id: string) => void;
 }): JSX.Element {
   return (
     <WorkspaceSidePanel label="编辑器导航" className="scene-navigation-panel">
-      <SceneTreeContent snapshot={snapshot} selectedWallId={selectedWallId} onSelectWall={onSelectWall} />
+      <SceneTreeContent snapshot={snapshot} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} />
     </WorkspaceSidePanel>
   );
 });
 
 function SceneTreeContent({
   snapshot,
-  selectedWallId,
-  onSelectWall
+  selectedNodeId,
+  onSelectNode
 }: {
   snapshot: SceneSnapshot;
-  selectedWallId?: string;
-  onSelectWall: (id: string) => void;
+  selectedNodeId?: string;
+  onSelectNode: (id: string) => void;
 }): JSX.Element {
   const [sceneOpen, setSceneOpen] = useState(true);
   const [buildingOpen, setBuildingOpen] = useState(true);
@@ -57,6 +58,7 @@ function SceneTreeContent({
   const [wallsOpen, setWallsOpen] = useState(true);
   const level = Object.values(snapshot.nodes).find((node) => node.type === "level");
   const walls = Object.values(snapshot.nodes).filter((node): node is SceneWallNode => node.type === "wall");
+  const slabs = Object.values(snapshot.nodes).filter((node): node is SceneSlabNode => node.type === "slab");
 
   return (
     <div className="scene-tree-panel" aria-label="场景树">
@@ -108,7 +110,7 @@ function SceneTreeContent({
                   >
                     {wallsOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                     <BrickWall size={15} />
-                    <span>墙体</span>
+                    <span>建筑构件</span>
                   </button>
                   {wallsOpen ? (
                     <div id="scene-tree-walls" className="scene-tree-group">
@@ -116,12 +118,24 @@ function SceneTreeContent({
                         <button
                           key={wall.id}
                           type="button"
-                          className={wall.id === selectedWallId ? "scene-tree-node selected" : "scene-tree-node"}
-                          aria-pressed={wall.id === selectedWallId}
-                          onClick={() => onSelectWall(wall.id)}
+                          className={wall.id === selectedNodeId ? "scene-tree-node selected" : "scene-tree-node"}
+                          aria-pressed={wall.id === selectedNodeId}
+                          onClick={() => onSelectNode(wall.id)}
                         >
                           <BrickWall size={14} />
                           <span>{wall.name}</span>
+                        </button>
+                      ))}
+                      {slabs.map((slab) => (
+                        <button
+                          key={slab.id}
+                          type="button"
+                          className={slab.id === selectedNodeId ? "scene-tree-node selected" : "scene-tree-node"}
+                          aria-pressed={slab.id === selectedNodeId}
+                          onClick={() => onSelectNode(slab.id)}
+                        >
+                          <PanelsTopLeft size={14} />
+                          <span>{slab.name}</span>
                         </button>
                       ))}
                     </div>

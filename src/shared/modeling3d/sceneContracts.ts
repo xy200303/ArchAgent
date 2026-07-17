@@ -89,16 +89,42 @@ export interface UpdateWallCommandInput {
   materialPreset?: WallMaterialPreset;
 }
 
+export interface CreateSlabCommandInput {
+  type: "slab.create";
+  id?: string;
+  parentId: string;
+  name?: string;
+  polygon: ScenePoint[];
+  elevation?: number;
+  materialPreset?: WallMaterialPreset;
+}
+
+export interface UpdateSlabCommandInput {
+  type: "slab.update";
+  id: string;
+  name?: string;
+  polygon?: ScenePoint[];
+  elevation?: number;
+  materialPreset?: WallMaterialPreset;
+}
+
 export interface DeleteNodeCommandInput {
   type: "node.delete";
   id: string;
 }
 
-export type SceneCommandInput = CreateWallCommandInput | UpdateWallCommandInput | DeleteNodeCommandInput;
+export type SceneCommandInput =
+  | CreateWallCommandInput
+  | UpdateWallCommandInput
+  | CreateSlabCommandInput
+  | UpdateSlabCommandInput
+  | DeleteNodeCommandInput;
 
 export type SceneCommand =
   | (CreateWallCommandInput & { id: string; name: string; height: number; thickness: number; materialPreset: WallMaterialPreset })
+  | (CreateSlabCommandInput & { id: string; name: string; elevation: number; materialPreset: WallMaterialPreset })
   | UpdateWallCommandInput
+  | UpdateSlabCommandInput
   | DeleteNodeCommandInput;
 
 export interface SceneCommandSuccess {

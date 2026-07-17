@@ -1,6 +1,7 @@
 /** Applies validated scene commands without depending on Electron, React, or Pascal. */
 import type {
   CreateWallCommandInput,
+  CreateSlabCommandInput,
   SceneCommand,
   SceneCommandInput,
   SceneCommandResult,
@@ -8,6 +9,7 @@ import type {
   ScenePoint,
   SceneSnapshot,
   SceneWallNode,
+  SceneSlabNode,
   WallMaterialPreset
 } from "./sceneContracts";
 
@@ -62,13 +64,17 @@ export function createDefaultScene(): SceneSnapshot {
 export function applySceneCommand(
   snapshot: SceneSnapshot,
   input: SceneCommandInput,
-  createId: () => string
+  createId: (prefix: string) => string
 ): SceneCommandResult {
   switch (input.type) {
     case "wall.create":
       return createWallCommand(snapshot, input, createId);
     case "wall.update":
       return updateWallCommand(snapshot, input);
+    case "slab.create":
+      return createSlabCommand(snapshot, input, createId);
+    case "slab.update":
+      return updateSlabCommand(snapshot, input);
     case "node.delete":
       return deleteNodeCommand(snapshot, input);
   }
@@ -77,14 +83,14 @@ export function applySceneCommand(
 function createWallCommand(
   snapshot: SceneSnapshot,
   input: CreateWallCommandInput,
-  createId: () => string
+  createId: (prefix: string) => string
 ): SceneCommandResult {
   const parent = snapshot.nodes[input.parentId];
   if (!parent || parent.type !== "level") {
     return failure("invalid_parent", "墙体必须创建在有效楼层下。");
   }
 
-  const id = input.id?.trim() || `wall_${createId()}`;
+  const id = input.id?.trim() || `wall_${createId("wall")}`;
   if (snapshot.nodes[id]) return failure("duplicate_node", `墙体 ID 已存在：${id}`);
   if (!isValidNodeId(id)) return failure("invalid_command", "墙体 ID 只能包含字母、数字、下划线和连字符。");
 
@@ -115,6 +121,44 @@ function createWallCommand(
   return success(snapshot, command, { ...snapshot.nodes, [wall.id]: wall });
 }
 
+function createSlabCommand(
+  snapshot: SceneSnapshot,
+  input: CreateSlabCommandInput,
+  createId: (prefix: string) => string
+): SceneCommandResult {
+  const parent = snapshot.nodes[input.parentId];
+  if (!parent || parent.type !== "level") {
+    return failure("invalid_parent", "楼板必须创建在有效楼层下。");
+  }
+
+  const id = input.id?.trim() || `slab_${createId("slab")}`;
+  if (snapshot.nodes[id]) return failure("duplicate_node", `楼板 ID 已存在：${id}`);
+  if (!isValidNodeId(id)) return failure("invalid_command", "楼板 ID 只能包含字母、数字、下划线和连字符。");
+
+  const slab: SceneSlabNode = {
+    id,
+    type: "slab",
+    name: input.name?.trim() || `楼板 ${countSlabs(snapshot) + 1}`,
+    parentId: input.parentId,
+    polygon: input.polygon,
+    elevation: input.elevation ?? 0,
+    materialPreset: input.materialPreset ?? "concrete"
+  };
+  const validation = validateSlab(slab);
+  if (validation) return failure("invalid_command", validation);
+
+  const command: SceneCommand = {
+    type: "slab.create",
+    id: slab.id,
+    parentId: slab.parentId,
+    name: slab.name,
+    polygon: slab.polygon,
+    elevation: slab.elevation,
+    materialPreset: slab.materialPreset
+  };
+  return success(snapshot, command, { ...snapshot.nodes, [slab.id]: slab });
+}
+
 function updateWallCommand(snapshot: SceneSnapshot, input: Extract<SceneCommandInput, { type: "wall.update" }>): SceneCommandResult {
   const existing = snapshot.nodes[input.id];
   if (!existing) return failure("node_not_found", `未找到节点：${input.id}`);
@@ -135,10 +179,28 @@ function updateWallCommand(snapshot: SceneSnapshot, input: Extract<SceneCommandI
   return success(snapshot, input, { ...snapshot.nodes, [wall.id]: wall });
 }
 
+function updateSlabCommand(snapshot: SceneSnapshot, input: Extract<SceneCommandInput, { type: "slab.update" }>): SceneCommandResult {
+  const existing = snapshot.nodes[input.id];
+  if (!existing) return failure("node_not_found", `未找到节点：${input.id}`);
+  if (existing.type !== "slab") return failure("unsupported_node", "当前仅支持修改楼板。");
+
+  const slab: SceneSlabNode = {
+    ...existing,
+    ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+    ...(input.polygon ? { polygon: input.polygon } : {}),
+    ...(input.elevation !== undefined ? { elevation: input.elevation } : {}),
+    ...(input.materialPreset ? { materialPreset: input.materialPreset } : {})
+  };
+  const validation = validateSlab(slab);
+  if (validation) return failure("invalid_command", validation);
+
+  return success(snapshot, input, { ...snapshot.nodes, [slab.id]: slab });
+}
+
 function deleteNodeCommand(snapshot: SceneSnapshot, input: Extract<SceneCommandInput, { type: "node.delete" }>): SceneCommandResult {
   const node = snapshot.nodes[input.id];
   if (!node) return failure("node_not_found", `未找到节点：${input.id}`);
-  if (node.type !== "wall") return failure("unsupported_node", "当前仅支持删除墙体。");
+  if (node.type !== "wall" && node.type !== "slab") return failure("unsupported_node", "当前仅支持删除墙体或楼板。");
 
   const nodes = { ...snapshot.nodes };
   delete nodes[input.id];
@@ -168,6 +230,16 @@ function validateWall(wall: SceneWallNode): string | undefined {
   return undefined;
 }
 
+/** Validates a simple, non-degenerate floor footprint before it reaches Pascal. */
+function validateSlab(slab: SceneSlabNode): string | undefined {
+  if (!slab.name.trim()) return "楼板名称不能为空。";
+  if (slab.polygon.length < 3 || !slab.polygon.every(isFinitePoint)) return "楼板轮廓至少需要三个有限坐标点。";
+  if (Math.abs(polygonArea(slab.polygon)) < 0.01) return "楼板轮廓面积必须大于 0.01 平方米。";
+  if (!Number.isFinite(slab.elevation)) return "楼板标高必须是有限数字。";
+  if (!MATERIAL_PRESETS.includes(slab.materialPreset)) return "楼板材质预设无效。";
+  return undefined;
+}
+
 function success(snapshot: SceneSnapshot, command: SceneCommand, nodes: Record<string, SceneNode>): SceneCommandResult {
   return {
     accepted: true,
@@ -194,6 +266,17 @@ function distance(start: ScenePoint, end: ScenePoint): number {
 
 function countWalls(snapshot: SceneSnapshot): number {
   return Object.values(snapshot.nodes).filter((node) => node.type === "wall").length;
+}
+
+function countSlabs(snapshot: SceneSnapshot): number {
+  return Object.values(snapshot.nodes).filter((node) => node.type === "slab").length;
+}
+
+function polygonArea(points: ScenePoint[]): number {
+  return points.reduce((area, point, index) => {
+    const nextPoint = points[(index + 1) % points.length];
+    return area + point[0] * nextPoint[1] - nextPoint[0] * point[1];
+  }, 0) / 2;
 }
 
 function isValidNodeId(id: string): boolean {

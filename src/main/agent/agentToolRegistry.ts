@@ -137,6 +137,22 @@ export function buildAgentChatTools(options: { includeExecBash: boolean; include
     {
       type: "function",
       function: {
+        name: "create_slab",
+        description: "在指定楼层创建一个多边形楼板。坐标单位为米，轮廓至少包含三个点。",
+        parameters: createSlabSchema
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "update_slab",
+        description: "修改现有楼板的名称、轮廓、标高或材质。只传需要修改的字段。",
+        parameters: updateSlabSchema
+      }
+    },
+    {
+      type: "function",
+      function: {
         name: "delete_node",
         description: "删除指定的墙体节点。",
         parameters: deleteNodeSchema
@@ -229,6 +245,10 @@ export async function executeAgentToolCall(
       return executeCreateWall(args, context);
     case "update_wall":
       return executeUpdateWall(args, context);
+    case "create_slab":
+      return executeCreateSlab(args, context);
+    case "update_slab":
+      return executeUpdateSlab(args, context);
     case "delete_node":
       return executeDeleteNode(args, context);
     default:
@@ -290,6 +310,42 @@ function executeUpdateWall(args: Record<string, unknown>, context: AgentToolExec
   );
 }
 
+function executeCreateSlab(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
+  const polygon = readPolygonArg(args, "polygon");
+  if (!polygon) return sceneToolFailure("create_slab", "楼板轮廓至少需要三个由两个数字组成的坐标点。");
+  return executeSceneTool(
+    "create_slab",
+    {
+      type: "slab.create",
+      parentId: readStringArg(args, "parent_id") || "level_default",
+      name: readStringArg(args, "name") || undefined,
+      polygon,
+      elevation: readOptionalNumberArg(args, "elevation"),
+      materialPreset: readOptionalMaterialPreset(args, "material_preset")
+    },
+    context
+  );
+}
+
+function executeUpdateSlab(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
+  const id = readStringArg(args, "id");
+  if (!id) return sceneToolFailure("update_slab", "缺少楼板 ID。");
+  const polygon = "polygon" in args ? readPolygonArg(args, "polygon") : undefined;
+  if ("polygon" in args && !polygon) return sceneToolFailure("update_slab", "楼板轮廓至少需要三个由两个数字组成的坐标点。");
+  return executeSceneTool(
+    "update_slab",
+    {
+      type: "slab.update",
+      id,
+      ...(readStringArg(args, "name") ? { name: readStringArg(args, "name") } : {}),
+      ...(polygon ? { polygon } : {}),
+      ...(readOptionalNumberArg(args, "elevation") !== undefined ? { elevation: readOptionalNumberArg(args, "elevation") } : {}),
+      ...(readOptionalMaterialPreset(args, "material_preset") ? { materialPreset: readOptionalMaterialPreset(args, "material_preset") } : {})
+    },
+    context
+  );
+}
+
 function executeDeleteNode(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
   const id = readStringArg(args, "id");
   if (!id) return sceneToolFailure("delete_node", "缺少节点 ID。");
@@ -297,7 +353,7 @@ function executeDeleteNode(args: Record<string, unknown>, context: AgentToolExec
 }
 
 function executeSceneTool(
-  toolName: Extract<BuiltinToolName, "create_wall" | "update_wall" | "delete_node">,
+  toolName: Extract<BuiltinToolName, "create_wall" | "update_wall" | "create_slab" | "update_slab" | "delete_node">,
   command: SceneCommandInput,
   context: AgentToolExecutionContext
 ): AgentToolExecutionResult {
@@ -306,7 +362,11 @@ function executeSceneTool(
   if (!result.accepted) return sceneToolFailure(toolName, result.message);
 
   const nodeId = result.command.type === "node.delete" ? result.command.id : result.command.id;
-  const action = result.command.type === "wall.create" ? "已创建墙体" : result.command.type === "wall.update" ? "已更新墙体" : "已删除墙体";
+  const action = result.command.type === "wall.create" ? "已创建墙体"
+    : result.command.type === "wall.update" ? "已更新墙体"
+    : result.command.type === "slab.create" ? "已创建楼板"
+    : result.command.type === "slab.update" ? "已更新楼板"
+    : "已删除构件";
   return {
     toolName,
     summary: `${action}：${nodeId}`,
@@ -314,7 +374,7 @@ function executeSceneTool(
   };
 }
 
-function sceneToolFailure(toolName: Extract<BuiltinToolName, "create_wall" | "update_wall" | "delete_node">, message: string): AgentToolExecutionResult {
+function sceneToolFailure(toolName: Extract<BuiltinToolName, "create_wall" | "update_wall" | "create_slab" | "update_slab" | "delete_node">, message: string): AgentToolExecutionResult {
   return { toolName, summary: message, content: `${toolName} failed: ${message}` };
 }
 
@@ -753,6 +813,13 @@ function readPointArg(args: Record<string, unknown>, key: string): ScenePoint | 
   return [x, y];
 }
 
+function readPolygonArg(args: Record<string, unknown>, key: string): ScenePoint[] | undefined {
+  const value = args[key];
+  if (!Array.isArray(value) || value.length < 3) return undefined;
+  const points = value.map((item) => readPointArg({ point: item }, "point"));
+  return points.every((point): point is ScenePoint => Boolean(point)) ? points : undefined;
+}
+
 function readOptionalPointArg(args: Record<string, unknown>, key: string): ScenePoint | null | undefined {
   if (!(key in args)) return undefined;
   return readPointArg(args, key) ?? null;
@@ -863,6 +930,11 @@ const pointSchema = {
   minItems: 2,
   maxItems: 2
 } as const;
+const polygonSchema = {
+  type: "array",
+  items: pointSchema,
+  minItems: 3
+} as const;
 const materialPresetSchema = {
   type: "string",
   enum: ["brick", "concrete", "glass", "marble", "metal", "plaster", "tile", "white", "wood"]
@@ -890,6 +962,30 @@ const updateWallSchema = {
     end: pointSchema,
     height: { type: "number" },
     thickness: { type: "number" },
+    material_preset: materialPresetSchema
+  },
+  required: ["id"],
+  additionalProperties: false
+} as const;
+const createSlabSchema = {
+  type: "object",
+  properties: {
+    parent_id: { type: "string" },
+    name: { type: "string" },
+    polygon: polygonSchema,
+    elevation: { type: "number" },
+    material_preset: materialPresetSchema
+  },
+  required: ["polygon"],
+  additionalProperties: false
+} as const;
+const updateSlabSchema = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    name: { type: "string" },
+    polygon: polygonSchema,
+    elevation: { type: "number" },
     material_preset: materialPresetSchema
   },
   required: ["id"],

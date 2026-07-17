@@ -15,6 +15,8 @@ export type BuiltinToolName =
   | "get_scene"
   | "create_wall"
   | "update_wall"
+  | "create_slab"
+  | "update_slab"
   | "delete_node";
 
 export interface ReadToolResult {

@@ -40,4 +40,30 @@ describe("sceneReducer", () => {
     expect(deleted).toMatchObject({ accepted: true, snapshot: { revision: 2 } });
     expect(invalidDelete).toMatchObject({ accepted: false, code: "unsupported_node" });
   });
+
+  it("creates, updates, and deletes a valid rectangular slab", () => {
+    const initial = createDefaultScene();
+    const created = applySceneCommand(
+      initial,
+      {
+        type: "slab.create",
+        id: "slab_terrace",
+        parentId: "level_default",
+        polygon: [[6, 0], [8, 0], [8, 2], [6, 2]],
+        elevation: 0.15,
+        materialPreset: "tile"
+      },
+      () => "unused"
+    );
+    if (!created.accepted) throw new Error(created.message);
+
+    const updated = applySceneCommand(created.snapshot, { type: "slab.update", id: "slab_terrace", elevation: 0.2 }, () => "unused");
+    const deleted = updated.accepted
+      ? applySceneCommand(updated.snapshot, { type: "node.delete", id: "slab_terrace" }, () => "unused")
+      : updated;
+
+    expect(created.snapshot.nodes.slab_terrace).toMatchObject({ type: "slab", materialPreset: "tile" });
+    expect(updated).toMatchObject({ accepted: true, snapshot: { revision: 2 } });
+    expect(deleted).toMatchObject({ accepted: true, snapshot: { revision: 3 } });
+  });
 });

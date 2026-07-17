@@ -1,5 +1,5 @@
 /** Builds a compact, tool-safe description of the authoritative building scene. */
-import type { SceneSnapshot, SceneWallNode } from "../../shared/modeling3d/sceneContracts";
+import type { SceneSlabNode, SceneSnapshot, SceneWallNode } from "../../shared/modeling3d/sceneContracts";
 
 /**
  * Limits Agent context to the architectural facts needed for follow-up commands.
@@ -7,6 +7,7 @@ import type { SceneSnapshot, SceneWallNode } from "../../shared/modeling3d/scene
  */
 export function summarizeSceneForAgent(snapshot: SceneSnapshot): string {
   const walls = Object.values(snapshot.nodes).filter((node): node is SceneWallNode => node.type === "wall");
+  const slabs = Object.values(snapshot.nodes).filter((node): node is SceneSlabNode => node.type === "slab");
   const levels = Object.values(snapshot.nodes).filter((node) => node.type === "level");
 
   return [
@@ -15,7 +16,10 @@ export function summarizeSceneForAgent(snapshot: SceneSnapshot): string {
     `墙体数量：${walls.length}`,
     walls.length
       ? "墙体：\n" + walls.map((wall) => formatWall(wall)).join("\n")
-      : "墙体：无"
+      : "墙体：无",
+    slabs.length
+      ? "楼板：\n" + slabs.map((slab) => `- ${slab.name}（${slab.id}）：${slab.polygon.length} 点轮廓，标高 ${slab.elevation}m，${slab.materialPreset}`).join("\n")
+      : "楼板：无"
   ].join("\n");
 }
 

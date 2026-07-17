@@ -2,11 +2,12 @@
 import { Blocks, Layers3, Orbit, Plus, Square } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type JSX } from "react";
 import type { ArchAgentApi } from "../../../../../shared/types";
-import type { SceneCommandInput, SceneSnapshot, SceneWallNode } from "../../../../../shared/modeling3d/sceneContracts";
+import type { SceneCommandInput, SceneSlabNode, SceneSnapshot, SceneWallNode } from "../../../../../shared/modeling3d/sceneContracts";
 import { getErrorMessage } from "../../../platform/bridge";
 import { TooltipButton } from "../../../shared/TooltipButton";
 import { ComponentLibraryPanel } from "../editor/ComponentLibraryPanel";
 import { SceneNavigationPanel, WallInspector } from "../editor/SceneEditorPanels";
+import { SlabInspector } from "../editor/SlabInspector";
 import type { BuiltInComponentId, ComponentLibraryRequest } from "../editor/componentLibraryContracts";
 import { SceneToolbar } from "../editor/SceneToolbar";
 import { PascalPreviewBoundary } from "./PascalPreviewBoundary";
@@ -26,8 +27,8 @@ export function SpatialEditor({
   onSelectBuiltInComponent: (componentId: BuiltInComponentId) => void;
 }): JSX.Element {
   const [snapshot, setSnapshot] = useState<SceneSnapshot>();
-  const [selectedWallId, setSelectedWallId] = useState<string>();
-  const [panelMode, setPanelMode] = useState<"none" | "create-wall" | "selected">("none");
+  const [selectedNodeId, setSelectedNodeId] = useState<string>();
+  const [panelMode, setPanelMode] = useState<"none" | "create-wall" | "create-slab" | "selected">("none");
   const [pascalCameraPreset, setPascalCameraPreset] = useState<PascalCameraPreset>("free");
   const [pascalPreviewKey, setPascalPreviewKey] = useState(0);
   const [message, setMessage] = useState("");
@@ -51,28 +52,39 @@ export function SpatialEditor({
     };
   }, [api]);
 
+  const selectedNode = useMemo(() => selectedNodeId ? snapshot?.nodes[selectedNodeId] : undefined, [selectedNodeId, snapshot]);
   const selectedWall = useMemo(() => {
-    const node = selectedWallId ? snapshot?.nodes[selectedWallId] : undefined;
+    const node = selectedNode;
     return node?.type === "wall" ? node : undefined;
-  }, [selectedWallId, snapshot]);
+  }, [selectedNode]);
+  const selectedSlab = useMemo(() => {
+    const node = selectedNode;
+    return node?.type === "slab" ? node : undefined;
+  }, [selectedNode]);
 
   const openWallCreation = useCallback((): void => {
-    setSelectedWallId(undefined);
+    setSelectedNodeId(undefined);
     setPanelMode("create-wall");
   }, []);
 
-  const selectWall = useCallback((id?: string): void => {
-    setSelectedWallId(id);
+  const openSlabCreation = useCallback((): void => {
+    setSelectedNodeId(undefined);
+    setPanelMode("create-slab");
+  }, []);
+
+  const selectNode = useCallback((id?: string): void => {
+    setSelectedNodeId(id);
     setPanelMode(id ? "selected" : "none");
   }, []);
 
   const closeInspector = useCallback((): void => {
-    selectWall(undefined);
-  }, [selectWall]);
+    selectNode(undefined);
+  }, [selectNode]);
 
   useEffect(() => {
     if (componentRequest?.componentId === "wall") openWallCreation();
-  }, [componentRequest?.revision, openWallCreation]);
+    if (componentRequest?.componentId === "slab") openSlabCreation();
+  }, [componentRequest?.componentId, componentRequest?.revision, openSlabCreation, openWallCreation]);
 
   const handlePascalError = useCallback((error: string): void => {
     setMessage(`三维场景同步失败：${error}`);
@@ -86,12 +98,17 @@ export function SpatialEditor({
         return;
       }
       setSnapshot(result.snapshot);
-      if (result.command.type === "wall.create" || result.command.type === "wall.update") {
-        setSelectedWallId(result.command.id);
+      if (
+        result.command.type === "wall.create" ||
+        result.command.type === "wall.update" ||
+        result.command.type === "slab.create" ||
+        result.command.type === "slab.update"
+      ) {
+        setSelectedNodeId(result.command.id);
         setPanelMode("selected");
       }
       if (result.command.type === "node.delete") {
-        setSelectedWallId(undefined);
+        setSelectedNodeId(undefined);
         setPanelMode("none");
       }
       setMessage("");
@@ -108,7 +125,15 @@ export function SpatialEditor({
     void execute(command);
   }, [execute]);
 
-  const deleteWall = useCallback((id: string): void => {
+  const createSlab = useCallback((command: Extract<SceneCommandInput, { type: "slab.create" }>): void => {
+    void execute(command);
+  }, [execute]);
+
+  const updateSlab = useCallback((command: Extract<SceneCommandInput, { type: "slab.update" }>): void => {
+    void execute(command);
+  }, [execute]);
+
+  const deleteNode = useCallback((id: string): void => {
     void execute({ type: "node.delete", id });
   }, [execute]);
 
@@ -143,7 +168,7 @@ export function SpatialEditor({
         className={`scene-editor-layout${showInspector ? " has-inspector" : ""}${componentLibraryOpen ? " component-library-mode" : ""}${sceneNavigationOpen ? "" : " no-navigation"}`}
       >
         {componentLibraryOpen ? <ComponentLibraryPanel onSelectComponent={onSelectBuiltInComponent} /> : null}
-        {sceneNavigationOpen ? <SceneNavigationPanel snapshot={snapshot} selectedWallId={selectedWallId} onSelectWall={selectWall} /> : null}
+        {sceneNavigationOpen ? <SceneNavigationPanel snapshot={snapshot} selectedNodeId={selectedNodeId} onSelectNode={selectNode} /> : null}
         <div className="scene-viewport">
           <PascalPreviewBoundary key={pascalPreviewKey} onRetry={() => setPascalPreviewKey((key) => key + 1)}>
             <Suspense fallback={<div className="spatial-editor-fallback">正在加载三维视图…</div>}>
@@ -155,12 +180,21 @@ export function SpatialEditor({
             </Suspense>
           </PascalPreviewBoundary>
         </div>
-        {showInspector ? (
+        {panelMode === "create-wall" || selectedWall ? (
           <WallInspector
             wall={selectedWall}
             onCreate={createWall}
             onUpdate={updateWall}
-            onDelete={deleteWall}
+            onDelete={deleteNode}
+            onClose={closeInspector}
+          />
+        ) : null}
+        {panelMode === "create-slab" || selectedSlab ? (
+          <SlabInspector
+            slab={selectedSlab}
+            onCreate={createSlab}
+            onUpdate={updateSlab}
+            onDelete={deleteNode}
             onClose={closeInspector}
           />
         ) : null}

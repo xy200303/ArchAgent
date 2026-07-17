@@ -26,7 +26,7 @@ export function createSceneService(options: {
   }
 
   function execute(command: SceneCommandInput): SceneCommandResult {
-    const result = applySceneCommand(snapshot, command, () => options.createId("wall"));
+    const result = applySceneCommand(snapshot, command, options.createId);
     if (!result.accepted) return result;
 
     snapshot = result.snapshot;
