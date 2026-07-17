@@ -21,7 +21,8 @@ import type {
   WorkspaceFileItem,
   WriteTextFileInput
 } from "../shared/types";
-import type { SceneCommandInput } from "../shared/modeling3d/sceneContracts";
+import type { SceneCommandInput, SceneExportTarget } from "../shared/modeling3d/sceneContracts";
+import type { GlobalComponentSummary } from "../shared/types";
 
 const api: ArchAgentApi = {
   app: {
@@ -84,6 +85,18 @@ const api: ArchAgentApi = {
     getHistoryState: () => ipcRenderer.invoke("scene:history-state"),
     undo: () => ipcRenderer.invoke("scene:undo"),
     redo: () => ipcRenderer.invoke("scene:redo")
+    ,import: () => ipcRenderer.invoke("scene:import")
+    ,selectExportTarget: () => ipcRenderer.invoke("scene:select-export-target")
+    ,saveExport: (target: SceneExportTarget, dataBase64?: string) => ipcRenderer.invoke("scene:save-export", target, dataBase64)
+    ,loadAsset: (assetId: string) => ipcRenderer.invoke("scene:load-asset", assetId)
+  },
+  componentLibrary: {
+    list: () => ipcRenderer.invoke("component-library:list"),
+    loadAsset: (id: string) => ipcRenderer.invoke("component-library:load-asset", id),
+    loadPreview: (id: string) => ipcRenderer.invoke("component-library:load-preview", id),
+    savePreview: (id: string, dataBase64: string) => ipcRenderer.invoke("component-library:save-preview", id, dataBase64),
+    update: (id: string, input: Pick<GlobalComponentSummary, "name" | "description" | "category" | "tags" | "placementRule">) => ipcRenderer.invoke("component-library:update", id, input),
+    place: (id: string) => ipcRenderer.invoke("component-library:place", id)
   },
   events: {
     subscribe: (listener: (event: RendererEvent) => void) => {

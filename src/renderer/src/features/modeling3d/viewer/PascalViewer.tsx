@@ -1,14 +1,18 @@
 /** Mounts Pascal's WebGPU scene projection with host-owned camera controls. */
 import { CameraControls, type CameraControls as CameraControlsHandle } from "@react-three/drei";
 import { useThree } from "@react-three/fiber";
-import { memo, useEffect, useRef, useState, type JSX } from "react";
-import { Color } from "three";
-import { useScene } from "@pascal-app/core";
+import { memo, useCallback, useEffect, useRef, useState, type JSX } from "react";
+import { Color, type Object3D } from "three";
+import { emitter, sceneRegistry, useScene, type NodeEvent } from "@pascal-app/core";
 import { Viewer, useViewer } from "@pascal-app/viewer";
 import { registerArchAgentNodes } from "../nodes/pascalNodeDefinitions";
 import { toPascalScene } from "../scene/pascalSceneAdapter";
-import type { SceneSnapshot } from "../../../../../shared/modeling3d/sceneContracts";
+import type { SceneExchangeFormat, SceneSnapshot } from "../../../../../shared/modeling3d/sceneContracts";
+import type { ArchAgentApi } from "../../../../../shared/types";
+import { ImportedAssetLayer } from "./ImportedAssetLayer";
+import { SceneExportBridge } from "./SceneExportBridge";
 import { WallDrawingOverlay } from "./WallDrawingOverlay";
+import { SelectedNodeDragController } from "./SelectedNodeDragController";
 import type { WallDrawingDraft } from "./useWallDrawing";
 
 registerArchAgentNodes();
@@ -43,7 +47,7 @@ function PascalSceneBackground(): null {
 /** Provides an editor-style ground reference without adding a persistent scene node. */
 function PascalGroundGrid(): JSX.Element {
   return (
-    <group position={[0, -0.015, 0]}>
+    <group position={[0, -0.015, 0]} userData={{ archAgentExportable: false }}>
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[30, 30]} />
         <meshStandardMaterial color="#fbfcfe" roughness={0.96} />
@@ -83,13 +87,31 @@ function PascalCameraControls({
   return <CameraControls ref={controls} makeDefault enabled={enabled} minDistance={1.5} maxDistance={50} smoothTime={0.22} />;
 }
 
-/** Keeps Pascal's native selection outline aligned with the single editor selection. */
+const DIRECT_SELECT_EVENT_NAMES = [
+  "wall:click",
+  "fence:click",
+  "slab:click",
+  "ceiling:click",
+  "column:click",
+  "zone:click",
+  "stair:click",
+  "door:click",
+  "window:click"
+] as const;
+
+/**
+ * Replaces Pascal's hierarchy-first browser selector with direct editor selection.
+ * This lets a user click a wall immediately instead of first selecting building,
+ * level and zone, while retaining Pascal's material and outline highlighting.
+ */
 function PascalSelectionBridge({
   selectedNodeId,
-  onSelectNode
+  onSelectNode,
+  assetObjects
 }: {
   selectedNodeId?: string;
   onSelectNode: (id?: string) => void;
+  assetObjects: Readonly<Record<string, Object3D>>;
 }): null {
   const selectedIds = useViewer((state) => state.selection.selectedIds);
 
@@ -102,6 +124,26 @@ function PascalSelectionBridge({
   }, [selectedNodeId]);
 
   useEffect(() => {
+    const selectDirectly = (event: NodeEvent): void => {
+      event.stopPropagation();
+      useViewer.getState().setSelection({ selectedIds: [event.node.id] });
+    };
+    for (const eventName of DIRECT_SELECT_EVENT_NAMES) emitter.on(eventName, selectDirectly as never);
+    return () => {
+      for (const eventName of DIRECT_SELECT_EVENT_NAMES) emitter.off(eventName, selectDirectly as never);
+    };
+  }, []);
+
+  useEffect(() => {
+    const outlineObjects = useViewer.getState().outliner.selectedObjects;
+    outlineObjects.length = 0;
+    for (const id of selectedIds) {
+      const object = sceneRegistry.nodes.get(id) ?? assetObjects[id];
+      if (object) outlineObjects.push(object);
+    }
+  }, [assetObjects, selectedIds]);
+
+  useEffect(() => {
     onSelectNode(selectedIds.length === 1 ? selectedIds[0] : undefined);
   }, [onSelectNode, selectedIds]);
 
@@ -110,32 +152,60 @@ function PascalSelectionBridge({
 
 function PascalViewer({
   onError,
+  api,
   snapshot,
   cameraPreset,
   cameraRevision,
   wallDrawingActive,
   wallDrawingDraft,
+  manualDragActive,
+  manualDragEnabled,
   onWallDrawingPoint,
   onWallDrawingPreview,
+  onManualDragState,
+  onManualDragPreview,
+  onManualDragDrop,
   selectedNodeId,
   onSelectNode,
   focusTarget,
-  focusRevision
+  focusRevision,
+  exportRequest,
+  onExportComplete
 }: {
   onError: (msg: string) => void;
+  api: ArchAgentApi;
   snapshot: SceneSnapshot;
   cameraPreset: PascalCameraPreset;
   cameraRevision: number;
   wallDrawingActive: boolean;
   wallDrawingDraft?: WallDrawingDraft;
+  manualDragActive: boolean;
+  manualDragEnabled: boolean;
   onWallDrawingPoint: (point: [number, number]) => void;
   onWallDrawingPreview: (point: [number, number]) => void;
+  onManualDragState: (active: boolean, nodeId: string) => void;
+  onManualDragPreview: (nodeId: string, point: [number, number]) => void;
+  onManualDragDrop: (nodeId: string, point: [number, number]) => void;
   selectedNodeId?: string;
   onSelectNode: (id?: string) => void;
   focusTarget?: [number, number, number];
   focusRevision: number;
+  exportRequest?: { format: Exclude<SceneExchangeFormat, "scene-json">; revision: number };
+  onExportComplete: (dataBase64: string) => void;
 }): JSX.Element {
   const [ready, setReady] = useState(false);
+  const [assetObjects, setAssetObjects] = useState<Record<string, Object3D>>({});
+
+  const setAssetObject = useCallback((id: string, object?: Object3D): void => {
+    setAssetObjects((current) => {
+      if (object && current[id] === object) return current;
+      if (!object && !current[id]) return current;
+      const next = { ...current };
+      if (object) next[id] = object;
+      else delete next[id];
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     try {
@@ -150,11 +220,13 @@ function PascalViewer({
   if (!ready) return <div className="spatial-editor-fallback">构建场景中…</div>;
   return (
     <div className="pascal-viewer-host">
-      <Viewer selectionManager={wallDrawingActive ? "custom" : "default"} renderContext="viewer" sceneReadyKey={snapshot.revision}>
+      <Viewer selectionManager="custom" renderContext="viewer" sceneReadyKey={snapshot.revision}>
         <PascalSceneBackground />
         <PascalGroundGrid />
-        <PascalCameraControls preset={cameraPreset} revision={cameraRevision} enabled={!wallDrawingActive} focusTarget={focusTarget} focusRevision={focusRevision} />
-        {!wallDrawingActive ? <PascalSelectionBridge selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} /> : null}
+        <ImportedAssetLayer api={api} assets={Object.values(snapshot.nodes).filter((node): node is Extract<typeof node, { type: "asset" }> => node.type === "asset")} selectedNodeId={selectedNodeId} onError={onError} onSelectNode={onSelectNode} onObjectChange={setAssetObject} />
+        <PascalCameraControls preset={cameraPreset} revision={cameraRevision} enabled={!wallDrawingActive && !manualDragActive} focusTarget={focusTarget} focusRevision={focusRevision} />
+        {!wallDrawingActive && !manualDragActive ? <PascalSelectionBridge selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} assetObjects={assetObjects} /> : null}
+        <SelectedNodeDragController nodeId={selectedNodeId} enabled={manualDragEnabled} onDragState={onManualDragState} onPreview={onManualDragPreview} onDrop={onManualDragDrop} />
         {wallDrawingActive ? (
           <WallDrawingOverlay
             draft={wallDrawingDraft}
@@ -162,9 +234,11 @@ function PascalViewer({
             onPreview={onWallDrawingPreview}
           />
         ) : null}
+        <SceneExportBridge request={exportRequest} onComplete={onExportComplete} onError={onError} />
       </Viewer>
     </div>
   );
 }
+
 
 export default memo(PascalViewer);

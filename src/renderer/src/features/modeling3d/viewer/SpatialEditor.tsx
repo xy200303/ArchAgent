@@ -1,9 +1,9 @@
 /** Coordinates scene commands, snapshots, and the renderer-side Pascal viewport. */
-import { Axis3d, Blocks, Check, ChevronDown, Crosshair, Layers3, Orbit, PanelsTopLeft, PencilRuler, Plus, Redo2, Square, Undo2, type LucideIcon } from "lucide-react";
+import { Axis3d, Check, ChevronDown, Crosshair, Download, Layers3, Library, Orbit, PanelsTopLeft, PencilRuler, Plus, Redo2, Square, Undo2, Upload, type LucideIcon } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type JSX } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
 import type { ArchAgentApi } from "../../../../../shared/types";
-import type { SceneCeilingNode, SceneColumnNode, SceneCommandInput, SceneDoorNode, SceneSlabNode, SceneSnapshot, SceneWallNode, SceneWindowNode } from "../../../../../shared/modeling3d/sceneContracts";
+import type { SceneCeilingNode, SceneColumnNode, SceneCommandInput, SceneDoorNode, SceneExchangeFormat, SceneExportTarget, SceneSlabNode, SceneSnapshot, SceneWallNode, SceneWindowNode } from "../../../../../shared/modeling3d/sceneContracts";
 import type { SceneHistoryState } from "../../../../../shared/modeling3d/sceneContracts";
 import { getErrorMessage } from "../../../platform/bridge";
 import { TooltipButton } from "../../../shared/TooltipButton";
@@ -17,11 +17,14 @@ import { ColumnInspector } from "../editor/ColumnInspector";
 import { ZoneInspector } from "../editor/ZoneInspector";
 import { StairInspector } from "../editor/StairInspector";
 import { FenceInspector } from "../editor/FenceInspector";
+import { AssetInspector } from "../editor/AssetInspector";
 import type { BuiltInComponentId, ComponentLibraryRequest } from "../editor/componentLibraryContracts";
 import { SceneToolbar } from "../editor/SceneToolbar";
 import { PascalPreviewBoundary } from "./PascalPreviewBoundary";
 import type { PascalCameraPreset } from "./PascalViewer";
 import { useWallDrawing } from "./useWallDrawing";
+import { applySceneCommand } from "../../../../../shared/modeling3d/sceneReducer";
+import { buildRelocationCommand, canRelocateSceneNode } from "./relocationCommand";
 
 const PascalViewer = lazy(() => import("./PascalViewer"));
 
@@ -45,6 +48,8 @@ export function SpatialEditor({
 }): JSX.Element {
   const [snapshot, setSnapshot] = useState<SceneSnapshot>();
   const [selectedNodeId, setSelectedNodeId] = useState<string>();
+  const [draggingNodeId, setDraggingNodeId] = useState<string>();
+  const [dragPreviewPoint, setDragPreviewPoint] = useState<[number, number]>();
   const [panelMode, setPanelMode] = useState<"none" | "create-wall" | "create-slab" | "create-ceiling" | "create-column" | "create-zone" | "create-stair" | "create-fence" | "create-door" | "create-window" | "selected">("none");
   const [pascalCameraPreset, setPascalCameraPreset] = useState<PascalCameraPreset>("free");
   const [pascalCameraRevision, setPascalCameraRevision] = useState(0);
@@ -52,6 +57,9 @@ export function SpatialEditor({
   const [pascalPreviewKey, setPascalPreviewKey] = useState(0);
   const [message, setMessage] = useState("");
   const [historyState, setHistoryState] = useState<SceneHistoryState>({ canUndo: false, canRedo: false });
+  const [exportRequest, setExportRequest] = useState<{ format: Exclude<SceneExchangeFormat, "scene-json">; revision: number }>();
+  const [pendingExportTarget, setPendingExportTarget] = useState<SceneExportTarget>();
+  const lastFocusedSelectionId = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     let active = true;
@@ -94,6 +102,8 @@ export function SpatialEditor({
   const selectedFence = useMemo(() => selectedNode?.type === "fence" ? selectedNode : undefined, [selectedNode]);
   const selectedDoor = useMemo(() => selectedNode?.type === "door" ? selectedNode : undefined, [selectedNode]);
   const selectedWindow = useMemo(() => selectedNode?.type === "window" ? selectedNode : undefined, [selectedNode]);
+  const selectedAsset = useMemo(() => selectedNode?.type === "asset" ? selectedNode : undefined, [selectedNode]);
+  const draggingNode = useMemo(() => draggingNodeId ? snapshot?.nodes[draggingNodeId] : undefined, [draggingNodeId, snapshot]);
   const walls = useMemo(() => Object.values(snapshot?.nodes ?? {}).filter((node): node is SceneWallNode => node.type === "wall"), [snapshot]);
   const componentLibraryOpen = sidebarMode === "components";
   const sceneNavigationOpen = sidebarMode === "explorer";
@@ -102,6 +112,24 @@ export function SpatialEditor({
     [snapshot]
   );
   const focusTarget = useMemo(() => getFocusTarget(selectedNode, snapshot), [selectedNode, snapshot]);
+
+  /** Centers a newly selected component once without fighting property edits or drag previews. */
+  useEffect(() => {
+    if (!selectedNodeId || !focusTarget) {
+      lastFocusedSelectionId.current = undefined;
+      return;
+    }
+    if (lastFocusedSelectionId.current === selectedNodeId) return;
+    lastFocusedSelectionId.current = selectedNodeId;
+    setFocusRevision((revision) => revision + 1);
+  }, [focusTarget, selectedNodeId]);
+  const previewSnapshot = useMemo(() => {
+    if (!snapshot || !draggingNode || !dragPreviewPoint) return snapshot;
+    const relocation = buildRelocationCommand(draggingNode, dragPreviewPoint);
+    if ("error" in relocation) return snapshot;
+    const result = applySceneCommand(snapshot, relocation.command, () => "drag_preview");
+    return result.accepted ? result.snapshot : snapshot;
+  }, [dragPreviewPoint, draggingNode, snapshot]);
 
   const openWallCreation = useCallback((): void => {
     setSelectedNodeId(undefined);
@@ -121,6 +149,8 @@ export function SpatialEditor({
   const openWindowCreation = useCallback((): void => { setSelectedNodeId(undefined); setPanelMode("create-window"); }, []);
 
   const selectNode = useCallback((id?: string): void => {
+    setDraggingNodeId(undefined);
+    setDragPreviewPoint(undefined);
     setSelectedNodeId(id);
     setPanelMode(id ? "selected" : "none");
   }, []);
@@ -191,7 +221,9 @@ export function SpatialEditor({
         result.command.type === "door.create" ||
         result.command.type === "door.update" ||
         result.command.type === "window.create" ||
-        result.command.type === "window.update"
+        result.command.type === "window.update" ||
+        result.command.type === "asset.create" ||
+        result.command.type === "asset.update"
       ) {
         setSelectedNodeId(result.command.id);
         setPanelMode("selected");
@@ -235,6 +267,7 @@ export function SpatialEditor({
   const updateDoor = useCallback((command: Extract<SceneCommandInput, { type: "door.update" }>): void => { void execute(command); }, [execute]);
   const createWindow = useCallback((command: Extract<SceneCommandInput, { type: "window.create" }>): void => { void execute(command); }, [execute]);
   const updateWindow = useCallback((command: Extract<SceneCommandInput, { type: "window.update" }>): void => { void execute(command); }, [execute]);
+  const updateAsset = useCallback((command: Extract<SceneCommandInput, { type: "asset.update" }>): void => { void execute(command); }, [execute]);
 
   const createDrawnWall = useCallback(async (command: Extract<SceneCommandInput, { type: "wall.create" }>): Promise<void> => {
     await execute(command);
@@ -246,13 +279,81 @@ export function SpatialEditor({
   }, [componentLibraryOpen, wallDrawing.active, wallDrawing.cancel]);
 
   const toggleWallDrawing = useCallback((): void => {
-    if (!wallDrawing.active) selectNode(undefined);
+    if (!wallDrawing.active) {
+      setDraggingNodeId(undefined);
+      setDragPreviewPoint(undefined);
+      selectNode(undefined);
+    }
     wallDrawing.toggle();
   }, [selectNode, wallDrawing]);
+
+  const setManualDragState = useCallback((active: boolean, nodeId: string): void => {
+    setDraggingNodeId(active ? nodeId : undefined);
+    if (!active) setDragPreviewPoint(undefined);
+  }, []);
+
+  const previewManualDrag = useCallback((nodeId: string, point: [number, number]): void => {
+    setDraggingNodeId(nodeId);
+    setDragPreviewPoint(point);
+  }, []);
+
+  const dropManualDrag = useCallback((nodeId: string, point: [number, number]): void => {
+    const node = snapshot?.nodes[nodeId];
+    setDraggingNodeId(undefined);
+    setDragPreviewPoint(undefined);
+    if (!node) {
+      return;
+    }
+    const result = buildRelocationCommand(node, point);
+    if ("error" in result) {
+      setMessage(result.error);
+      return;
+    }
+    void execute(result.command);
+  }, [execute, snapshot]);
 
   const deleteNode = useCallback((id: string): void => {
     void execute({ type: "node.delete", id });
   }, [execute]);
+
+  /** Starts export by selecting a destination before expensive geometry serialization begins. */
+  const exportScene = useCallback(async (): Promise<void> => {
+    try {
+      const target = await api.scene.selectExportTarget();
+      if (!target) return;
+      if (target.format === "scene-json") {
+        await api.scene.saveExport(target);
+        setMessage(`已导出可编辑场景：${target.path}`);
+        return;
+      }
+      setPendingExportTarget(target);
+      setExportRequest((current) => ({ format: target.format as Exclude<SceneExchangeFormat, "scene-json">, revision: (current?.revision ?? 0) + 1 }));
+      setMessage("正在导出三维模型…");
+    } catch (error) {
+      setMessage(`场景导出失败：${getErrorMessage(error)}`);
+    }
+  }, [api]);
+
+  const completeExport = useCallback((dataBase64: string): void => {
+    if (!pendingExportTarget) return;
+    void api.scene.saveExport(pendingExportTarget, dataBase64)
+      .then((path) => setMessage(`已导出模型：${path}`))
+      .catch((error: unknown) => setMessage(`场景导出失败：${getErrorMessage(error)}`))
+      .finally(() => { setPendingExportTarget(undefined); setExportRequest(undefined); });
+  }, [api, pendingExportTarget]);
+
+  const importScene = useCallback(async (): Promise<void> => {
+    try {
+      const result = await api.scene.import();
+      if (!result) return;
+      setSnapshot(result.snapshot);
+      setSelectedNodeId(undefined);
+      setPanelMode("none");
+      setMessage(result.kind === "scene" ? `已打开可编辑场景：${result.name}` : `已导入参考模型：${result.name}`);
+    } catch (error) {
+      setMessage(`场景导入失败：${getErrorMessage(error)}`);
+    }
+  }, [api]);
 
   if (!snapshot) {
     return <div className="spatial-editor spatial-editor-fallback"><strong>正在加载空间场景…</strong></div>;
@@ -261,7 +362,7 @@ export function SpatialEditor({
   const showInspector = panelMode !== "none";
   return (
     <section className="spatial-editor">
-      <SceneToolbar title={componentLibraryOpen ? "构件库" : "空间编辑器"} icon={componentLibraryOpen ? Blocks : Layers3}>
+      <SceneToolbar title={componentLibraryOpen ? "构件库" : "空间编辑器"} icon={componentLibraryOpen ? Library : Layers3}>
         {componentLibraryOpen ? null : (
           <div className="scene-toolbar-viewport" role="toolbar" aria-label="视图控制">
             <TooltipButton label={wallDrawing.active ? "退出画墙工具" : "绘制墙体"} className={`scene-tool-button${wallDrawing.active ? " active" : ""}`} pressed={wallDrawing.active} onClick={toggleWallDrawing}>
@@ -278,6 +379,13 @@ export function SpatialEditor({
             <TooltipButton label="重做上一步" className="scene-tool-button" onClick={() => void restoreHistory("redo")} disabled={!historyState.canRedo}>
               <Redo2 size={17} />
             </TooltipButton>
+            <span className="scene-toolbar-divider" aria-hidden="true" />
+            <TooltipButton label="导入场景或参考模型" className="scene-tool-button" onClick={() => void importScene()}>
+              <Upload size={17} />
+            </TooltipButton>
+            <TooltipButton label="导出场景或三维模型" className="scene-tool-button" onClick={() => void exportScene()} disabled={Boolean(pendingExportTarget)}>
+              <Download size={17} />
+            </TooltipButton>
             <button type="button" className="primary-action scene-create-wall-action" onClick={openWallCreation}>
               <Plus size={16} />
               参数创建
@@ -289,7 +397,7 @@ export function SpatialEditor({
       <div
         className={`scene-editor-layout${showInspector ? " has-inspector" : ""}${componentLibraryOpen ? " component-library-mode" : ""}${sceneNavigationOpen ? "" : " no-navigation"}`}
       >
-        {componentLibraryOpen ? <ComponentLibraryPanel onSelectComponent={onSelectBuiltInComponent} /> : null}
+        {componentLibraryOpen ? <ComponentLibraryPanel api={api} onSelectComponent={onSelectBuiltInComponent} onPlaceComponent={(id) => { void api.componentLibrary.place(id).then(setSnapshot).catch((error: unknown) => setMessage(`放入构件失败：${getErrorMessage(error)}`)); }} /> : null}
         {sceneNavigationOpen ? <SceneNavigationPanel snapshot={snapshot} selectedNodeId={selectedNodeId} onSelectNode={selectNode} /> : null}
         <div className={`scene-viewport${wallDrawing.active ? " drawing" : ""}`}>
           {wallDrawing.active ? (
@@ -303,18 +411,26 @@ export function SpatialEditor({
           <PascalPreviewBoundary key={pascalPreviewKey} onRetry={() => setPascalPreviewKey((key) => key + 1)}>
             <Suspense fallback={<div className="spatial-editor-fallback">正在加载三维视图…</div>}>
               <PascalViewer
-                snapshot={snapshot}
+                api={api}
+                snapshot={previewSnapshot ?? snapshot}
                 cameraPreset={pascalCameraPreset}
                 cameraRevision={pascalCameraRevision}
                 wallDrawingActive={wallDrawing.active}
                 wallDrawingDraft={wallDrawing.draft}
+                manualDragActive={Boolean(draggingNode)}
+                manualDragEnabled={Boolean(selectedNode && canRelocateSceneNode(selectedNode) && !wallDrawing.active)}
                 onWallDrawingPoint={wallDrawing.placePoint}
                 onWallDrawingPreview={wallDrawing.previewPoint}
+                onManualDragState={setManualDragState}
+                onManualDragPreview={previewManualDrag}
+                onManualDragDrop={dropManualDrag}
                 selectedNodeId={selectedNodeId}
                 onSelectNode={selectNode}
                 focusTarget={focusTarget}
                 focusRevision={focusRevision}
                 onError={handlePascalError}
+                exportRequest={exportRequest}
+                onExportComplete={completeExport}
               />
             </Suspense>
           </PascalPreviewBoundary>
@@ -350,6 +466,7 @@ export function SpatialEditor({
         {panelMode === "create-window" || selectedWindow ? (
           <WindowInspector window={selectedWindow} walls={walls} onCreate={createWindow} onUpdate={updateWindow} onDelete={deleteNode} onClose={closeInspector} />
         ) : null}
+        {selectedAsset ? <AssetInspector asset={selectedAsset} onUpdate={updateAsset} onDelete={deleteNode} onClose={closeInspector} /> : null}
       </div>
     </section>
   );
@@ -423,5 +540,6 @@ function getFocusTarget(selectedNode: SceneSnapshot["nodes"][string] | undefined
     const ratio = (selectedNode.offset + selectedNode.width / 2) / Math.hypot(wall.end[0] - wall.start[0], wall.end[1] - wall.start[1]);
     return [wall.start[0] + (wall.end[0] - wall.start[0]) * ratio, selectedNode.sillHeight + selectedNode.height / 2, wall.start[1] + (wall.end[1] - wall.start[1]) * ratio];
   }
+  if (selectedNode.type === "asset") return [...selectedNode.position];
   return undefined;
 }

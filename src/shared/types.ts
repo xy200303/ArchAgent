@@ -1,4 +1,4 @@
-import type { SceneCommandInput, SceneCommandResult, SceneHistoryResult, SceneHistoryState, SceneSnapshot } from "./modeling3d/sceneContracts";
+import type { SceneAssetPayload, SceneCommandInput, SceneCommandResult, SceneExportTarget, SceneHistoryResult, SceneHistoryState, SceneImportResult, SceneSnapshot } from "./modeling3d/sceneContracts";
 
 export type MessageRole = "user" | "assistant";
 
@@ -112,6 +112,7 @@ export interface ArtifactSummary {
   size: number;
   createdAt: string;
 }
+export interface GlobalComponentSummary { id: string; name: string; source: "hunyuan-3d" | "external"; model: string; prompt?: string; description?: string; category?: string; tags: string[]; placementRule?: string; previewAvailable: boolean; createdAt: string; }
 
 export interface ArtifactListInput {
   sessionId?: string;
@@ -401,7 +402,12 @@ export interface ArchAgentApi {
     getHistoryState(): Promise<SceneHistoryState>;
     undo(): Promise<SceneHistoryResult>;
     redo(): Promise<SceneHistoryResult>;
+    import(): Promise<SceneImportResult | undefined>;
+    selectExportTarget(): Promise<SceneExportTarget | undefined>;
+    saveExport(target: SceneExportTarget, dataBase64?: string): Promise<string>;
+    loadAsset(assetId: string): Promise<SceneAssetPayload>;
   };
+  componentLibrary: { list(): Promise<GlobalComponentSummary[]>; loadAsset(id: string): Promise<SceneAssetPayload>; loadPreview(id: string): Promise<string | undefined>; savePreview(id: string, dataBase64: string): Promise<void>; update(id: string, input: Pick<GlobalComponentSummary, "name" | "description" | "category" | "tags" | "placementRule">): Promise<GlobalComponentSummary>; place(id: string): Promise<SceneSnapshot>; };
   events: {
     subscribe(listener: (event: RendererEvent) => void): () => void;
   };

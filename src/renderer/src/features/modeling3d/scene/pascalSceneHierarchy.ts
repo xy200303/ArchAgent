@@ -9,6 +9,7 @@ import type { SceneSnapshot } from "../../../../../shared/modeling3d/sceneContra
 export function collectPascalChildIds(snapshot: Pick<SceneSnapshot, "nodes">): Record<string, string[]> {
   const childIdsByParentId: Record<string, string[]> = {};
   for (const node of Object.values(snapshot.nodes)) {
+    if (node.type === "asset") continue;
     if (!node.parentId) continue;
     (childIdsByParentId[node.parentId] ??= []).push(node.id);
   }

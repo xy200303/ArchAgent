@@ -9,7 +9,8 @@ import type {
   SceneSnapshot,
   SceneWallNode,
   SceneWindowNode,
-  SceneZoneNode
+  SceneZoneNode,
+  SceneAssetNode
 } from "../../shared/modeling3d/sceneContracts";
 
 /**
@@ -26,6 +27,7 @@ export function summarizeSceneForAgent(snapshot: SceneSnapshot): string {
   const fences = Object.values(snapshot.nodes).filter((node): node is SceneFenceNode => node.type === "fence");
   const doors = Object.values(snapshot.nodes).filter((node): node is SceneDoorNode => node.type === "door");
   const windows = Object.values(snapshot.nodes).filter((node): node is SceneWindowNode => node.type === "window");
+  const assets = Object.values(snapshot.nodes).filter((node): node is SceneAssetNode => node.type === "asset");
   const levels = Object.values(snapshot.nodes).filter((node) => node.type === "level");
 
   return [
@@ -58,7 +60,10 @@ export function summarizeSceneForAgent(snapshot: SceneSnapshot): string {
       : "门：无",
     windows.length
       ? "窗：\n" + windows.map((window) => formatOpening(window)).join("\n")
-      : "窗：无"
+      : "窗：无",
+    assets.length
+      ? "参考模型：\n" + assets.map((asset) => `- ${asset.name}（${asset.id}）：${asset.format.toUpperCase()}，位置 [${asset.position.join(", ")}]，缩放 [${asset.scale.join(", ")}]`).join("\n")
+      : "参考模型：无"
   ].join("\n");
 }
 

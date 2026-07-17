@@ -31,6 +31,10 @@ export type BuiltinToolName =
   | "update_door"
   | "create_window"
   | "update_window"
+  | "update_asset"
+  | "generate_3d_asset"
+  | "import_component_asset"
+  | "get_component_library"
   | "delete_node";
 
 export interface ReadToolResult {

@@ -216,21 +216,53 @@ body.is-resizing-chat-panel * {
 }
 
 /* Built-in component library */
-.component-library-section {
-  display: grid;
-  align-content: start;
+.component-library-sidebar {
+  display: flex;
+  height: 100%;
   min-height: 0;
-  flex: 1;
-  gap: var(--fluent-spacing-m);
-  overflow: auto;
-  padding: var(--fluent-spacing-l);
+  flex-direction: column;
+  overscroll-behavior: contain;
+  overflow: hidden;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
 }
 
-.component-library-section h3 {
+.component-library-section {
+  display: flex;
+  min-height: 0;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: var(--fluent-spacing-s);
+  overflow: hidden;
+  padding: var(--fluent-spacing-m) var(--fluent-spacing-l);
+}
+
+.component-library-section.is-open {
+  flex: 1 1 0;
+}
+
+.component-library-heading {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 6px;
+  border: 0;
+  background: transparent;
   color: var(--fluent-color-neutral-foreground3);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.02em;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+.component-library-heading:hover {
+  color: var(--fluent-color-neutral-foreground1);
+}
+
+.component-library-heading:focus-visible {
+  outline: 2px solid var(--fluent-color-brand-stroke);
+  outline-offset: 2px;
 }
 
 .component-library-grid {
@@ -240,21 +272,28 @@ body.is-resizing-chat-panel * {
   gap: var(--fluent-spacing-s);
 }
 
+.component-library-list {
+  min-height: 0;
+  flex: 1 1 auto;
+  overscroll-behavior: contain;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+
 .component-library-item {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-columns: 72px minmax(0, 1fr);
   align-items: center;
-  column-gap: var(--fluent-spacing-m);
-  row-gap: 2px;
-  min-height: 70px;
+  min-height: 58px;
   align-self: start;
   border: 1px solid var(--fluent-color-neutral-stroke1);
   border-radius: var(--fluent-radius-medium);
   background: var(--fluent-color-neutral-background1);
   color: var(--fluent-color-neutral-foreground1);
   cursor: pointer;
-  padding: var(--fluent-spacing-m);
+  overflow: hidden;
+  padding: 0;
   text-align: left;
 }
 
@@ -264,8 +303,69 @@ body.is-resizing-chat-panel * {
   color: var(--fluent-color-brand-foreground1);
 }
 
-.component-library-item svg {
-  grid-row: 1 / span 2;
+.component-built-in-preview,
+.component-model-preview {
+  display: block;
+  width: 100%;
+  height: 58px;
+  background: var(--fluent-color-neutral-background3);
+  pointer-events: none;
+}
+
+.component-built-in-preview {
+  display: grid;
+  place-items: center;
+  color: var(--fluent-color-brand-foreground1);
+}
+
+.component-model-preview {
+  position: relative;
+  overflow: hidden;
+}
+
+.component-preview-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.component-preview-placeholder {
+  width: 100%;
+  height: 100%;
+  background:
+    linear-gradient(145deg, transparent 38%, var(--fluent-color-neutral-stroke2) 39% 42%, transparent 43%),
+    linear-gradient(35deg, transparent 46%, var(--fluent-color-neutral-stroke2) 47% 50%, transparent 51%),
+    var(--fluent-color-neutral-background3);
+}
+
+.component-library-item-copy {
+  display: grid;
+  min-width: 0;
+  align-content: center;
+  gap: 2px;
+  padding: var(--fluent-spacing-s) 10px;
+}
+
+.component-library-item-copy span {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.component-library-item-copy small {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--fluent-color-neutral-foreground3);
+  font-size: 11px;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+.component-library-item:hover .component-library-item-copy span {
   color: var(--fluent-color-brand-foreground1);
 }
 
@@ -282,8 +382,36 @@ body.is-resizing-chat-panel * {
   line-height: 1.45;
 }
 
-.component-library-item small {
-  align-self: start;
+.component-semantic-editor {
+  display: grid;
+  min-height: 0;
+  max-height: 42%;
+  gap: var(--fluent-spacing-s);
+  border-top: 1px solid var(--fluent-color-neutral-stroke2);
+  overflow-y: auto;
+  padding-top: var(--fluent-spacing-m);
+}
+
+.component-semantic-editor input,
+.component-semantic-editor textarea {
+  width: 100%;
+  border: 1px solid var(--fluent-color-neutral-stroke1);
+  border-radius: var(--fluent-radius-small);
+  background: var(--fluent-color-neutral-background1);
+  color: var(--fluent-color-neutral-foreground1);
+  padding: 7px;
+  font: inherit;
+  font-size: 12px;
+}
+
+.component-semantic-editor textarea {
+  min-height: 52px;
+  resize: vertical;
+}
+
+.component-semantic-editor > div {
+  display: flex;
+  gap: var(--fluent-spacing-s);
 }
 
 .component-library-note {

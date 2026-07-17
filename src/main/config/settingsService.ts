@@ -115,10 +115,12 @@ export function createSettingsService(options: {
     const currentKey = readEnvValue("HY3_API_KEY", "OPENAI_API_KEY", "");
     const currentImageKey = readEnvValue("HY3_IMAGE_API_KEY", "OPENAI_IMAGE_API_KEY", "");
     const currentVisionKey = readEnvValue("HY3_VISION_API_KEY", "OPENAI_VISION_API_KEY", "");
+    const current3dModel = process.env.HY3_3D_MODEL?.trim() || "hy-3d-3.0";
     const content = serializeEnvFile([
       { key: "HY3_API_KEY", value: input.openai.apiKey ?? currentKey },
       { key: "HY3_BASE_URL", value: input.openai.baseUrl },
       { key: "HY3_CHAT_MODEL", value: input.openai.chatModel },
+      { key: "HY3_3D_MODEL", value: current3dModel },
       { key: "HY3_CHAT_IMAGE_INPUT_ENABLED", value: input.openai.chatImageInputEnabled },
       { key: "HY3_THINKING_ENABLED", value: input.openai.thinkingEnabled },
       { key: "HY3_REASONING_EFFORT", value: input.openai.reasoningEffort },

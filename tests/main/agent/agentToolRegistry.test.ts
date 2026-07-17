@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ChatCompletionMessageToolCall } from "openai/resources/chat/completions";
 import { buildAgentChatTools, executeAgentToolCall, type AgentToolExecutionContext } from "../../../src/main/agent/agentToolRegistry";
+import { buildAgentModelingSystemPrompt } from "../../../src/main/agent/conversationService";
 import { createSceneService } from "../../../src/main/modeling3d/sceneService";
 import type { AppSettings } from "../../../src/shared/types";
 
@@ -27,6 +28,10 @@ describe("agentToolRegistry", () => {
     expect(names).toContain("update_stair");
     expect(names).toContain("create_fence");
     expect(names).toContain("update_fence");
+    expect(names).toContain("update_asset");
+    expect(names).toContain("generate_3d_asset");
+    expect(names).toContain("import_component_asset");
+    expect(names).toContain("get_component_library");
     expect(names).toContain("delete_node");
     expect(names).not.toContain("load_csv");
     expect(names).not.toContain("load_excel");
@@ -38,6 +43,21 @@ describe("agentToolRegistry", () => {
     expect(names).not.toContain("render_chart");
     expect(names).not.toContain("generate_report");
     expect(names).not.toContain("exec_bash");
+  });
+
+  it("directs furniture requests to Hunyuan 3D asset generation", () => {
+    const prompt = buildAgentModelingSystemPrompt();
+    const generateTool = buildAgentChatTools({ includeExecBash: false }).find((tool) => tool.function.name === "generate_3d_asset");
+
+    expect(prompt).toContain("创建、生成或制作沙发");
+    expect(prompt).toContain("绝不能回复“无法创建家具或通用 Mesh”");
+    expect(prompt).toContain("完整的中文正向 prompt");
+    expect(prompt).toContain("generate_3d_asset");
+    expect(prompt).toContain("import_component_asset");
+    expect(generateTool?.function.description).toContain("家具");
+    expect(generateTool?.function.description).toContain("文生3D");
+    expect(generateTool?.function.description).toContain("output/assets");
+    expect(JSON.stringify(generateTool?.function.parameters)).toContain("detail_level");
   });
 
   it("keeps exec_bash opt-in for local diagnostics", () => {
@@ -230,6 +250,20 @@ describe("agentToolRegistry", () => {
 
     expect(result.summary).toContain("已创建围栏");
     expect(sceneService.getSnapshot().nodes.fence_agent).toMatchObject({ type: "fence", style: "rail" });
+  });
+
+  it("moves imported reference meshes through the Agent command boundary", async () => {
+    const sceneService = createSceneService({ createId: () => "agent", broadcast: vi.fn() });
+    sceneService.execute({ type: "asset.create", id: "asset_sofa", parentId: "level_default", name: "沙发", format: "glb", sourcePath: "assets/asset_sofa.glb" });
+    const context = createContext({ getSceneSnapshot: sceneService.getSnapshot, executeSceneCommand: sceneService.execute });
+
+    const result = await executeAgentToolCall(
+      createToolCall("update_asset", { id: "asset_sofa", position: [2, 0, 1], rotation: [0, 1.57, 0], scale: [1.2, 1.2, 1.2] }),
+      context
+    );
+
+    expect(result.summary).toContain("已更新参考模型");
+    expect(sceneService.getSnapshot().nodes.asset_sofa).toMatchObject({ position: [2, 0, 1], scale: [1.2, 1.2, 1.2] });
   });
 
   const itWindows = process.platform === "win32" ? it : it.skip;

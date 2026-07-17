@@ -146,11 +146,12 @@ const ProcessCard = memo(function ProcessCard({
     <Collapsible.Root className={`process-card ${status}`} defaultOpen>
       <div className="process-card-toolbar">
         <ProcessCardStatusIcon status={status} />
-        <span className="process-card-title">过程记录</span>
-        <span className="process-card-count">{formatProcessCardCounts(items)}</span>
-        <span className="process-card-summary">{formatProcessCardSummary(items)}</span>
+        <div className="process-card-heading">
+          <span className="process-card-title">执行过程</span>
+          <span className="process-card-count">{formatProcessCardCounts(items)}</span>
+        </div>
         <Collapsible.Trigger asChild>
-          <button type="button" className="process-card-toggle" aria-label="展开或折叠过程记录">
+          <button type="button" className="process-card-toggle" aria-label="展开或折叠执行过程" title="展开或折叠执行过程">
             <ChevronDown size={14} />
           </button>
         </Collapsible.Trigger>
@@ -206,20 +207,6 @@ function formatProcessCardCounts(items: ProcessStreamItem[]): string {
     stageCount ? `${stageCount} 条过程` : "",
     fileCount ? `${fileCount} 个文件` : ""
   ].filter(Boolean).join(" · ");
-}
-
-function formatProcessCardSummary(items: ProcessStreamItem[]): string {
-  const latest = items.at(-1);
-  if (!latest) return "等待执行";
-  if (latest.kind === "message") return compactInlineText(latest.content) || "过程说明";
-  if (latest.kind === "file") return `已生成 ${latest.name}`;
-  if (latest.kind === "stage") return [latest.title, latest.detail].filter(Boolean).join(" · ");
-  return latest.summary || `工具 ${latest.toolName}`;
-}
-
-function compactInlineText(value: string, maxLength = 48): string {
-  const text = value.replace(/\s+/g, " ").trim();
-  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
 }
 
 const StreamRow = memo(function StreamRow({
@@ -359,12 +346,13 @@ function ToolRow({ item, embedded = false }: { item: Extract<StreamItem, { kind:
         ) : (
           <CheckCircle2 size={14} />
         )}
-        <span className="tool-name">{item.toolName}</span>
-        <span className="tool-summary">{item.summary}</span>
+        <div className="tool-row-content">
+          <span className="tool-name">{item.toolName}</span>
+          {item.summary ? <span className="tool-summary">{item.summary}</span> : null}
+        </div>
         {hasDetails ? (
           <Collapsible.Trigger asChild>
-            <button type="button" className="tool-detail-trigger">
-              详情
+            <button type="button" className="tool-detail-trigger" aria-label={`查看 ${item.toolName} 的详情`} title="查看详情">
               <ChevronDown size={13} />
             </button>
           </Collapsible.Trigger>

@@ -1,8 +1,8 @@
 /* Chat panel, transcript, process, tool, and artifact rows. */
 /* Chat panel */
 .chat-panel {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
   width: 100%;
   min-width: 0;
   min-height: 0;
@@ -11,9 +11,14 @@
 }
 
 .chat-session-header-slot {
+  flex: 0 0 auto;
   position: relative;
   z-index: 1;
   min-width: 0;
+}
+
+.chat-panel > .composer {
+  flex: 0 0 auto;
 }
 
 .chat-panel-header {
@@ -138,16 +143,17 @@
 
 .message-scroll {
   position: relative;
-  align-self: stretch;
+  flex: 1 1 auto;
   width: 100%;
-  height: 100%;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  isolation: isolate;
   background: var(--fluent-color-neutral-background1);
 }
 
 .message-pane {
+  position: relative;
   height: 100%;
   width: 100%;
   max-width: 100%;
@@ -155,6 +161,16 @@
   min-height: 0;
   overflow-x: hidden;
   padding: var(--fluent-spacing-xl);
+  scroll-padding-bottom: var(--fluent-spacing-xl);
+}
+
+/* Radix uses a table-like content wrapper by default. A table derives its width
+ * from the longest child, which made the entire transcript overflow this pane. */
+.message-pane > div {
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
 }
 
 .chat-panel .message-pane {
@@ -213,10 +229,12 @@
 .message-row {
   display: grid;
   grid-template-columns: 30px minmax(0, 1fr);
+  align-items: start;
   gap: var(--fluent-spacing-m);
   margin: 0 auto var(--fluent-spacing-l);
   width: 100%;
-  max-width: 1120px;
+  min-width: 0;
+  max-width: 100%;
   justify-content: start;
 }
 
@@ -264,7 +282,9 @@
 }
 
 .message-body {
+  width: 100%;
   min-width: 0;
+  max-width: 100%;
   padding: 1px 0;
   color: var(--fluent-color-neutral-foreground1);
   line-height: 1.72;
@@ -294,6 +314,70 @@
   overflow-wrap: anywhere;
   word-break: break-word;
   white-space: pre-wrap;
+}
+
+/* Keep rich Markdown inside the resizable conversation pane. Code blocks retain
+ * their own horizontal scrolling because source formatting must not be reflowed. */
+.message-body,
+.message-body :where(h1, h2, h3, h4, h5, h6, p, li, blockquote, td, th) {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.message-body :where(h1, h2, h3, h4, h5, h6, blockquote) {
+  margin-inline: 0;
+}
+
+.message-body :where(h1, h2, h3, h4, h5, h6) {
+  margin-top: var(--fluent-spacing-l);
+  margin-bottom: var(--fluent-spacing-s);
+  color: var(--fluent-color-neutral-foreground1);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.message-body :where(h1, h2) {
+  font-size: 17px;
+}
+
+.message-body :where(ul, ol) {
+  margin-top: var(--fluent-spacing-s);
+  margin-bottom: var(--fluent-spacing-m);
+}
+
+.message-body li + li {
+  margin-top: var(--fluent-spacing-xs);
+}
+
+.message-body :where(ul, ol) {
+  max-width: 100%;
+  box-sizing: border-box;
+  padding-inline-start: 1.25rem;
+}
+
+.message-body li > :where(p, ul, ol) {
+  max-width: 100%;
+}
+
+.message-body table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.process-message-body :where(h1, h2, h3, h4, h5, h6, p, li, blockquote, td, th) {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.process-message-body :where(ul, ol) {
+  max-width: 100%;
+  box-sizing: border-box;
+  padding-inline-start: 1.25rem;
 }
 
 .agent-failure-card {
@@ -409,6 +493,8 @@
   display: flex;
   align-items: center;
   gap: var(--fluent-spacing-m);
+  width: 100%;
+  min-width: 0;
   max-width: 860px;
   min-height: 34px;
   margin: var(--fluent-spacing-s) auto var(--fluent-spacing-l);
@@ -421,6 +507,8 @@
 }
 
 .process-card {
+  width: 100%;
+  min-width: 0;
   max-width: 860px;
   margin: var(--fluent-spacing-s) auto var(--fluent-spacing-l);
   overflow: hidden;
@@ -445,10 +533,11 @@
 }
 
 .process-card-toolbar {
-  display: flex;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 28px;
   align-items: center;
-  gap: var(--fluent-spacing-m);
-  min-height: 38px;
+  gap: var(--fluent-spacing-s);
+  min-height: 42px;
   border-bottom: 1px solid var(--fluent-color-neutral-stroke2);
   background: var(--fluent-color-neutral-background2);
   padding: var(--fluent-spacing-s) var(--fluent-spacing-m);
@@ -458,33 +547,27 @@
   flex: none;
 }
 
+.process-card-heading {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px var(--fluent-spacing-s);
+}
+
 .process-card[data-state="closed"] .process-card-toolbar {
   border-bottom: 0;
 }
 
 .process-card-title {
-  flex: none;
   font-weight: 700;
 }
 
 .process-card-count {
-  flex: none;
-  border-radius: var(--fluent-radius-circle);
-  background: var(--fluent-color-neutral-background-selected);
+  min-width: 0;
   color: var(--fluent-color-brand-foreground1);
   font-size: 11px;
-  font-weight: 700;
-  padding: var(--fluent-spacing-xs) var(--fluent-spacing-m);
-  white-space: nowrap;
-}
-
-.process-card-summary {
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  color: var(--fluent-color-neutral-foreground3);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-weight: 600;
 }
 
 .process-card-toggle {
@@ -510,7 +593,8 @@
 }
 
 .process-card-body {
-  padding: 0 var(--fluent-spacing-m);
+  min-width: 0;
+  padding: 0 var(--fluent-spacing-m) var(--fluent-spacing-xs);
 }
 
 .process-card-body > :not(:first-child) {
@@ -551,6 +635,7 @@
 
 .process-message-body {
   min-width: 0;
+  max-width: 100%;
   line-height: 1.65;
   overflow-wrap: anywhere;
   word-break: break-word;
@@ -561,14 +646,21 @@
 }
 
 .tool-row-main {
-  display: flex;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 28px;
   align-items: center;
   gap: var(--fluent-spacing-m);
-  min-height: 18px;
+  min-height: 30px;
 }
 
 .tool-row-main > svg {
   flex: none;
+}
+
+.tool-row-content {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
 }
 
 .tool-row.success {
@@ -595,31 +687,31 @@
 }
 
 .tool-name {
-  flex: none;
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-weight: 600;
 }
 
 .tool-summary {
   min-width: 0;
-  flex: 1;
   color: var(--fluent-color-neutral-foreground2);
+  font-size: 12px;
+  line-height: 1.45;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 
 .tool-detail-trigger {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: var(--fluent-spacing-xs);
-  margin-left: auto;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
   border: 1px solid var(--fluent-color-neutral-stroke1);
   border-radius: var(--fluent-radius-circle);
   background: var(--fluent-color-neutral-background1);
   color: var(--fluent-color-neutral-foreground3);
   cursor: pointer;
-  font-size: 12px;
-  padding: var(--fluent-spacing-xs) var(--fluent-spacing-m);
+  padding: 0;
 }
 
 .tool-detail-trigger:hover {
@@ -632,6 +724,8 @@
 }
 
 .tool-detail {
+  min-width: 0;
+  max-width: 100%;
   margin-top: var(--fluent-spacing-m);
   border-top: 1px solid var(--fluent-color-neutral-stroke2);
   padding-top: var(--fluent-spacing-m);
@@ -651,6 +745,7 @@
 }
 
 .tool-detail-block pre {
+  max-width: 100%;
   max-height: 260px;
   overflow: auto;
   margin: 0;
@@ -673,9 +768,21 @@
   white-space: nowrap;
 }
 
+.file-row.embedded {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--fluent-spacing-s);
+}
+
+.file-row.embedded .file-actions {
+  grid-column: 2 / -1;
+  justify-self: start;
+}
+
 .file-kind {
   flex: none;
-  margin-left: auto;
+  margin-left: 0;
   border-radius: var(--fluent-radius-circle);
   background: var(--fluent-color-success-background1);
   padding: var(--fluent-spacing-xs) var(--fluent-spacing-m);
@@ -731,19 +838,21 @@
 }
 
 .stage-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 2px;
   color: var(--fluent-color-neutral-foreground2);
 }
 
 .stage-row > span {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .stage-row small {
-  flex: none;
-  margin-left: auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--fluent-color-neutral-foreground3);
 }
 

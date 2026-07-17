@@ -10,7 +10,9 @@ export function toPascalScene(snapshot: SceneSnapshot): {
   const childIdsByParentId = collectPascalChildIds(snapshot);
   return {
     nodes: Object.fromEntries(
-      Object.values(snapshot.nodes).map((node) => [node.id, toPascalNode(node, childIdsByParentId[node.id] ?? [], snapshot.nodes)])
+      Object.values(snapshot.nodes)
+        .filter((node) => node.type !== "asset")
+        .map((node) => [node.id, toPascalNode(node, childIdsByParentId[node.id] ?? [], snapshot.nodes)])
     ),
     rootNodeIds: snapshot.rootNodeIds as AnyNodeId[]
   };
@@ -82,6 +84,8 @@ function toPascalNode(node: SceneNode, childIds: string[], sceneNodes: SceneSnap
       return toPascalDoorNode(node, sceneNodes);
     case "window":
       return toPascalWindowNode(node, sceneNodes);
+    case "asset":
+      throw new Error("参考模型不属于 Pascal 场景节点。");
   }
 }
 

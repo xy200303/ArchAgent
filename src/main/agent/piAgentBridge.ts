@@ -530,6 +530,7 @@ function createArchAgentPiTools(
           };
           const result = await executeAgentToolCall(toolCall, {
             rootDir: host.getSessionRootDir(sessionId),
+            componentLibraryRootDir: host.rootDir,
             docsDir: host.docsDir,
             outputDir: sessionOutputDir,
             globalOutputDir: host.outputDir,

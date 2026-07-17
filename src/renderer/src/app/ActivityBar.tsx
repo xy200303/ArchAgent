@@ -5,9 +5,9 @@ import {
   Activity,
   ChevronRight,
   Files,
-  Boxes,
   FolderOpen,
   FolderPlus,
+  Library,
   Menu,
   Plus,
   Settings,
@@ -58,7 +58,7 @@ export function ActivityBar({
           <Files size={20} />
         </TooltipButton>
         <TooltipButton label="构件库" className={activeSection === "components" ? "activity-button active" : "activity-button"} onClick={onOpenComponentLibrary}>
-          <Boxes size={20} />
+          <Library size={18} strokeWidth={1.8} />
         </TooltipButton>
       </nav>
       <div className="activity-bottom">

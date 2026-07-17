@@ -27,9 +27,11 @@ import type {
   WorkspaceFileItem,
   WriteTextFileInput
 } from "../../shared/types";
-import type { SceneCommandInput, SceneCommandResult, SceneHistoryResult, SceneHistoryState, SceneSnapshot } from "../../shared/modeling3d/sceneContracts";
+import type { SceneAssetPayload, SceneCommandInput, SceneCommandResult, SceneExchangeFormat, SceneExportTarget, SceneHistoryResult, SceneHistoryState, SceneImportResult, SceneSnapshot } from "../../shared/modeling3d/sceneContracts";
 import { buildArtifactPreview } from "../files/artifactPreview";
 import { checkRuntime } from "../runtime/runtimeDiagnostics";
+import type { GlobalComponentRecord } from "../modeling3d/componentLibraryService";
+import type { GlobalComponentSummary } from "../../shared/types";
 
 const { BrowserWindow, clipboard, ipcMain, shell } = electron;
 
@@ -73,6 +75,16 @@ export function registerIpcHandlers(options: {
   undoScene: () => SceneHistoryResult;
   redoScene: () => SceneHistoryResult;
   activateSceneProject: (projectPath: string) => SceneSnapshot;
+  importScene: () => Promise<SceneImportResult | undefined>;
+  selectSceneExportTarget: () => Promise<SceneExportTarget | undefined>;
+  saveSceneExport: (target: SceneExportTarget, dataBase64?: string) => string;
+  loadSceneAsset: (assetId: string) => SceneAssetPayload;
+  listComponentLibrary: () => GlobalComponentRecord[];
+  loadComponentLibraryAsset: (id: string) => SceneAssetPayload;
+  loadComponentLibraryPreview: (id: string) => string | undefined;
+  saveComponentLibraryPreview: (id: string, dataBase64: string) => void;
+  placeComponentLibraryItem: (id: string) => SceneSnapshot;
+  updateComponentLibraryItem: (id: string, input: Pick<GlobalComponentSummary, "name" | "description" | "category" | "tags" | "placementRule">) => GlobalComponentRecord;
 }): void {
   ipcMain.handle("app:metadata", options.getAppMetadata);
   ipcMain.handle("app:recent-projects", options.listRecentProjects);
@@ -143,6 +155,16 @@ export function registerIpcHandlers(options: {
   ipcMain.handle("scene:history-state", options.getSceneHistoryState);
   ipcMain.handle("scene:undo", options.undoScene);
   ipcMain.handle("scene:redo", options.redoScene);
+  ipcMain.handle("scene:import", options.importScene);
+  ipcMain.handle("scene:select-export-target", options.selectSceneExportTarget);
+  ipcMain.handle("scene:save-export", (_event, target: SceneExportTarget, dataBase64?: string) => options.saveSceneExport(target, dataBase64));
+  ipcMain.handle("scene:load-asset", (_event, assetId: string) => options.loadSceneAsset(assetId));
+  ipcMain.handle("component-library:list", options.listComponentLibrary);
+  ipcMain.handle("component-library:load-asset", (_event, id: string) => options.loadComponentLibraryAsset(id));
+  ipcMain.handle("component-library:load-preview", (_event, id: string) => options.loadComponentLibraryPreview(id));
+  ipcMain.handle("component-library:save-preview", (_event, id: string, dataBase64: string) => options.saveComponentLibraryPreview(id, dataBase64));
+  ipcMain.handle("component-library:update", (_event, id, input) => options.updateComponentLibraryItem(id, input));
+  ipcMain.handle("component-library:place", (_event, id: string) => options.placeComponentLibraryItem(id));
 }
 
 function requireArtifact(artifacts: Map<string, ArtifactSummary>, artifactId: string): ArtifactSummary {

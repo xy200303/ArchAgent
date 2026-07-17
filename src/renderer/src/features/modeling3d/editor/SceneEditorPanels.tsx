@@ -1,5 +1,6 @@
 /** Provides navigation, real editor tools, and accessible wall property forms. */
 import {
+  Box,
   BrickWall,
   Building2,
   Columns3,
@@ -149,7 +150,8 @@ const COMPONENT_ICON_BY_TYPE: Record<Exclude<SceneNode["type"], "site" | "buildi
   stair: Waypoints,
   fence: Fence,
   door: DoorOpen,
-  window: PanelsTopLeft
+  window: PanelsTopLeft,
+  asset: Box
 };
 
 function isSceneComponent(node: SceneNode): node is Exclude<SceneNode, { type: "site" | "building" | "level" }> {

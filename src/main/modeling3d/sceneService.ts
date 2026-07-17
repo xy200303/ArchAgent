@@ -20,6 +20,8 @@ export interface SceneService {
   undo(): SceneHistoryResult;
   redo(): SceneHistoryResult;
   activateProject(projectPath: string): SceneSnapshot;
+  getActiveProjectPath(): string | undefined;
+  replaceSnapshot(nextSnapshot: SceneSnapshot): SceneSnapshot;
 }
 
 export function createSceneService(options: {
@@ -84,9 +86,19 @@ export function createSceneService(options: {
     return snapshot;
   }
 
+  /** Replaces a scene imported from an ArchAgent scene file as one undoable operation. */
+  function replaceSnapshot(nextSnapshot: SceneSnapshot): SceneSnapshot {
+    undoStack.push(snapshot);
+    redoStack.length = 0;
+    snapshot = nextSnapshot;
+    persistActiveProject();
+    options.broadcast({ id: options.createId("event"), type: "scene.snapshot.restored", payload: snapshot });
+    return snapshot;
+  }
+
   function persistActiveProject(): void {
     if (activeProjectPath) options.saveProjectSnapshot?.(activeProjectPath, snapshot);
   }
 
-  return { getSnapshot, execute, getHistoryState, undo, redo, activateProject };
+  return { getSnapshot, execute, getHistoryState, undo, redo, activateProject, getActiveProjectPath: () => activeProjectPath, replaceSnapshot };
 }

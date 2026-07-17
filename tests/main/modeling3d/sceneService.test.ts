@@ -46,4 +46,16 @@ describe("sceneService", () => {
     expect(projectTwo.nodes.wall_project_one).toBeUndefined();
     expect(service.getSnapshot().nodes.wall_project_one).toMatchObject({ type: "wall" });
   });
+
+  it("persists an imported scene replacement and makes it undoable", () => {
+    const service = createSceneService({ createId: (prefix) => `${prefix}_test`, broadcast: vi.fn() });
+    const imported = structuredClone(service.getSnapshot());
+    imported.revision = 12;
+
+    service.replaceSnapshot(imported);
+    const undone = service.undo();
+
+    expect(service.getSnapshot().revision).toBe(0);
+    expect(undone).toMatchObject({ accepted: true, canRedo: true });
+  });
 });

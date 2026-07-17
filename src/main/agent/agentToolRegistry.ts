@@ -24,6 +24,8 @@ import {
 } from "./agentTools";
 import { createBundledPythonEnv, type BundledPythonRuntime } from "../runtime/bundledRuntime";
 import { formatWebSearchResults, searchWeb } from "./webSearch";
+import { generateHunyuanGlb, type Hunyuan3dDetailLevel } from "../modeling3d/hunyuan3dService";
+import { importGlobalComponent, listGlobalComponents } from "../modeling3d/componentLibraryService";
 
 export { parseDuckDuckGoHtml, searchWeb } from "./webSearch";
 export type { WebSearchResult } from "./webSearch";
@@ -36,6 +38,8 @@ const execAsync = promisify(exec) as (
 
 export interface AgentToolExecutionContext {
   rootDir: string;
+  /** Application-owned root for assets shared by every project and conversation. */
+  componentLibraryRootDir?: string;
   docsDir: string;
   outputDir: string;
   globalOutputDir?: string;
@@ -164,6 +168,10 @@ export function buildAgentChatTools(options: { includeExecBash: boolean; include
     { type: "function", function: { name: "update_door", description: "修改已有门的尺寸、沿墙偏移或材质。", parameters: updateDoorSchema } },
     { type: "function", function: { name: "create_window", description: "在指定墙体上创建窗洞和窗。偏移从墙体起点开始计算，单位为米。", parameters: createWindowSchema } },
     { type: "function", function: { name: "update_window", description: "修改已有窗的尺寸、沿墙偏移或材质。", parameters: updateWindowSchema } },
+    { type: "function", function: { name: "update_asset", description: "移动、旋转或缩放已导入的参考模型。旋转单位为弧度，缩放必须为正数。", parameters: updateAssetSchema } },
+    { type: "function", function: { name: "generate_3d_asset", description: "必须用于创建家具、陈设、设备、人物和其他非建筑原生构件。调用混元生3D生成带面数预算的 GLB 并保存到当前项目的 output/assets；默认使用标准细节，只有用户明确要求近景展示时才使用 high。文生3D必须传入完整的中文正向 prompt，或传入已上传附件的 image_path 走图生3D，二者只能选一个。生成成功后应调用 import_component_asset 导入全局构件库。", parameters: generate3dAssetSchema } },
+    { type: "function", function: { name: "import_component_asset", description: "将当前项目内已生成或已下载的 GLB、GLTF、OBJ、STL 模型复制并登记到全局构件库。生成通用 3D 资产后必须立即调用；网络下载的模型完成后也应调用。", parameters: importComponentAssetSchema } },
+    { type: "function", function: { name: "get_component_library", description: "检索全局构件库的语义信息；放置或修改构件前必须先调用。", parameters: emptyObjectSchema } },
     {
       type: "function",
       function: {
@@ -283,6 +291,14 @@ export async function executeAgentToolCall(
       return executeCreateWindow(args, context);
     case "update_window":
       return executeUpdateWindow(args, context);
+    case "update_asset":
+      return executeUpdateAsset(args, context);
+    case "generate_3d_asset":
+      return executeGenerate3dAsset(args, context);
+    case "import_component_asset":
+      return executeImportComponentAsset(args, context);
+    case "get_component_library":
+      return executeGetComponentLibrary(context);
     case "delete_node":
       return executeDeleteNode(args, context);
     default:
@@ -530,6 +546,68 @@ function executeUpdateWindow(args: Record<string, unknown>, context: AgentToolEx
   return executeSceneTool("update_window", { type: "window.update", id, ...(readStringArg(args, "name") ? { name: readStringArg(args, "name") } : {}), ...(readOptionalNumberArg(args, "offset") !== undefined ? { offset: readOptionalNumberArg(args, "offset") } : {}), ...(readOptionalNumberArg(args, "width") !== undefined ? { width: readOptionalNumberArg(args, "width") } : {}), ...(readOptionalNumberArg(args, "height") !== undefined ? { height: readOptionalNumberArg(args, "height") } : {}), ...(readOptionalNumberArg(args, "sill_height") !== undefined ? { sillHeight: readOptionalNumberArg(args, "sill_height") } : {}), ...(readOptionalMaterialPreset(args, "material_preset") ? { materialPreset: readOptionalMaterialPreset(args, "material_preset") } : {}) }, context);
 }
 
+function executeUpdateAsset(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
+  const id = readStringArg(args, "id");
+  if (!id) return sceneToolFailure("update_asset", "缺少参考模型 ID。");
+  const position = "position" in args ? readPoint3Arg(args, "position") : undefined;
+  const rotation = "rotation" in args ? readPoint3Arg(args, "rotation") : undefined;
+  const scale = "scale" in args ? readPoint3Arg(args, "scale") : undefined;
+  if (("position" in args && !position) || ("rotation" in args && !rotation) || ("scale" in args && (!scale || scale.some((value) => value <= 0)))) {
+    return sceneToolFailure("update_asset", "参考模型的位置、旋转和缩放必须是三个有效数字；缩放必须大于 0。");
+  }
+  return executeSceneTool("update_asset", { type: "asset.update", id, ...(readStringArg(args, "name") ? { name: readStringArg(args, "name") } : {}), ...(position ? { position } : {}), ...(rotation ? { rotation } : {}), ...(scale ? { scale } : {}) }, context);
+}
+
+async function executeGenerate3dAsset(args: Record<string, unknown>, context: AgentToolExecutionContext): Promise<AgentToolExecutionResult> {
+  const name = readStringArg(args, "name") || "混元生成构件";
+  const prompt = readStringArg(args, "prompt");
+  const imagePath = readStringArg(args, "image_path");
+  const detailLevel = readDetailLevel(args);
+  if (Boolean(prompt) === Boolean(imagePath)) return { toolName: "generate_3d_asset", summary: "请提供文本描述或图片路径其中之一。", content: "generate_3d_asset failed: provide exactly one input" };
+  if ("detail_level" in args && !detailLevel) return { toolName: "generate_3d_asset", summary: "细节等级必须是 draft、standard 或 high。", content: "generate_3d_asset failed: invalid detail_level" };
+  let imageBase64: string | undefined;
+  if (imagePath) {
+    const resolvedPath = resolveReadablePath(imagePath, context);
+    assertPathAllowed(resolvedPath, context.allowedReadDirs, context.allowedReadFiles ?? [], "generate_3d_asset");
+    if (!isSupportedImageFile(resolvedPath)) return { toolName: "generate_3d_asset", summary: "仅支持 JPG、PNG、WEBP 图片。", content: "generate_3d_asset failed: unsupported image" };
+    imageBase64 = readFileSync(resolvedPath).toString("base64");
+  }
+  const outputDir = join(context.outputDir, "assets");
+  const generated = await generateHunyuanGlb({ name, prompt: prompt || undefined, imageBase64, detailLevel }, outputDir);
+  const faceBudget = generated.faceCount ? `，目标 ${generated.faceCount.toLocaleString("en-US")} 面` : "";
+  return { toolName: "generate_3d_asset", summary: `已在当前项目生成资产：${name}${faceBudget}`, content: `已生成 GLB：${generated.path}${faceBudget}\n请立即调用 import_component_asset，并将 path 设为上述 GLB 路径以导入全局构件库。`, artifactPath: generated.path };
+}
+
+function readDetailLevel(args: Record<string, unknown>): Hunyuan3dDetailLevel | undefined {
+  const value = readStringArg(args, "detail_level");
+  return value === "draft" || value === "standard" || value === "high" ? value : undefined;
+}
+
+function executeImportComponentAsset(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
+  const inputPath = readStringArg(args, "path");
+  if (!inputPath) return { toolName: "import_component_asset", summary: "缺少待导入模型路径。", content: "import_component_asset failed: missing path" };
+  const sourcePath = resolveReadablePath(inputPath, context);
+  assertPathAllowed(sourcePath, context.allowedReadDirs, context.allowedReadFiles ?? [], "import_component_asset");
+  const component = importGlobalComponent(context.componentLibraryRootDir ?? context.rootDir, sourcePath, {
+    name: readStringArg(args, "name") || undefined,
+    description: readStringArg(args, "description") || undefined,
+    category: readStringArg(args, "category") || undefined,
+    tags: readStringListArg(args, "tags"),
+    placementRule: readStringArg(args, "placement_rule") || undefined
+  });
+  return {
+    toolName: "import_component_asset",
+    summary: `已导入全局构件库：${component.name}`,
+    content: `已导入构件：${component.name}\n构件 ID：${component.id}\n全局文件：${component.file}`
+  };
+}
+
+function executeGetComponentLibrary(context: AgentToolExecutionContext): AgentToolExecutionResult {
+  const components = listGlobalComponents(context.componentLibraryRootDir ?? context.rootDir);
+  const content = components.length ? components.map((item) => `- ${item.name}（${item.id}）：${item.category ?? "未分类"}；标签 ${item.tags.join("、") || "无"}；${item.description ?? item.prompt ?? "无描述"}；放置规则 ${item.placementRule ?? "未指定"}`).join("\n") : "构件库为空。";
+  return { toolName: "get_component_library", summary: `已读取 ${components.length} 个全局构件`, content };
+}
+
 function executeDeleteNode(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
   const id = readStringArg(args, "id");
   if (!id) return sceneToolFailure("delete_node", "缺少节点 ID。");
@@ -537,7 +615,7 @@ function executeDeleteNode(args: Record<string, unknown>, context: AgentToolExec
 }
 
 function executeSceneTool(
-  toolName: Extract<BuiltinToolName, "create_wall" | "update_wall" | "create_slab" | "update_slab" | "create_ceiling" | "update_ceiling" | "create_column" | "update_column" | "create_zone" | "update_zone" | "create_stair" | "update_stair" | "create_fence" | "update_fence" | "create_door" | "update_door" | "create_window" | "update_window" | "delete_node">,
+  toolName: Extract<BuiltinToolName, "create_wall" | "update_wall" | "create_slab" | "update_slab" | "create_ceiling" | "update_ceiling" | "create_column" | "update_column" | "create_zone" | "update_zone" | "create_stair" | "update_stair" | "create_fence" | "update_fence" | "create_door" | "update_door" | "create_window" | "update_window" | "update_asset" | "delete_node">,
   command: SceneCommandInput,
   context: AgentToolExecutionContext
 ): AgentToolExecutionResult {
@@ -564,6 +642,7 @@ function executeSceneTool(
     : result.command.type === "door.update" ? "已更新门"
     : result.command.type === "window.create" ? "已创建窗"
     : result.command.type === "window.update" ? "已更新窗"
+    : result.command.type === "asset.update" ? "已更新参考模型"
     : "已删除构件";
   return {
     toolName,
@@ -572,7 +651,7 @@ function executeSceneTool(
   };
 }
 
-function sceneToolFailure(toolName: Extract<BuiltinToolName, "create_wall" | "update_wall" | "create_slab" | "update_slab" | "create_ceiling" | "update_ceiling" | "create_column" | "update_column" | "create_zone" | "update_zone" | "create_stair" | "update_stair" | "create_fence" | "update_fence" | "create_door" | "update_door" | "create_window" | "update_window" | "delete_node">, message: string): AgentToolExecutionResult {
+function sceneToolFailure(toolName: Extract<BuiltinToolName, "create_wall" | "update_wall" | "create_slab" | "update_slab" | "create_ceiling" | "update_ceiling" | "create_column" | "update_column" | "create_zone" | "update_zone" | "create_stair" | "update_stair" | "create_fence" | "update_fence" | "create_door" | "update_door" | "create_window" | "update_window" | "update_asset" | "delete_node">, message: string): AgentToolExecutionResult {
   return { toolName, summary: message, content: `${toolName} failed: ${message}` };
 }
 
@@ -1231,6 +1310,9 @@ const createDoorSchema = { type: "object", properties: { wall_id: { type: "strin
 const updateDoorSchema = { type: "object", properties: { id: { type: "string" }, name: { type: "string" }, offset: { type: "number" }, width: { type: "number" }, height: { type: "number" }, sill_height: { type: "number" }, material_preset: materialPresetSchema }, required: ["id"], additionalProperties: false } as const;
 const createWindowSchema = { type: "object", properties: { wall_id: { type: "string" }, name: { type: "string" }, offset: { type: "number" }, width: { type: "number" }, height: { type: "number" }, sill_height: { type: "number" }, material_preset: materialPresetSchema }, required: ["wall_id", "offset"], additionalProperties: false } as const;
 const updateWindowSchema = { type: "object", properties: { id: { type: "string" }, name: { type: "string" }, offset: { type: "number" }, width: { type: "number" }, height: { type: "number" }, sill_height: { type: "number" }, material_preset: materialPresetSchema }, required: ["id"], additionalProperties: false } as const;
+const updateAssetSchema = { type: "object", properties: { id: { type: "string" }, name: { type: "string" }, position: point3Schema, rotation: point3Schema, scale: point3Schema }, required: ["id"], additionalProperties: false } as const;
+const generate3dAssetSchema = { type: "object", properties: { name: { type: "string" }, prompt: { type: "string" }, image_path: { type: "string" }, detail_level: { type: "string", enum: ["draft", "standard", "high"], description: "draft 约 20,000 面，用于快速布局；standard 约 50,000 面，默认；high 约 120,000 面，仅用于单件近景展示。" } }, required: ["name"], additionalProperties: false } as const;
+const importComponentAssetSchema = { type: "object", properties: { path: { type: "string" }, name: { type: "string" }, description: { type: "string" }, category: { type: "string" }, tags: { type: "array", items: { type: "string" } }, placement_rule: { type: "string" } }, required: ["path"], additionalProperties: false } as const;
 const deleteNodeSchema = {
   type: "object",
   properties: { id: { type: "string" } },

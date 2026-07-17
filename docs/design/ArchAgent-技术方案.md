@@ -4,7 +4,7 @@
 
 ArchAgent 是本地优先的建筑与空间 3D 智能建模工作台。首期让用户通过自然语言、结构化数据或户型图创建并持续编辑建筑/室内场景。
 
-产品范围聚焦建筑：Site、Building、Level、Wall、Slab，以及后续的 Door、Window、Zone、Ceiling、Roof 和建筑语义可表达的 Item。首期不承诺通用 GLB/OBJ 导入、人物、扫描模型、顶点/边/面级 Mesh 编辑、UV、骨骼绑定、动画、贴图烘焙或 IFC 工作流；这些能力若未来需要，必须作为独立领域评估，不能影响当前建筑场景契约。
+产品范围聚焦建筑：Site、Building、Level、Wall、Slab，以及后续的 Door、Window、Zone、Ceiling、Roof 和建筑语义可表达的 Item。支持 `scene.json` 可编辑场景往返，以及 GLB、GLTF、OBJ、STL 的网格交换；导入网格作为可定位的参考资产，不自动伪造为墙、门、窗等建筑语义。首期不包含人物、扫描模型语义重建、顶点/边/面级 Mesh 编辑、UV、骨骼绑定、动画、贴图烘焙或 IFC 工作流；这些能力若未来需要，必须作为独立领域评估，不能影响当前建筑场景契约。
 
 ## 2. 技术选型
 
@@ -40,7 +40,7 @@ graph LR
 
 ### 3.1 单一事实来源
 
-`SceneDocument` 是项目的持久化事实来源，包含版本号、建筑节点、材质规格和项目元数据。Main 进程的 `SceneCommandService` 是唯一允许提交增删改、撤销重做和导出的入口。
+`SceneDocument` 是项目的持久化事实来源，包含版本号、建筑节点、参考资产元数据、材质规格和项目元数据。Main 进程的 `SceneCommandService` 是唯一允许提交增删改、撤销重做和导出的入口。
 
 Renderer 中 Pascal 的 `useScene` 是运行时渲染镜像：收到快照或 patch 后同步并标记 dirty nodes，但不能成为 Main 与 Agent 之间共享的跨进程 store。UI 和 Agent 都只能提交 `SceneCommand`，不能直接写 Pascal store。
 
@@ -80,7 +80,7 @@ ProjectScene
 
 ## 6. 导出与持久化
 
-项目目录包含 `scene.json`、`input/` 与 `output/`。JSON 场景持久化和导出是首期保证能力；其他格式的导入导出在有明确建筑语义和独立适配器后再接入，不依赖上游未实现的 Pascal MCP 导出能力。
+项目目录包含 `.agent/scene.json`、`.agent/assets/`、`input/` 与 `output/`。`scene.json` 是完整可编辑、可往返的项目格式；工具栏可从 Pascal/R3F 运行时投影导出 GLB、GLTF、OBJ、STL。外部 GLB、GLTF、OBJ、STL 会复制到 `.agent/assets/` 并作为参考资产渲染，保留位置、旋转和缩放；它们不能被误解为可编辑建筑构件。GLTF 导入仅保证内嵌资源（或自包含的 GLB），外部 `.bin`、纹理依赖需先打包为 GLB。
 
 ## 7. 实施阶段
 

@@ -161,4 +161,27 @@ describe("sceneReducer", () => {
     const window = applySceneCommand(door.snapshot, { type: "window.create", id: "window_entry", wallId: "wall_north", offset: 1.4, width: 1.2 }, () => "unused");
     expect(window).toMatchObject({ accepted: false, code: "invalid_command" });
   });
+
+  it("stores imported meshes as reference assets without fabricating building semantics", () => {
+    const created = applySceneCommand(
+      createDefaultScene(),
+      { type: "asset.create", id: "asset_reference", parentId: "level_default", name: "外部家具", format: "glb", sourcePath: "assets/asset_reference.glb" },
+      () => "unused"
+    );
+    if (!created.accepted) throw new Error(created.message);
+    const deleted = applySceneCommand(created.snapshot, { type: "node.delete", id: "asset_reference" }, () => "unused");
+
+    expect(created.snapshot.nodes.asset_reference).toMatchObject({ type: "asset", format: "glb", scale: [1, 1, 1] });
+    expect(deleted).toMatchObject({ accepted: true });
+    if (!deleted.accepted) return;
+    expect(deleted.snapshot.nodes.asset_reference).toBeUndefined();
+  });
+
+  it("updates only the placement of imported reference assets", () => {
+    const created = applySceneCommand(createDefaultScene(), { type: "asset.create", id: "asset_tree", parentId: "level_default", format: "obj", sourcePath: "assets/asset_tree.obj" }, () => "unused");
+    if (!created.accepted) throw new Error(created.message);
+    const updated = applySceneCommand(created.snapshot, { type: "asset.update", id: "asset_tree", position: [3, 0, 2], scale: [1.5, 1.5, 1.5] }, () => "unused");
+
+    expect(updated).toMatchObject({ accepted: true, snapshot: { nodes: { asset_tree: { position: [3, 0, 2], scale: [1.5, 1.5, 1.5] } } } });
+  });
 });

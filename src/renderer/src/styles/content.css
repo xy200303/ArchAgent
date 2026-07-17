@@ -559,6 +559,28 @@
   outline-offset: 1px;
 }
 
+.asset-inspector-format {
+  margin: 0;
+  color: var(--fluent-color-neutral-foreground3);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.asset-vector-fields {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.asset-vector-fields legend {
+  padding: 0;
+  color: var(--fluent-color-neutral-foreground2);
+  font-size: 11px;
+}
+
 .wall-property-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

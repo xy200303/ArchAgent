@@ -149,7 +149,20 @@ export interface SceneWindowNode {
   materialPreset: WallMaterialPreset;
 }
 
-export type SceneNode = SceneSiteNode | SceneBuildingNode | SceneLevelNode | SceneSlabNode | SceneCeilingNode | SceneColumnNode | SceneZoneNode | SceneStairNode | SceneFenceNode | SceneWallNode | SceneDoorNode | SceneWindowNode;
+/** Imported meshes remain reference assets instead of being misrepresented as editable architecture. */
+export interface SceneAssetNode {
+  id: string;
+  type: "asset";
+  name: string;
+  parentId: string;
+  format: "glb" | "gltf" | "obj" | "stl";
+  sourcePath: string;
+  position: [number, number, number];
+  rotation: [number, number, number];
+  scale: [number, number, number];
+}
+
+export type SceneNode = SceneSiteNode | SceneBuildingNode | SceneLevelNode | SceneSlabNode | SceneCeilingNode | SceneColumnNode | SceneZoneNode | SceneStairNode | SceneFenceNode | SceneWallNode | SceneDoorNode | SceneWindowNode | SceneAssetNode;
 
 export interface SceneSnapshot {
   revision: number;
@@ -301,6 +314,27 @@ export interface DeleteNodeCommandInput {
   id: string;
 }
 
+export interface CreateAssetCommandInput {
+  type: "asset.create";
+  id?: string;
+  parentId: string;
+  name?: string;
+  format: SceneAssetNode["format"];
+  sourcePath: string;
+  position?: SceneAssetNode["position"];
+  rotation?: SceneAssetNode["rotation"];
+  scale?: SceneAssetNode["scale"];
+}
+
+export interface UpdateAssetCommandInput {
+  type: "asset.update";
+  id: string;
+  name?: string;
+  position?: SceneAssetNode["position"];
+  rotation?: SceneAssetNode["rotation"];
+  scale?: SceneAssetNode["scale"];
+}
+
 export type SceneCommandInput =
   | CreateWallCommandInput
   | UpdateWallCommandInput
@@ -320,6 +354,8 @@ export type SceneCommandInput =
   | UpdateDoorCommandInput
   | CreateWindowCommandInput
   | UpdateWindowCommandInput
+  | CreateAssetCommandInput
+  | UpdateAssetCommandInput
   | DeleteNodeCommandInput;
 
 export type SceneCommand =
@@ -332,6 +368,8 @@ export type SceneCommand =
   | (CreateFenceCommandInput & { id: string; name: string; height: number; thickness: number; style: FenceStyle; materialPreset: WallMaterialPreset })
   | (CreateDoorCommandInput & { id: string; name: string; width: number; height: number; sillHeight: number; materialPreset: WallMaterialPreset })
   | (CreateWindowCommandInput & { id: string; name: string; width: number; height: number; sillHeight: number; materialPreset: WallMaterialPreset })
+  | (CreateAssetCommandInput & { id: string; name: string; position: SceneAssetNode["position"]; rotation: SceneAssetNode["rotation"]; scale: SceneAssetNode["scale"] })
+  | UpdateAssetCommandInput
   | UpdateWallCommandInput
   | UpdateSlabCommandInput
   | UpdateCeilingCommandInput
@@ -366,3 +404,9 @@ export interface SceneHistoryResult extends SceneHistoryState {
   accepted: boolean;
   snapshot: SceneSnapshot;
 }
+
+export type SceneExchangeFormat = "scene-json" | "glb" | "gltf" | "obj" | "stl";
+
+export interface SceneExportTarget { format: SceneExchangeFormat; path: string; }
+export interface SceneAssetPayload { id: string; format: SceneAssetNode["format"]; dataBase64: string; }
+export interface SceneImportResult { kind: "scene" | "asset"; name: string; snapshot: SceneSnapshot; }

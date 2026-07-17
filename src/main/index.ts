@@ -13,6 +13,8 @@ import { createProjectStateStore } from "./projects/projectStateStore";
 import { createProjectService } from "./projects/projectService";
 import { createSceneService } from "./modeling3d/sceneService";
 import { loadProjectScene, saveProjectScene } from "./modeling3d/sceneProjectPersistence";
+import { createSceneExchangeService } from "./modeling3d/sceneExchangeService";
+import { findGlobalComponent, listGlobalComponents, loadGlobalComponentAsset, loadGlobalComponentPreview, saveGlobalComponentPreview, updateGlobalComponent } from "./modeling3d/componentLibraryService";
 import type { SessionMemoryEntry } from "./projects/sessionPersistence";
 import { APP_DISPLAY_NAME, createAppMetadata } from "../shared/appMetadata";
 import type {
@@ -87,6 +89,13 @@ const sceneService = createSceneService({
   broadcast: sendEvent,
   loadProjectSnapshot: loadProjectScene,
   saveProjectSnapshot: saveProjectScene
+});
+const sceneExchangeService = createSceneExchangeService({
+  createId,
+  getActiveProjectPath: sceneService.getActiveProjectPath,
+  getSnapshot: sceneService.getSnapshot,
+  replaceSnapshot: sceneService.replaceSnapshot,
+  executeSceneCommand: sceneService.execute
 });
 const createWindow = windowManager.createWindow;
 const settingsService = createSettingsService({ envLocalPath, envPath, projectRootDir, resourcesDir });
@@ -234,7 +243,21 @@ function registerIpc(): void {
     getSceneHistoryState: sceneService.getHistoryState,
     undoScene: sceneService.undo,
     redoScene: sceneService.redo,
-    activateSceneProject: sceneService.activateProject
+    activateSceneProject: sceneService.activateProject,
+    importScene: sceneExchangeService.importFromDialog,
+    selectSceneExportTarget: sceneExchangeService.selectExportTarget,
+    saveSceneExport: sceneExchangeService.saveExport,
+    loadSceneAsset: sceneExchangeService.loadAsset,
+    listComponentLibrary: () => listGlobalComponents(rootDir, sceneService.getActiveProjectPath()),
+    loadComponentLibraryAsset: (id) => loadGlobalComponentAsset(rootDir, id),
+    loadComponentLibraryPreview: (id) => loadGlobalComponentPreview(rootDir, id),
+    saveComponentLibraryPreview: (id, dataBase64) => saveGlobalComponentPreview(rootDir, id, dataBase64),
+    updateComponentLibraryItem: (id, input) => updateGlobalComponent(rootDir, id, input),
+    placeComponentLibraryItem: (id) => {
+      const component = findGlobalComponent(rootDir, id);
+      if (!component) throw new Error("未找到全局构件。");
+      return sceneExchangeService.placeGlobalComponent(component);
+    }
   });
 }
 

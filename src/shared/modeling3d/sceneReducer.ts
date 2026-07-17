@@ -24,6 +24,7 @@ import type {
   SceneFenceNode,
   SceneDoorNode,
   SceneWindowNode,
+  SceneAssetNode,
   WallMaterialPreset
 } from "./sceneContracts";
 
@@ -117,9 +118,44 @@ export function applySceneCommand(
       return createWindowCommand(snapshot, input, createId);
     case "window.update":
       return updateWindowCommand(snapshot, input);
+    case "asset.create":
+      return createAssetCommand(snapshot, input, createId);
+    case "asset.update":
+      return updateAssetCommand(snapshot, input);
     case "node.delete":
       return deleteNodeCommand(snapshot, input);
   }
+}
+
+/** Creates a persisted reference mesh; mesh import never fabricates building semantics. */
+function createAssetCommand(snapshot: SceneSnapshot, input: Extract<SceneCommandInput, { type: "asset.create" }>, createId: (prefix: string) => string): SceneCommandResult {
+  const parent = snapshot.nodes[input.parentId];
+  if (!parent || parent.type !== "level") return failure("invalid_parent", "参考模型必须导入到有效楼层下。");
+  if (!input.sourcePath.trim()) return failure("invalid_command", "参考模型文件路径不能为空。");
+  const id = input.id?.trim() || `asset_${createId("asset")}`;
+  if (snapshot.nodes[id]) return failure("duplicate_node", `模型 ID 已存在：${id}`);
+  if (!isValidNodeId(id)) return failure("invalid_command", "模型 ID 只能包含字母、数字、下划线和连字符。");
+  const asset: SceneAssetNode = { id, type: "asset", name: input.name?.trim() || `参考模型 ${countNodes(snapshot, "asset") + 1}`, parentId: input.parentId, format: input.format, sourcePath: input.sourcePath, position: input.position ?? [0, 0, 0], rotation: input.rotation ?? [0, 0, 0], scale: input.scale ?? [1, 1, 1] };
+  if (![...asset.position, ...asset.rotation, ...asset.scale].every(Number.isFinite) || asset.scale.some((value) => value <= 0)) return failure("invalid_command", "参考模型的变换参数无效。");
+  const command: SceneCommand = { type: "asset.create", id, parentId: asset.parentId, name: asset.name, format: asset.format, sourcePath: asset.sourcePath, position: asset.position, rotation: asset.rotation, scale: asset.scale };
+  return success(snapshot, command, { ...snapshot.nodes, [id]: asset });
+}
+
+/** Updates placement only; externally imported triangles remain opaque reference data. */
+function updateAssetCommand(snapshot: SceneSnapshot, input: Extract<SceneCommandInput, { type: "asset.update" }>): SceneCommandResult {
+  const existing = snapshot.nodes[input.id];
+  if (!existing) return failure("node_not_found", `未找到节点：${input.id}`);
+  if (existing.type !== "asset") return failure("unsupported_node", "当前仅支持修改参考模型。");
+  const asset: SceneAssetNode = {
+    ...existing,
+    ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+    ...(input.position ? { position: input.position } : {}),
+    ...(input.rotation ? { rotation: input.rotation } : {}),
+    ...(input.scale ? { scale: input.scale } : {})
+  };
+  if (!asset.name) return failure("invalid_command", "参考模型名称不能为空。");
+  if (![...asset.position, ...asset.rotation, ...asset.scale].every(Number.isFinite) || asset.scale.some((value) => value <= 0)) return failure("invalid_command", "参考模型的变换参数无效。");
+  return success(snapshot, input, { ...snapshot.nodes, [asset.id]: asset });
 }
 
 function createDoorCommand(snapshot: SceneSnapshot, input: CreateDoorCommandInput, createId: (prefix: string) => string): SceneCommandResult {
@@ -524,7 +560,7 @@ function updateFenceCommand(snapshot: SceneSnapshot, input: Extract<SceneCommand
 function deleteNodeCommand(snapshot: SceneSnapshot, input: Extract<SceneCommandInput, { type: "node.delete" }>): SceneCommandResult {
   const node = snapshot.nodes[input.id];
   if (!node) return failure("node_not_found", `未找到节点：${input.id}`);
-  if (node.type !== "wall" && node.type !== "slab" && node.type !== "ceiling" && node.type !== "column" && node.type !== "zone" && node.type !== "stair" && node.type !== "fence" && node.type !== "door" && node.type !== "window") return failure("unsupported_node", "当前仅支持删除建筑构件。");
+  if (node.type !== "wall" && node.type !== "slab" && node.type !== "ceiling" && node.type !== "column" && node.type !== "zone" && node.type !== "stair" && node.type !== "fence" && node.type !== "door" && node.type !== "window" && node.type !== "asset") return failure("unsupported_node", "当前仅支持删除建筑构件或参考模型。");
 
   const nodes = { ...snapshot.nodes };
   delete nodes[input.id];
