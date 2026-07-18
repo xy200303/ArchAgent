@@ -1,27 +1,22 @@
-/** Owns explicit user approval and resumable execution for costly 3D reconstruction. */
+/** Owns explicit user approval and an Agent-readable atomic reconstruction plan. */
 import type {
   AnswerWorkflowQuestionInput,
   ChatSession,
   ConfirmWorkflowInput,
   RetryWorkflowAssetInput,
   ReconstructionWorkflow,
-  ReconstructionWorkflowAsset,
-  ReconstructionWorkflowPlacement
+  ReconstructionWorkflowAsset
 } from "../../shared/types";
 import type { RendererEvent } from "../../shared/types";
-import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-import { collectHunyuanGlb, submitHunyuan3dJob } from "../modeling3d/hunyuan3dService";
-import { importGlobalComponent, listGlobalComponents } from "../modeling3d/componentLibraryService";
-import type { SceneCommandResult } from "../../shared/modeling3d/sceneContracts";
+import { assertSingleEntityAsset } from "../modeling3d/hunyuan3dService";
+import { listGlobalComponents } from "../modeling3d/componentLibraryService";
 
 export interface CreateReconstructionWorkflowInput {
   mode: ReconstructionWorkflow["mode"];
   title: string;
   summary: string;
   assumptions?: string[];
-  sourceAttachmentIds?: string[];
+  sourceResourceIds?: string[];
   questions?: Array<{
     id: string;
     prompt: string;
@@ -34,10 +29,11 @@ export interface CreateReconstructionWorkflowInput {
     quantity?: number;
     source: ReconstructionWorkflowAsset["source"];
     componentId?: string;
+    sourceResourceId?: string;
     imagePath?: string;
     prompt?: string;
-    placement?: ReconstructionWorkflowPlacement;
-    placements?: ReconstructionWorkflowPlacement[];
+  placement?: ReconstructionWorkflowAsset["placement"];
+  placements?: ReconstructionWorkflowAsset["placements"];
   }>;
 }
 
@@ -47,31 +43,27 @@ export interface ReconstructionWorkflowService {
   confirm(input: ConfirmWorkflowInput): ReconstructionWorkflow;
   cancel(input: Pick<ConfirmWorkflowInput, "sessionId" | "workflowId">): ReconstructionWorkflow;
   retry(input: RetryWorkflowAssetInput): ReconstructionWorkflow;
-  resumeAll(): void;
 }
 
 export function createReconstructionWorkflowService(options: {
   rootDir: string;
   sessions: Map<string, ChatSession>;
-  getSessionOutputDir: (sessionId: string) => string;
   createId: (prefix: string) => string;
   now: () => string;
   schedulePersistState: () => void;
   sendEvent: (event: RendererEvent) => void;
-  placeComponentLibraryItem: (input: {
-    componentId: string;
-    position?: [number, number, number];
-    rotation?: [number, number, number];
-    scale?: [number, number, number];
-  }) => SceneCommandResult;
-  maxConcurrentJobs?: number;
+  confirmResourceLinks?: (input: { sessionId: string; resourceIds: string[] }) => void;
 }): ReconstructionWorkflowService {
-  const maxConcurrentJobs = Math.max(1, options.maxConcurrentJobs ?? 2);
-  const activeJobs = new Set<string>();
 
   function createPlan(sessionId: string, input: CreateReconstructionWorkflowInput): ReconstructionWorkflow {
     const session = requireSession(sessionId);
     validatePlan(input);
+    const libraryIds = new Set(listGlobalComponents(options.rootDir).map((component) => component.id));
+    for (const asset of input.assets) {
+      if (asset.source === "library" && asset.componentId!.startsWith("lib_") && !libraryIds.has(asset.componentId!)) {
+        throw new Error(`复用资产“${asset.name}”不在当前资产库中，请先重新搜索资产库。`);
+      }
+    }
     const priorRevision = session.workflow?.revision ?? 0;
     const createdAt = options.now();
     const workflow: ReconstructionWorkflow = {
@@ -81,7 +73,7 @@ export function createReconstructionWorkflowService(options: {
       title: input.title.trim(),
       summary: input.summary.trim(),
       assumptions: input.assumptions?.map((item) => item.trim()).filter(Boolean) ?? [],
-      sourceAttachmentIds: input.sourceAttachmentIds?.filter(Boolean) ?? [],
+      sourceResourceIds: input.sourceResourceIds?.filter(Boolean) ?? [],
       questions: (input.questions ?? []).map((question) => ({
         id: question.id.trim(),
         prompt: question.prompt.trim(),
@@ -98,6 +90,7 @@ export function createReconstructionWorkflowService(options: {
         quantity: asset.quantity ?? 1,
         source: asset.source,
         ...(asset.componentId?.trim() ? { componentId: asset.componentId.trim() } : {}),
+        ...(asset.sourceResourceId?.trim() ? { sourceResourceId: asset.sourceResourceId.trim() } : {}),
         ...(asset.imagePath?.trim() ? { imagePath: asset.imagePath.trim() } : {}),
         ...(asset.prompt?.trim() ? { prompt: asset.prompt.trim() } : {}),
         ...(asset.placement ? { placement: asset.placement } : {}),
@@ -139,12 +132,11 @@ export function createReconstructionWorkflowService(options: {
     if (workflow.status !== "ready_for_confirmation") {
       throw new Error(workflow.status === "needs_clarification" ? "请先回答所有必填问题，再确认生成。" : "当前方案不能确认生成。");
     }
-    workflow.status = "generating";
+    workflow.status = "confirmed";
     workflow.confirmedAt = options.now();
     workflow.updatedAt = workflow.confirmedAt;
-    for (const asset of workflow.assets) asset.status = "queued";
+    options.confirmResourceLinks?.({ sessionId: input.sessionId, resourceIds: workflow.sourceResourceIds });
     persist(session);
-    queueMicrotask(() => pump(session.id, workflow.id, workflow.revision));
     return workflow;
   }
 
@@ -165,123 +157,7 @@ export function createReconstructionWorkflowService(options: {
     const session = requireSession(input.sessionId);
     const workflow = requireWorkflow(session, input.workflowId);
     ensureRevision(workflow, input.revision);
-    const asset = workflow.assets.find((item) => item.id === input.assetId);
-    if (!asset || asset.status !== "failed") throw new Error("未找到可重试的失败资产。");
-    asset.status = "queued";
-    asset.error = undefined;
-    workflow.status = "generating";
-    workflow.updatedAt = options.now();
-    persist(session);
-    queueMicrotask(() => pump(session.id, workflow.id, workflow.revision));
-    return workflow;
-  }
-
-  function pump(sessionId: string, workflowId: string, revision: number): void {
-    const workflow = getActiveWorkflow(sessionId, workflowId, revision);
-    if (!workflow) return;
-    while (activeJobs.size < maxConcurrentJobs) {
-      const asset = workflow.assets.find((item) => item.status === "queued");
-      if (!asset) break;
-      const jobKey = `${sessionId}:${workflow.id}:${asset.id}`;
-      asset.status = "running";
-      workflow.updatedAt = options.now();
-      activeJobs.add(jobKey);
-      persist(requireSession(sessionId));
-      void runAsset(sessionId, workflow.id, revision, asset.id)
-        .catch(() => undefined)
-        .finally(() => {
-          activeJobs.delete(jobKey);
-          finishWorkflowIfReady(sessionId, workflowId, revision);
-          pump(sessionId, workflowId, revision);
-        });
-    }
-    finishWorkflowIfReady(sessionId, workflowId, revision);
-  }
-
-  async function runAsset(sessionId: string, workflowId: string, revision: number, assetId: string): Promise<void> {
-    const workflow = getActiveWorkflow(sessionId, workflowId, revision);
-    const asset = workflow?.assets.find((item) => item.id === assetId);
-    if (!workflow || !asset || workflow.status !== "generating") return;
-    try {
-      let componentId = asset.componentId;
-      if (asset.source === "image" || asset.source === "text") {
-        const dedupeKey = asset.dedupeKey ?? await createAssetDedupeKey(asset);
-        asset.dedupeKey = dedupeKey;
-        const existing = listGlobalComponents(options.rootDir).find((component) => component.tags.includes(`workflow-source:${dedupeKey}`));
-        if (existing) {
-          componentId = existing.id;
-        } else {
-          const submitted = asset.providerJob ?? await submitHunyuan3dJob({
-            name: asset.name,
-            ...(asset.source === "image" ? { imageBase64: await readWorkflowImage(asset.imagePath!) } : { prompt: asset.prompt! }),
-            generateType: "low_poly"
-          });
-          asset.providerJob = submitted;
-          persist(requireSession(sessionId));
-          const generated = await collectHunyuanGlb(submitted, { name: `${asset.name}-${asset.id}`, prompt: asset.prompt }, join(options.getSessionOutputDir(sessionId), "assets"));
-          if (!getActiveWorkflow(sessionId, workflowId, revision)) return;
-          const component = importGlobalComponent(options.rootDir, generated.path, {
-            name: asset.name,
-            description: asset.source === "text" ? asset.prompt : "由用户参考图生成的低模资产",
-            category: "重建设计",
-            tags: ["workflow", "low-poly", `workflow-source:${dedupeKey}`]
-          });
-          componentId = component.id;
-        }
-      }
-      if (!componentId) throw new Error("资产缺少构件库 ID。");
-      const sceneAssetIds: string[] = [];
-      for (let index = 0; index < asset.quantity; index += 1) {
-        const placed = options.placeComponentLibraryItem({ componentId, ...(asset.placements?.[index] ?? asset.placement) });
-        if (!placed.accepted) throw new Error(placed.message);
-        if (placed.command.type !== "asset.create") throw new Error("构件放置未返回参考模型节点。");
-        sceneAssetIds.push(placed.command.id);
-      }
-      const active = getActiveWorkflow(sessionId, workflowId, revision)?.assets.find((item) => item.id === assetId);
-      if (!active) return;
-      active.componentIdResult = componentId;
-      active.sceneAssetIds = sceneAssetIds;
-      active.status = "placed";
-      active.error = undefined;
-      const current = requireSession(sessionId);
-      current.workflow!.updatedAt = options.now();
-      persist(current);
-    } catch (error) {
-      const active = getActiveWorkflow(sessionId, workflowId, revision)?.assets.find((item) => item.id === assetId);
-      if (!active) return;
-      active.status = "failed";
-      active.error = error instanceof Error ? error.message : String(error);
-      const current = requireSession(sessionId);
-      current.workflow!.updatedAt = options.now();
-      persist(current);
-    }
-  }
-
-  function finishWorkflowIfReady(sessionId: string, workflowId: string, revision: number): void {
-    const workflow = getActiveWorkflow(sessionId, workflowId, revision);
-    if (!workflow || workflow.status !== "generating") return;
-    if (workflow.assets.some((asset) => asset.status === "queued" || asset.status === "running")) return;
-    workflow.status = workflow.assets.some((asset) => asset.status === "failed") ? "needs_attention" : "completed";
-    workflow.updatedAt = options.now();
-    persist(requireSession(sessionId));
-  }
-
-  function resumeAll(): void {
-    for (const session of options.sessions.values()) {
-      const workflow = session.workflow;
-      if (!workflow || workflow.status !== "generating") continue;
-      for (const asset of workflow.assets) {
-        if (asset.status === "running") asset.status = "queued";
-      }
-      workflow.updatedAt = options.now();
-      persist(session);
-      queueMicrotask(() => pump(session.id, workflow.id, workflow.revision));
-    }
-  }
-
-  function getActiveWorkflow(sessionId: string, workflowId: string, revision: number): ReconstructionWorkflow | undefined {
-    const workflow = options.sessions.get(sessionId)?.workflow;
-    return workflow?.id === workflowId && workflow.revision === revision && workflow.status !== "cancelled" ? workflow : undefined;
+    throw new Error("重建计划不再后台执行；请让 Agent 使用公开生成工具重试该原子资产。");
   }
 
   function persist(session: ChatSession): void {
@@ -306,7 +182,7 @@ export function createReconstructionWorkflowService(options: {
     if (workflow.revision !== revision) throw new Error("方案版本已变化，请重新确认。");
   }
 
-  return { createPlan, answer, confirm, cancel, retry, resumeAll };
+  return { createPlan, answer, confirm, cancel, retry };
 }
 
 function validatePlan(input: CreateReconstructionWorkflowInput): void {
@@ -321,25 +197,10 @@ function validatePlan(input: CreateReconstructionWorkflowInput): void {
     if (asset.source === "library" && !asset.componentId?.trim()) throw new Error(`复用资产“${asset.name}”缺少 component_id。`);
     if (asset.source === "image" && !asset.imagePath?.trim()) throw new Error(`图生资产“${asset.name}”缺少 image_path。`);
     if (asset.source === "text" && !asset.prompt?.trim()) throw new Error(`文生资产“${asset.name}”缺少中文 prompt。`);
+    assertSingleEntityAsset(asset.name, asset.source === "text" ? asset.prompt : undefined);
   }
 }
 
 function hasUnansweredRequiredQuestions(questions: NonNullable<CreateReconstructionWorkflowInput["questions"]>): boolean {
   return questions.some((question) => question.required !== false);
-}
-
-async function readWorkflowImage(path: string): Promise<string> {
-  return (await readFile(path)).toString("base64");
-}
-
-async function createAssetDedupeKey(asset: ReconstructionWorkflowAsset): Promise<string> {
-  const hash = createHash("sha256");
-  hash.update("hy3-low-poly-v1\0");
-  hash.update(asset.source);
-  if (asset.source === "image") {
-    hash.update(await readFile(asset.imagePath!));
-  } else {
-    hash.update(asset.prompt!);
-  }
-  return hash.digest("hex");
 }

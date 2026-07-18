@@ -3,7 +3,7 @@ import { createReconstructionWorkflowService } from "../../../src/main/agent/rec
 import type { ChatSession, RendererEvent } from "../../../src/shared/types";
 
 describe("reconstructionWorkflowService", () => {
-  it("requires answers and an explicit confirmation before placing assets", async () => {
+  it("requires answers and an explicit confirmation before exposing an Agent-executable plan", async () => {
     const session = createSession();
     const sessions = new Map([[session.id, session]]);
     const placeComponentLibraryItem = vi.fn(() => ({
@@ -48,10 +48,10 @@ describe("reconstructionWorkflowService", () => {
     service.answer({ sessionId: session.id, workflowId: workflow.id, revision: workflow.revision, questionId: "curtain", optionId: "keep" });
     expect(session.workflow?.status).toBe("ready_for_confirmation");
     service.confirm({ sessionId: session.id, workflowId: workflow.id, revision: workflow.revision });
-    await vi.waitFor(() => expect(session.workflow?.status).toBe("completed"));
+    expect(session.workflow?.status).toBe("confirmed");
 
-    expect(placeComponentLibraryItem).toHaveBeenCalledWith({ componentId: "library/sofa.glb" });
-    expect(session.workflow?.assets[0]).toMatchObject({ status: "placed", sceneAssetIds: ["asset_sofa"] });
+    expect(placeComponentLibraryItem).not.toHaveBeenCalled();
+    expect(session.workflow?.assets[0]).toMatchObject({ status: "planned" });
   });
 
   it("rejects stale confirmation versions", () => {
@@ -74,6 +74,25 @@ describe("reconstructionWorkflowService", () => {
     });
 
     expect(() => service.confirm({ sessionId: session.id, workflowId: workflow.id, revision: workflow.revision + 1 })).toThrow("版本已变化");
+  });
+
+  it("does not place an approved asset behind the Agent's back", async () => {
+    const session = createSession();
+    const placeComponentLibraryItem = vi.fn(() => ({
+      accepted: true as const,
+      command: { type: "asset.create" as const, id: "asset_sofa", parentId: "level_default", name: "沙发", format: "glb" as const, sourcePath: "assets/sofa.glb" },
+      snapshot: { revision: 1, rootNodeIds: [], nodes: {} }
+    }));
+    const service = createReconstructionWorkflowService({
+      rootDir: process.cwd(), sessions: new Map([[session.id, session]]), getSessionOutputDir: () => process.cwd(), createId: (prefix) => `${prefix}_1`, now: () => "2026-07-18T00:00:00.000Z", schedulePersistState: vi.fn(), sendEvent: vi.fn(), placeComponentLibraryItem,
+      getSceneSnapshot: () => ({ revision: 1, rootNodeIds: ["site_default"], nodes: { wall_east: { id: "wall_east", type: "wall", name: "东墙", parentId: "level_default", start: [4, 0], end: [4, 4], height: 2.8, thickness: 0.2, materialPreset: "plaster" } } })
+    });
+    const workflow = service.createPlan(session.id, {
+      mode: "floorplan", title: "客厅", summary: "靠东墙放置沙发", assets: [{ id: "sofa", name: "沙发", source: "library", componentId: "library/sofa", placement: { anchor: { elementId: "wall_east", side: "inside", distance: 0.5 }, local: [0, 0, 0], facing: "west", footprint: [2, 1] } }]
+    });
+    service.confirm({ sessionId: session.id, workflowId: workflow.id, revision: workflow.revision });
+    expect(session.workflow?.status).toBe("confirmed");
+    expect(placeComponentLibraryItem).not.toHaveBeenCalled();
   });
 });
 

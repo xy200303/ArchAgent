@@ -160,6 +160,8 @@ export interface SceneAssetNode {
   position: [number, number, number];
   rotation: [number, number, number];
   scale: [number, number, number];
+  /** Local X/Z floor footprint in metres, used for deterministic placement collision checks. */
+  footprint?: [number, number];
 }
 
 export type SceneNode = SceneSiteNode | SceneBuildingNode | SceneLevelNode | SceneSlabNode | SceneCeilingNode | SceneColumnNode | SceneZoneNode | SceneStairNode | SceneFenceNode | SceneWallNode | SceneDoorNode | SceneWindowNode | SceneAssetNode;
@@ -330,6 +332,7 @@ export interface CreateAssetCommandInput {
   position?: SceneAssetNode["position"];
   rotation?: SceneAssetNode["rotation"];
   scale?: SceneAssetNode["scale"];
+  footprint?: SceneAssetNode["footprint"];
 }
 
 export interface UpdateAssetCommandInput {
@@ -339,6 +342,7 @@ export interface UpdateAssetCommandInput {
   position?: SceneAssetNode["position"];
   rotation?: SceneAssetNode["rotation"];
   scale?: SceneAssetNode["scale"];
+  footprint?: SceneAssetNode["footprint"];
 }
 
 export type SceneCommandInput =

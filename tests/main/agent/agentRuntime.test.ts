@@ -105,13 +105,15 @@ function createHost(items: StreamItem[], settings: AppSettings = createSettings(
     appendSessionMemory: () => {},
     formatSessionMemory: () => "",
     getSessionReadableFiles: () => [],
+    getSessionAttachments: () => [],
+    getSessionArtifacts: () => [],
     getBundledPythonRuntime: () => undefined,
     placeComponentLibraryItem: () => ({
       accepted: false,
       code: "unsupported_node",
       message: "测试未实现"
     }),
-    createArtifact: () => {}
+    createArtifact: () => ({ id: "artifact_1", name: "output.png", kind: "png", path: "C:/tmp/output.png", createdAt: "2026-07-18T00:00:00.000Z" })
   };
 }
 
@@ -126,22 +128,18 @@ function createSettings(): AppSettings {
     },
     openai: {
       baseUrl: "https://api.openai.com/v1",
-      visionBaseUrl: "",
       chatModel: "gpt-5.5",
-      chatImageInputEnabled: false,
-      visionModel: "",
       thinkingEnabled: true,
       reasoningEffort: "",
       requestTimeoutSeconds: 120,
       contextWindowTokens: 256000,
       maxOutputTokens: 16000,
-      apiKeyConfigured: false,
-      visionApiKeyConfigured: false
+      apiKeyConfigured: false
     },
-    hunyuanImage: {
-      region: "ap-guangzhou", resolution: "1024:1024", revise: true, logoAdd: true,
-      requestTimeoutSeconds: 120, pollIntervalSeconds: 3, jobTimeoutSeconds: 900,
-      secretIdConfigured: false, secretKeyConfigured: false
+    tokenHubImage: {
+      endpoint: "https://tokenhub.tencentmaas.com/v1/api/image/lite",
+      model: "hy-image-v3.0",
+      requestTimeoutSeconds: 300
     },
     output: {
       autoPdfExport: false,

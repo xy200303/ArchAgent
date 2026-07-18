@@ -1,7 +1,7 @@
 /** Persists global and per-project conversation state without UI dependencies. */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { ArtifactSummary, AttachmentRef, ChatSession } from "../../shared/types";
+import type { ArtifactSummary, AttachmentRef, ChatSession, SessionResource } from "../../shared/types";
 
 export interface SessionMemoryEntry {
   source: string;
@@ -12,6 +12,7 @@ export interface PersistedStateSnapshot {
   sessions: ChatSession[];
   attachments: AttachmentRef[];
   artifacts: ArtifactSummary[];
+  resources: SessionResource[];
   sessionMemories: Record<string, SessionMemoryEntry[]>;
   recentProjectPaths: string[];
 }
@@ -26,10 +27,21 @@ export interface ProjectStateSnapshot {
   sessions: ChatSession[];
   attachments: AttachmentRef[];
   artifacts: ArtifactSummary[];
+  /** Legacy resources embedded in sessions.json; read once then migrated to resources.json. */
+  resources?: SessionResource[];
   sessionMemories: Record<string, SessionMemoryEntry[]>;
 }
 
-interface ProjectStateFile extends ProjectStateSnapshot {
+interface ProjectStateFile extends Omit<ProjectStateSnapshot, "resources"> {
+  version: 1;
+  savedAt: string;
+}
+
+export interface ProjectResourceSnapshot {
+  resources: SessionResource[];
+}
+
+interface ProjectResourceFile extends ProjectResourceSnapshot {
   version: 1;
   savedAt: string;
 }
@@ -38,6 +50,7 @@ const EMPTY_SNAPSHOT: PersistedStateSnapshot = {
   sessions: [],
   attachments: [],
   artifacts: [],
+  resources: [],
   sessionMemories: {},
   recentProjectPaths: []
 };
@@ -58,6 +71,7 @@ export function loadPersistedState(filePath: string): PersistedStateSnapshot | n
     sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
     attachments: Array.isArray(parsed.attachments) ? parsed.attachments : [],
     artifacts: Array.isArray(parsed.artifacts) ? parsed.artifacts : [],
+    resources: Array.isArray(parsed.resources) ? parsed.resources : [],
     sessionMemories: isMemoryRecord(parsed.sessionMemories) ? parsed.sessionMemories : {},
     recentProjectPaths: Array.isArray(parsed.recentProjectPaths) ? parsed.recentProjectPaths : []
   };
@@ -71,6 +85,7 @@ export function savePersistedState(filePath: string, snapshot: PersistedStateSna
     sessions: snapshot.sessions,
     attachments: snapshot.attachments,
     artifacts: snapshot.artifacts,
+    resources: snapshot.resources,
     sessionMemories: snapshot.sessionMemories,
     recentProjectPaths: snapshot.recentProjectPaths
   };
@@ -91,6 +106,10 @@ export function loadProjectState(projectPath: string): ProjectStateSnapshot | nu
     sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
     attachments: Array.isArray(parsed.attachments) ? parsed.attachments : [],
     artifacts: Array.isArray(parsed.artifacts) ? parsed.artifacts : [],
+    ...(() => {
+      const legacyResources = (parsed as { resources?: unknown }).resources;
+      return Array.isArray(legacyResources) ? { resources: legacyResources as SessionResource[] } : {};
+    })(),
     sessionMemories: isMemoryRecord(parsed.sessionMemories) ? parsed.sessionMemories : {}
   };
 }
@@ -106,6 +125,25 @@ export function saveProjectState(projectPath: string, snapshot: ProjectStateSnap
     artifacts: snapshot.artifacts,
     sessionMemories: snapshot.sessionMemories
   };
+  writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`, "utf-8");
+}
+
+export function getProjectResourcesFilePath(projectPath: string): string {
+  return join(projectPath, ".agent", "resources.json");
+}
+
+export function loadProjectResources(projectPath: string): ProjectResourceSnapshot | null {
+  const filePath = getProjectResourcesFilePath(projectPath);
+  if (!existsSync(filePath)) return null;
+  const parsed = JSON.parse(readFileSync(filePath, "utf-8")) as Partial<ProjectResourceFile>;
+  if (parsed.version !== 1) return { resources: [] };
+  return { resources: Array.isArray(parsed.resources) ? parsed.resources : [] };
+}
+
+export function saveProjectResources(projectPath: string, snapshot: ProjectResourceSnapshot): void {
+  const filePath = getProjectResourcesFilePath(projectPath);
+  mkdirSync(dirname(filePath), { recursive: true });
+  const payload: ProjectResourceFile = { version: 1, savedAt: new Date().toISOString(), resources: snapshot.resources };
   writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`, "utf-8");
 }
 

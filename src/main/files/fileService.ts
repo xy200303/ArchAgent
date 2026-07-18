@@ -7,6 +7,7 @@ import { mkdir as mkdirAsync, readFile as readFileAsync, rm as rmAsync, stat as 
 import type {
   ArtifactSummary,
   AttachmentRef,
+  SessionResource,
   ChatSession,
   CreateDirectoryInput,
   CreateFileInput,
@@ -28,6 +29,7 @@ export function createFileService(options: {
   sessions: Map<string, ChatSession>;
   attachments: Map<string, AttachmentRef>;
   artifacts: Map<string, ArtifactSummary>;
+  resources: Map<string, SessionResource>;
   schedulePersistState: () => void;
 }) {
   function getAllowedFilePaths(): string[] {
@@ -47,6 +49,9 @@ export function createFileService(options: {
     }
     for (const artifact of options.artifacts.values()) {
       allowed.add(resolve(artifact.path));
+    }
+    for (const resource of options.resources.values()) {
+      allowed.add(resolve(resource.path));
     }
     return Array.from(allowed);
   }
@@ -153,6 +158,11 @@ export function createFileService(options: {
     for (const [id, artifact] of options.artifacts) {
       if (resolve(artifact.path).toLowerCase() === normalizedDeleted || underDeleted(artifact.path)) {
         options.artifacts.delete(id);
+      }
+    }
+    for (const [id, resource] of options.resources) {
+      if (resolve(resource.path).toLowerCase() === normalizedDeleted || underDeleted(resource.path)) {
+        options.resources.delete(id);
       }
     }
     options.schedulePersistState();

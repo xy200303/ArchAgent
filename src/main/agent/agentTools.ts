@@ -1,10 +1,28 @@
 /** Provides reusable file, document, and formatting primitives for Agent tools. */
 import { basename, dirname, extname } from "node:path";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import mammoth from "mammoth";
+import { PDFParse } from "pdf-parse";
 
 export type BuiltinToolName =
+  | "extract_reference_object"
+  | "search_resources"
+  | "view_resources"
+  | "search_library_assets"
+  | "place_library_asset"
+  | "place_library_assets"
+  | "inspect_scene"
+  | "update_scene_object"
+  | "create_architecture_element"
+  | "create_architecture_elements"
+  | "update_architecture_element"
+  | "update_architecture_elements"
+  | "create_reconstruction_plan"
+  | "generate_design_preview"
   | "analyze_reference"
   | "isolate_reference_object"
+  | "place_scene_objects"
+  | "adjust_scene_object"
   | "search_assets"
   | "propose_reconstruction"
   | "preview_design"
@@ -123,6 +141,16 @@ export async function readDocumentText(filePath: string, maxChars: number): Prom
 
   if (TEXT_EXTENSIONS.has(ext)) {
     content = await readFile(filePath, "utf-8");
+  } else if (ext === ".docx") {
+    const result = await mammoth.extractRawText({ buffer: await readFile(filePath) });
+    content = result.value;
+  } else if (ext === ".pdf") {
+    const parser = new PDFParse({ data: await readFile(filePath) });
+    try {
+      content = (await parser.getText()).text;
+    } finally {
+      await parser.destroy();
+    }
   } else if (IMAGE_MIME_TYPES.has(ext)) {
     return {
       toolName: "read_image",

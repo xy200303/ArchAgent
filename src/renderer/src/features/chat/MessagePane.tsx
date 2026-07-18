@@ -126,6 +126,7 @@ function ReconstructionWorkflowCard({
   const statusLabel = {
     needs_clarification: "等待你的选择",
     ready_for_confirmation: "等待生成确认",
+    confirmed: "已确认，等待 Agent 执行",
     generating: "正在生成并摆放",
     completed: "已完成",
     needs_attention: "需要处理失败项",

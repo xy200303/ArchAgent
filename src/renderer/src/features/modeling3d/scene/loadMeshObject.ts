@@ -1,5 +1,5 @@
 /** Parses supported mesh payloads without exposing file paths to the renderer. */
-import { Mesh, MeshStandardMaterial, Object3D } from "three";
+import { Box3, Group, Mesh, MeshStandardMaterial, Object3D, Vector3 } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
@@ -18,6 +18,18 @@ export async function loadMeshObject(format: SceneAssetNode["format"], dataBase6
   const geometry = new STLLoader().parse(bytes);
   geometry.computeVertexNormals();
   return new Mesh(geometry, new MeshStandardMaterial({ color: "#b8c5d1", roughness: 0.72 }));
+}
+
+/** Makes the persisted asset position represent its visible bottom-center, regardless of GLB local origin. */
+export function normalizeMeshObjectForScene(source: Object3D): Object3D {
+  source.updateMatrixWorld(true);
+  const bounds = new Box3().setFromObject(source);
+  if (bounds.isEmpty()) return source;
+  const center = bounds.getCenter(new Vector3());
+  source.position.sub(new Vector3(center.x, bounds.min.y, center.z));
+  const container = new Group();
+  container.add(source);
+  return container;
 }
 
 function base64ToArrayBuffer(value: string): ArrayBuffer {

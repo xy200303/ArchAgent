@@ -12,6 +12,7 @@ import type {
   SceneZoneNode,
   SceneAssetNode
 } from "../../shared/modeling3d/sceneContracts";
+import { formatSceneCoordinateContext, getSceneCoordinateContext } from "../../shared/modeling3d/sceneCoordinates";
 
 /**
  * Limits Agent context to the architectural facts needed for follow-up commands.
@@ -32,6 +33,7 @@ export function summarizeSceneForAgent(snapshot: SceneSnapshot): string {
 
   return [
     `场景版本：${snapshot.revision}`,
+    formatSceneCoordinateContext(getSceneCoordinateContext(snapshot)),
     `楼层：${levels.map((level) => `${level.name}（${level.id}）`).join("；") || "无"}`,
     `墙体数量：${walls.length}`,
     walls.length
@@ -62,7 +64,7 @@ export function summarizeSceneForAgent(snapshot: SceneSnapshot): string {
       ? "窗：\n" + windows.map((window) => formatOpening(window)).join("\n")
       : "窗：无",
     assets.length
-      ? "参考模型：\n" + assets.map((asset) => `- ${asset.name}（${asset.id}）：${asset.format.toUpperCase()}，位置 [${asset.position.join(", ")}]，缩放 [${asset.scale.join(", ")}]`).join("\n")
+      ? "参考模型：\n" + assets.map((asset) => `- ${asset.name}（${asset.id}）：${asset.format.toUpperCase()}，位置 [${asset.position.join(", ")}]，缩放 [${asset.scale.join(", ")}]${asset.footprint ? `，占地 ${asset.footprint[0]}m × ${asset.footprint[1]}m` : "，占地未标注"}`).join("\n")
       : "参考模型：无"
   ].join("\n");
 }

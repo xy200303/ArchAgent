@@ -98,12 +98,14 @@ export interface ChatSession {
   createdAt: string;
   updatedAt: string;
   items: StreamItem[];
+  resourceLinks?: SessionResourceLink[];
   workflow?: ReconstructionWorkflow;
 }
 
 export type ReconstructionWorkflowStatus =
   | "needs_clarification"
   | "ready_for_confirmation"
+  | "confirmed"
   | "generating"
   | "completed"
   | "needs_attention"
@@ -127,6 +129,12 @@ export interface ReconstructionWorkflowPlacement {
   position?: [number, number, number];
   rotation?: [number, number, number];
   scale?: [number, number, number];
+  anchor?: { elementId: string; side: "inside" | "outside"; distance: number };
+  local?: [number, number, number];
+  facing?: "north" | "south" | "east" | "west" | "wall_inward" | "wall_outward";
+  lookAt?: [number, number, number];
+  rotationDegrees?: [number, number, number];
+  footprint?: [number, number];
 }
 
 export interface ReconstructionWorkflowAsset {
@@ -135,17 +143,19 @@ export interface ReconstructionWorkflowAsset {
   quantity: number;
   source: "library" | "image" | "text";
   componentId?: string;
+  sourceResourceId?: string;
   imagePath?: string;
   prompt?: string;
   placement?: ReconstructionWorkflowPlacement;
   placements?: ReconstructionWorkflowPlacement[];
   status: "planned" | "queued" | "running" | "placed" | "failed" | "cancelled";
   componentIdResult?: string;
+  resourceIdResult?: string;
   sceneAssetIds?: string[];
   dedupeKey?: string;
   providerJob?: {
     taskId: string;
-    model: "3.0" | "3.1";
+    model: "hy-3d-3.0" | "hy-3d-3.1" | "hy-3d-express";
     generateType: "normal" | "low_poly" | "geometry" | "sketch";
     faceCount?: number;
   };
@@ -160,7 +170,7 @@ export interface ReconstructionWorkflow {
   title: string;
   summary: string;
   assumptions: string[];
-  sourceAttachmentIds: string[];
+  sourceResourceIds: string[];
   questions: ReconstructionWorkflowQuestion[];
   assets: ReconstructionWorkflowAsset[];
   status: ReconstructionWorkflowStatus;
@@ -264,6 +274,38 @@ export interface AttachmentRef {
   createdAt: string;
 }
 
+/** Session-owned file resource. Paths remain main-process only and are never tool arguments. */
+export type SessionResourceKind = "image" | "document" | "table" | "database" | "model3d" | "text" | "archive" | "other";
+export type SessionResourceSource = "user_upload" | "generated" | "derived";
+export type SessionResourceStatus = "ready" | "processing" | "failed";
+
+export interface SessionResourceLink {
+  resourceId: string;
+  confirmed: boolean;
+  pinned: boolean;
+  addedAt: string;
+}
+
+export interface SessionResource {
+  id: string;
+  projectPath: string;
+  /** Session that created the resource; this is audit metadata, not ownership. */
+  sessionId: string;
+  name: string;
+  kind: SessionResourceKind;
+  mimeType: string;
+  size: number;
+  /** Main-process only; never expose this field in Agent tool schemas. */
+  path: string;
+  source: SessionResourceSource;
+  parentResourceIds: string[];
+  metadata: Record<string, unknown>;
+  status: SessionResourceStatus;
+  confirmed: boolean;
+  pinned: boolean;
+  createdAt: string;
+}
+
 export interface ClipboardAttachmentInput {
   sessionId?: string;
   source?: "clipboard" | "drop";
@@ -323,28 +365,18 @@ export interface AppSettings {
   };
   openai: {
     baseUrl: string;
-    visionBaseUrl: string;
     chatModel: string;
-    chatImageInputEnabled: boolean;
-    visionModel: string;
     thinkingEnabled: boolean;
     reasoningEffort: string;
     requestTimeoutSeconds: number;
     contextWindowTokens: number;
     maxOutputTokens: number;
     apiKeyConfigured: boolean;
-    visionApiKeyConfigured: boolean;
   };
-  hunyuanImage: {
-    region: string;
-    resolution: string;
-    revise: boolean;
-    logoAdd: boolean;
+  tokenHubImage: {
+    endpoint: string;
+    model: string;
     requestTimeoutSeconds: number;
-    pollIntervalSeconds: number;
-    jobTimeoutSeconds: number;
-    secretIdConfigured: boolean;
-    secretKeyConfigured: boolean;
   };
   output: {
     autoPdfExport: boolean;
@@ -359,28 +391,18 @@ export interface UpdateAppSettingsInput {
   theme: "light" | "dark";
   openai: {
     baseUrl: string;
-    visionBaseUrl: string;
     chatModel: string;
-    chatImageInputEnabled: boolean;
-    visionModel: string;
     thinkingEnabled: boolean;
     reasoningEffort: string;
     requestTimeoutSeconds: number;
     contextWindowTokens: number;
     maxOutputTokens: number;
     apiKey?: string;
-    visionApiKey?: string;
   };
-  hunyuanImage: {
-    region: string;
-    resolution: string;
-    revise: boolean;
-    logoAdd: boolean;
+  tokenHubImage: {
+    endpoint: string;
+    model: string;
     requestTimeoutSeconds: number;
-    pollIntervalSeconds: number;
-    jobTimeoutSeconds: number;
-    secretId?: string;
-    secretKey?: string;
   };
   output: {
     autoPdfExport: boolean;

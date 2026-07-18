@@ -5,7 +5,10 @@ import { describe, expect, it } from "vitest";
 import { loadPersistedState, savePersistedState, type PersistedStateSnapshot } from "../../../src/main/projects/sessionPersistence";
 import {
   getProjectStateFilePath,
+  getProjectResourcesFilePath,
+  loadProjectResources,
   loadProjectState,
+  saveProjectResources,
   saveProjectState,
   type ProjectStateSnapshot
 } from "../../../src/main/projects/sessionPersistence";
@@ -107,6 +110,7 @@ describe("sessionPersistence", () => {
         sessions: [],
         attachments: [],
         artifacts: [],
+        resources: [],
         sessionMemories: {},
         recentProjectPaths: []
       });
@@ -144,6 +148,36 @@ describe("sessionPersistence", () => {
       expect(restored?.sessions[0]?.title).toBe("项目内会话");
       expect(restored?.sessions[0]?.projectPath).toBe(dir);
       expect(restored?.sessionMemories.session_project_1[0]?.content).toBe("项目隔离存储");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("stores the project resource registry under <project>/.agent/resources.json", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "arch-agent-project-resources-"));
+    try {
+      saveProjectResources(dir, {
+        resources: [{
+          id: "resource_floorplan",
+          sessionId: "session_project_1",
+          name: "户型图.png",
+          kind: "image",
+          mimeType: "image/png",
+          size: 12,
+          path: join(dir, "input", "户型图.png"),
+          source: "user_upload",
+          parentResourceIds: [],
+          metadata: {},
+          status: "ready",
+          confirmed: true,
+          pinned: false,
+          createdAt: "2026-07-19T00:00:00.000Z"
+        }]
+      });
+
+      expect(getProjectResourcesFilePath(dir)).toBe(join(dir, ".agent", "resources.json"));
+      expect(loadProjectResources(dir)?.resources[0]?.id).toBe("resource_floorplan");
+      expect(loadProjectState(dir)).toBeNull();
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

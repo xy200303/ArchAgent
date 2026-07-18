@@ -9,12 +9,14 @@ import type {
   ArtifactListInput,
   ArtifactSummary,
   AttachmentRef,
+  SessionResource,
   ChatPromptInput,
   ChatSession,
   RendererEvent,
   StreamItem,
   RenameSessionInput
 } from "../../shared/types";
+import { linkSessionResource, resourceFromArtifact } from "../resources/sessionResources";
 import {
   MAX_VISION_IMAGE_BYTES,
   compactText,
@@ -39,19 +41,20 @@ const MAX_SESSION_MEMORY_CHARS = 90000;
 export function buildAgentModelingSystemPrompt(): string {
   return [
     "你是 ArchAgent，一个基于腾讯混元 Hy3 模型的桌面空间设计智能体。",
-    "只可调用以下工具：analyze_reference、isolate_reference_object、search_assets、preview_design、propose_reconstruction、get_scene、apply_scene_plan、update_scene、place_asset、deliver_file，以及按权限开放的 exec_external_script。不得提及或调用旧工具名。",
+    "只可调用以下工具：search_resources、view_resources、extract_reference_object、generate_3d_asset、search_library_assets、place_library_asset、place_library_assets、inspect_scene、update_scene_object、create_architecture_element、create_architecture_elements、update_architecture_element、update_architecture_elements、create_reconstruction_plan、generate_design_preview、send_file，以及按权限开放的 exec_bash。不得提及或调用旧工具名。",
     "工作方式：先理解用户的空间设计目标、场景类型（房间/建筑/室内）、尺寸约束、风格偏好和交付格式，再按需创建或修改 3D 场景节点，最终生成可预览、可导出的空间设计方案。",
     "资料不足时先总结已知信息、指出缺口并继续澄清；但是用户明确要求生成独立 3D 物体时，不应因缺少房间尺寸或摆放位置而拒绝生成资产。",
-    "每当用户补充关键设计背景，优先调用 remember_project 沉淀已确认事实和待补充信息。项目档案应覆盖场景类型、空间尺寸、功能需求、门窗洞口、家具陈设、材质偏好、楼层关系和交付要求。",
+    "每当用户补充关键设计背景，都应在后续回复和重建计划中保留已确认事实、待补充信息与设计进度。项目档案应覆盖场景类型、空间尺寸、功能需求、门窗洞口、家具陈设、材质偏好、楼层关系和交付要求。",
     "事实证据规则：只有用户明确提供、图片/工具明确读到、或 remember_project 已记录为“已确认事实”的内容，才能在设计结论中写成确定事实；推断、经验规则和模型猜测必须标注为假设或建议。",
-    "场景编辑：先用 get_scene 获取版本与节点 ID；用 apply_scene_plan 批量创建或修改建筑构件，用 update_scene 做单项更新或删除。所有坐标单位为米，提交时必须携带读取时的 expected_revision。",
-    "资产：先用 search_assets 检索可复用构件，再用 place_asset 放入场景。重建计划中的缺失资产由确认后的编排器自动生成、入库和摆放，模型不得直接生成。",
-    "重建：用 propose_reconstruction 记录假设、选项和资产计划；关键不确定项必须给出 2 到 4 个选项。用户完成必答选项并确认后，编排器以低模配置执行。",
+    "场景编辑：先用 inspect_scene 获取版本和公开 ID。建筑构件是空间基准，使用世界米制坐标：平面点为 [x,z]，三维点为 [x,y,z]，X 向东/右、Y 向上、Z 向南/前；若家具需要 anchor.side=inside，房间墙体必须沿室内边界顺时针的 start→end 创建，使左侧稳定表示室内。单个精确修改使用 create_architecture_element 或 update_architecture_element；需要并行创建多个明确元素时才使用 create_architecture_elements。提交时必须携带读取时的 expected_revision。",
+    "资产：先用 search_library_assets 搜索可复用资产，结果中的 library_asset_id 是唯一允许传给 place_library_assets 的资产标识。找不到资产时，必须先取得用户对该资产的明确确认，再调用 generate_3d_asset；它会生成 GLB、自动入库并返回 library_asset_id，随后可查看预览或调用 place_library_assets。生成调用的 name 与 prompt 只能描述边界干净、可独立摆放的完整实物资产及其外观；人物、动物和多个物件之间的完整互动可以生成，但所有组成部分必须完整包含在资产内，不能截断、悬挂或混入地面、建筑、背景等场景。不能使用“入口标识”“重建设计”“导向”“动线”等功能、方案或场景词。先把这类需求落实成具体资产（如“单扇入户门”或“人物坐在单椅上”）；无法唯一确定资产边界时先询问用户。绝不将摆放位置、朝向、用途、标签、分类、工作流或场景描述写进生成 prompt。家具优先用 anchor={element_id,side,distance}+local=[沿墙,高度,额外离墙] 锚定墙体；只有精确布局时才使用世界 position=[x,y,z]。朝向优先 facing（north/south/east/west/wall_inward/wall_outward）或 look_at，rotation_degrees=[pitch,yaw,roll]（度）仅作兜底。已知物件实际宽深时传 footprint_meters=[宽,深]，工具会阻止与已有已知占地模型重叠；没有可靠尺寸时不得假装已完成碰撞校验。实例化后得到 scene_object_id 和显示名，后续只用 update_scene_object 修改。绝不传递文件路径、GLB 路径或内部实现 ID。",
+    "工具纪律：没有成功的工具结果，不得声称“已放置”“正在放置”或“马上放置”。任何场景或资产工具失败后，下一步必须调用 inspect_scene；严禁复用失败参数。连续两次无法恢复时，停止调用并向用户说明已执行的工具、返回错误和需要的输入，不得用文字承诺代替工具调用。",
+    "重建：用 create_reconstruction_plan 把需求拆成原子资产清单：一项只对应一种独立实体，可用 quantity 表示重复数量，绝不能把房间、隔墙、墙体、建筑、布局或多物件场景写入资产项。每个需要落地的资产都使用与 place_library_assets 相同的 position 或 anchor+local、facing/look_at、footprint_meters 语义。生3D严格只生成一个可独立放置的实体（例如一张沙发、一个花瓶）；建筑构件必须用 create_architecture_element 或 create_architecture_elements；复杂实拍图必须先 extract_reference_object 得到并确认单物件图，再图生3D。关键不确定项必须给出 2 到 4 个选项；用户明确确认单件资产后，Agent 调用 generate_3d_asset 逐项生成。",
     "能力边界：不能把通用 3D 资产伪装成可编辑建筑语义，也不能声称完成了未执行的 Mesh 顶点、边、面、UV、贴图烘焙、骨骼或动画编辑。",
-    "资料：用 analyze_reference 分析文档、图片或空间；复杂照片用 isolate_reference_object 生成单物件提取图，并把“正确/重新提取/跳过”作为重建计划的必答选项。",
-    "户型图与平面图：使用 preview_design 交付效果图；效果图只是布局与风格参考，仍须走重建计划确认。",
-    "确认与交付：方案存在必答问题时等待用户在方案卡片选择；全部回答后仍须点击“按当前方案生成”。效果图、提取图和完成模型均用 deliver_file 发送给用户。",
-    "工具调用：普通问答和澄清阶段不修改场景；建筑设计使用 get_scene 后的 apply_scene_plan；用户微调用 update_scene；场景命令成功后报告受影响节点和场景版本。",
+    "资料：用户上传的图片会直接附带给 Hy3 主模型；必须基于原图、用户描述与已确认事实推理，不得调用独立视觉识别工具。需要查看历史图片、文档、数据或 3D 预览时调用 view_resources(resource_ids,purpose)。复杂照片可用 extract_reference_object 生成单物件提取图，并把“正确/重新提取/跳过”作为重建计划的必答选项。",
+    "户型图与平面图：使用 generate_design_preview 交付效果图；效果图只是布局与风格参考，仍须走重建计划确认。",
+    "确认与交付：方案存在必答问题时等待用户在方案卡片选择；全部回答后仍须点击“按当前方案生成”。效果图、提取图和完成模型均用 send_file 发送给用户。",
+    "工具调用：普通问答和澄清阶段不修改场景；建筑设计先 inspect_scene，单个元素使用 create_architecture_element / update_architecture_element，多个明确元素才使用 create_architecture_elements / update_architecture_elements；单件家具使用 place_library_asset，多个独立家具才使用 place_library_assets；场景命令成功后报告受影响节点和场景版本。",
     "回复使用中文 Markdown，结论要区分事实、设计结果、假设和建议；必要时给出缺失资料清单。",
     `当前时间：${getCurrentTimeText()}`
   ].join("\n");
@@ -67,6 +70,7 @@ export function createConversationService(options: {
   sessions: Map<string, ChatSession>;
   attachments: Map<string, AttachmentRef>;
   artifacts: Map<string, ArtifactSummary>;
+  resources: Map<string, SessionResource>;
   sessionMemories: Map<string, SessionMemoryEntry[]>;
   ensureProjectDirs: (projectPath: string) => void;
   getSessionInputDir: (sessionId: string) => string;
@@ -147,7 +151,6 @@ export function createConversationService(options: {
         options.artifacts.delete(item.artifactId);
       }
     }
-
     options.schedulePersistState();
     options.sendEvent({ id: options.createId("event"), type: "session.deleted", sessionId });
 
@@ -256,7 +259,9 @@ export function createConversationService(options: {
     return "other";
   }
 
-  function createArtifact(sessionId: string, filePath: string, name = basename(filePath)): ArtifactSummary {
+  function createArtifact(sessionId: string, filePath: string, parentResourceIds: string[] = [], name = basename(filePath)): ArtifactSummary {
+    const projectPath = options.sessions.get(sessionId)?.projectPath;
+    if (!projectPath) throw new Error(`Session not found: ${sessionId}`);
     const existing = findSessionArtifactByPath(sessionId, filePath);
     if (existing) {
       const refreshed: ArtifactSummary = {
@@ -267,6 +272,10 @@ export function createConversationService(options: {
         createdAt: options.now()
       };
       options.artifacts.set(refreshed.id, refreshed);
+      const resource = resourceFromArtifact(refreshed, projectPath)!;
+      resource.parentResourceIds = parentResourceIds;
+      options.resources.set(refreshed.id, resource);
+      linkSessionResource(options.sessions.get(sessionId)!, refreshed.id, options.now());
       ensureArtifactStreamItem(sessionId, refreshed, { refreshExisting: true });
       options.sendEvent({ id: options.createId("event"), type: "artifact.created", sessionId, payload: refreshed });
       options.schedulePersistState();
@@ -274,7 +283,7 @@ export function createConversationService(options: {
     }
 
     const artifact: ArtifactSummary = {
-      id: options.createId("artifact"),
+      id: options.createId("resource"),
       sessionId,
       name,
       kind: getArtifactKind(filePath),
@@ -283,6 +292,10 @@ export function createConversationService(options: {
       createdAt: options.now()
     };
     options.artifacts.set(artifact.id, artifact);
+    const resource = resourceFromArtifact(artifact, projectPath)!;
+    resource.parentResourceIds = parentResourceIds;
+    options.resources.set(artifact.id, resource);
+    linkSessionResource(options.sessions.get(sessionId)!, artifact.id, options.now());
     ensureArtifactStreamItem(sessionId, artifact);
     options.sendEvent({ id: options.createId("event"), type: "artifact.created", sessionId, payload: artifact });
     options.schedulePersistState();
@@ -393,13 +406,15 @@ export function createConversationService(options: {
   function buildAvailableResourceContext(session: ChatSession): string {
     const lines = [
       "以下是本会话可按需读取的文件资源。这些资源尚未读取，只有在用户任务需要时才调用读取工具。",
-      "图片或截图附件：如果 Chat 模型已配置图像输入能力，可直接依据本轮图片分析；否则使用 read_image 识别。文本、表格和文档附件按对应读取工具处理。"
+      "图片或截图会作为多模态内容直接提供给 Hy3；历史图片、文档、表格和模型预览均通过 search_resources 与 view_resources 按需查看。"
     ];
-    const sessionAttachments = getSessionAttachments(session.id);
-    if (sessionAttachments.length) {
+    const sessionResources = getSessionResources(session.id);
+    if (sessionResources.length) {
+      const visibleResources = sessionResources.slice(0, 20);
       lines.push(
-        "用户附件：",
-        ...sessionAttachments.map((attachment, index) => `${index + 1}. ${attachment.name} (${attachment.path})`)
+        "会话资源：",
+        ...visibleResources.map((resource, index) => `${index + 1}. ${resource.name}（resource_id: ${resource.id}；${resource.kind}；${resource.source}；${resource.confirmed ? "已确认" : "未确认"}）`),
+        ...(sessionResources.length > visibleResources.length ? [`其余 ${sessionResources.length - visibleResources.length} 项资源请调用 search_resources 检索。`] : [])
       );
     }
 
@@ -426,6 +441,20 @@ export function createConversationService(options: {
     return getSessionAttachments(sessionId).map((attachment) => attachment.path);
   }
 
+  function getSessionResources(sessionId: string): SessionResource[] {
+    const session = options.sessions.get(sessionId);
+    if (!session) return [];
+    const projectPath = session.projectPath;
+    const links = new Map((session.resourceLinks ?? []).map((link) => [link.resourceId, link]));
+    return Array.from(options.resources.values())
+      .filter((resource) => resolve(resource.projectPath) === resolve(projectPath))
+      .map((resource) => {
+        const link = links.get(resource.id);
+        return { ...resource, confirmed: link?.confirmed ?? false, pinned: link?.pinned ?? false };
+      })
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  }
+
   function buildUserMessageContent(input: ChatPromptInput): string {
     const message = input.message.trim();
     const attachmentNames = input.attachments?.map((attachment) => attachment.name).filter(Boolean) ?? [];
@@ -439,14 +468,29 @@ export function createConversationService(options: {
 
   async function buildPromptImages(
     attachments: AttachmentRef[] | undefined,
-    settings: AppSettings
+    resources: SessionResource[],
+    userMessage: string
   ): Promise<ImageContent[] | undefined> {
-    if (!settings.openai.chatImageInputEnabled || !attachments?.length) return undefined;
+    const selectedPaths = new Set<string>();
+    for (const attachment of attachments ?? []) {
+      if (isSupportedImageFile(attachment.path)) selectedPaths.add(attachment.path);
+    }
+
+    const normalizedMessage = userMessage.toLowerCase();
+    const requestsLatestPreview = ["刚才", "上一张", "效果图", "预览", "这张图"].some((term) => normalizedMessage.includes(term));
+    const candidates = resources
+      .filter((resource) => resource.kind === "image")
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    for (const resource of candidates) {
+      const explicitlyNamed = normalizedMessage.includes(resource.id.toLowerCase()) || normalizedMessage.includes(resource.name.toLowerCase());
+      const shouldAttach = explicitlyNamed || resource.pinned || resource.confirmed || (requestsLatestPreview && resource.source === "generated");
+      if (shouldAttach && selectedPaths.size < 4) selectedPaths.add(resource.path);
+    }
+    if (!selectedPaths.size) return undefined;
 
     const images: ImageContent[] = [];
-    for (const attachment of attachments) {
-      if (!isSupportedImageFile(attachment.path)) continue;
-      const image = await readImageDataUrl(attachment.path, MAX_VISION_IMAGE_BYTES);
+    for (const path of selectedPaths) {
+      const image = await readImageDataUrl(path, MAX_VISION_IMAGE_BYTES);
       images.push({
         type: "image",
         data: image.dataBase64,
@@ -508,13 +552,16 @@ export function createConversationService(options: {
       appendSessionMemory,
       formatSessionMemory,
       getSessionReadableFiles,
+      getSessionAttachments,
+      getSessionArtifacts: (sessionId) => Array.from(options.artifacts.values()).filter((artifact) => artifact.sessionId === sessionId),
+      getSessionResources,
       getBundledPythonRuntime: () => findBundledPythonRuntime({ rootDir: options.projectRootDir, resourcesDir: options.resourcesDir }),
       getSceneSnapshot: options.getSceneSnapshot,
       executeSceneCommand: options.executeSceneCommand,
       placeComponentLibraryItem: options.placeComponentLibraryItem,
       createReconstructionWorkflow: options.createReconstructionWorkflow,
-      createArtifact: (sessionId, filePath) => {
-        createArtifact(sessionId, filePath);
+      createArtifact: (sessionId, filePath, parentResourceIds) => {
+        return createArtifact(sessionId, filePath, parentResourceIds);
       }
     };
   }
@@ -565,7 +612,7 @@ export function createConversationService(options: {
 
     void Promise.resolve()
       .then(async () => {
-        const promptImages = await buildPromptImages(input.attachments, options.loadEnv());
+        const promptImages = await buildPromptImages(input.attachments, getSessionResources(input.sessionId), input.message);
         assistantItem = await runAgentResponse(
           input.sessionId,
           controller,
@@ -639,11 +686,13 @@ function formatWorkflowContext(workflow: NonNullable<ChatSession["workflow"]>): 
     "当前 3D 重建编排状态（这是权威状态，不要绕过）：",
     `方案：${workflow.title}；版本 ${workflow.revision}；状态 ${workflow.status}。`,
     `必答问题：${unanswered.length ? unanswered.join("、") : "已全部回答"}。`,
-    `资产：${workflow.assets.map((asset) => `${asset.name}:${asset.status}`).join("；")}。`,
+    `资产：${workflow.assets.map((asset) => `${asset.name}:${asset.status}${asset.componentId ? `（library_asset_id=${asset.componentId}）` : ""}${asset.sourceResourceId ? `（resource_id=${asset.sourceResourceId}）` : ""}${asset.prompt ? `（prompt=${asset.prompt}）` : ""}`).join("；")}。`,
     workflow.status === "ready_for_confirmation"
       ? "必须等待用户点击方案卡片中的“按当前方案生成”，不得直接开始资产生成或摆放。"
       : workflow.status === "needs_clarification"
         ? "等待用户选择方案卡片中的必答选项；可解释选项影响或根据用户新文字创建新版本。"
+        : workflow.status === "confirmed"
+          ? "用户已确认该原子清单。现在由你逐项调用公开工具：库资产可直接 place_library_assets；缺失文本资产调用 generate_3d_asset；缺失图片资产传对应 resource_id 调用 generate_3d_asset。生成后再按计划摆放。不得调用任何后台编排器。"
         : "仅报告当前任务状态；如用户要求修改，创建新版本并重新确认。"
   ].join("\n");
 }

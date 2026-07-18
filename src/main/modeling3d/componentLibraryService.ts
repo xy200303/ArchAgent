@@ -1,6 +1,7 @@
 /** Reads the global user component library without exposing arbitrary filesystem paths. */
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, extname, isAbsolute, join, relative, resolve } from "node:path";
+import { randomUUID } from "node:crypto";
 import type { GlobalComponentSummary } from "../../shared/types";
 import type { SceneAssetPayload, SceneAssetNode } from "../../shared/modeling3d/sceneContracts";
 
@@ -74,7 +75,7 @@ export function importGlobalComponent(rootDir: string, sourcePath: string, input
 
   const name = input.name?.trim() || sourceMetadata?.name || basename(sourceFile, extension);
   const record: GlobalComponentRecord = {
-    id: destination,
+    id: createLibraryAssetId(),
     name,
     file: destination,
     source: sourceMetadata?.source ?? "external",
@@ -178,7 +179,7 @@ function migrateLegacyProjectComponents(globalDirectory: string, legacyProjectPa
       mkdirSync(globalDirectory, { recursive: true });
       copyFileSync(source.file, targetFile);
       const previewFile = copyPreviewFile(source.previewFile, targetFile);
-      writeFileSync(targetManifestPath, JSON.stringify({ ...source, file: targetFile, previewFile, previewAvailable: Boolean(previewFile) }, null, 2), "utf8");
+      writeFileSync(targetManifestPath, JSON.stringify({ ...source, id: createLibraryAssetId(), file: targetFile, previewFile, previewAvailable: Boolean(previewFile) }, null, 2), "utf8");
     } catch {
       // A malformed legacy record must not make the personal library unavailable.
     }
@@ -195,8 +196,14 @@ function readComponentRecord(path: string): GlobalComponentRecord[] {
     const previewFile = declaredPreview && existsSync(declaredPreview)
       ? declaredPreview
       : existsSync(getDefaultPreviewFile(record.file)) ? getDefaultPreviewFile(record.file) : undefined;
-    return [{ id: record.file, name: record.name, file: record.file, source: record.source === "external" ? "external" : "hunyuan-3d", model: record.model, prompt: typeof record.prompt === "string" ? record.prompt : undefined, description: typeof record.description === "string" ? record.description : undefined, category: typeof record.category === "string" ? record.category : undefined, tags: Array.isArray(record.tags) ? record.tags.filter((tag): tag is string => typeof tag === "string") : [], placementRule: typeof record.placementRule === "string" ? record.placementRule : undefined, previewFile, previewAvailable: Boolean(previewFile), createdAt: record.createdAt }];
+    const id = typeof record.id === "string" && /^lib_[a-z0-9-]+$/i.test(record.id) ? record.id : createLibraryAssetId();
+    if (record.id !== id) writeFileSync(path, JSON.stringify({ ...record, id, previewFile, previewAvailable: Boolean(previewFile) }, null, 2), "utf8");
+    return [{ id, name: record.name, file: record.file, source: record.source === "external" ? "external" : "hunyuan-3d", model: record.model, prompt: typeof record.prompt === "string" ? record.prompt : undefined, description: typeof record.description === "string" ? record.description : undefined, category: typeof record.category === "string" ? record.category : undefined, tags: Array.isArray(record.tags) ? record.tags.filter((tag): tag is string => typeof tag === "string") : [], placementRule: typeof record.placementRule === "string" ? record.placementRule : undefined, previewFile, previewAvailable: Boolean(previewFile), createdAt: record.createdAt }];
   } catch { return []; }
+}
+
+function createLibraryAssetId(): string {
+  return `lib_${randomUUID().replace(/-/g, "")}`;
 }
 
 function getDefaultPreviewFile(componentFile: string): string {

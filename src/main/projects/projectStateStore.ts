@@ -1,10 +1,13 @@
 /** Coordinates global/project state restore, legacy migration, and debounced persistence. */
 import { resolve } from "node:path";
-import type { ArtifactSummary, AttachmentRef, ChatSession } from "../../shared/types";
+import type { ArtifactSummary, AttachmentRef, ChatSession, SessionResource } from "../../shared/types";
+import { linkSessionResource, resourceFromArtifact, resourceFromAttachment } from "../resources/sessionResources";
 import {
   loadPersistedState,
+  loadProjectResources,
   loadProjectState,
   savePersistedState,
+  saveProjectResources,
   saveProjectState,
   type PersistedStateSnapshot,
   type ProjectStateSnapshot,
@@ -22,6 +25,7 @@ export function createProjectStateStore(options: {
   sessions: Map<string, ChatSession>;
   attachments: Map<string, AttachmentRef>;
   artifacts: Map<string, ArtifactSummary>;
+  resources: Map<string, SessionResource>;
   sessionMemories: Map<string, SessionMemoryEntry[]>;
   getRecentProjectPaths: () => string[];
   setRecentProjectPaths: (paths: string[]) => void;
@@ -38,6 +42,7 @@ export function createProjectStateStore(options: {
       artifacts: Array.from(options.artifacts.values()).filter(
         (artifact) => !artifact.sessionId || !knownSessionIds.has(artifact.sessionId)
       ),
+      resources: Array.from(options.resources.values()).filter((resource) => !resource.projectPath),
       sessionMemories: {},
       recentProjectPaths: options.getRecentProjectPaths()
     };
@@ -74,6 +79,7 @@ export function createProjectStateStore(options: {
       options.sessions.clear();
       options.attachments.clear();
       options.artifacts.clear();
+      options.resources.clear();
       options.sessionMemories.clear();
       const recentProjectPaths = Array.isArray(state.recentProjectPaths) ? state.recentProjectPaths : [];
       options.setRecentProjectPaths(recentProjectPaths);
@@ -91,6 +97,10 @@ export function createProjectStateStore(options: {
           for (const session of projectState.sessions) options.sessions.set(session.id, session);
           for (const attachment of projectState.attachments) options.attachments.set(attachment.id, attachment);
           for (const artifact of projectState.artifacts) options.artifacts.set(artifact.id, artifact);
+          const projectResources = loadProjectResources(projectPath)?.resources ?? projectState.resources ?? [];
+          for (const resource of projectResources) {
+            options.resources.set(resource.id, { ...resource, projectPath: resource.projectPath || projectPath });
+          }
           for (const [sessionId, memory] of Object.entries(projectState.sessionMemories)) {
             options.sessionMemories.set(sessionId, memory);
           }
@@ -114,8 +124,28 @@ export function createProjectStateStore(options: {
       for (const artifact of state.artifacts) {
         if (!isMigratedSession(artifact.sessionId)) options.artifacts.set(artifact.id, artifact);
       }
+      for (const resource of state.resources) {
+        if (!isMigratedSession(resource.sessionId)) {
+          const projectPath = resource.projectPath || options.sessions.get(resource.sessionId)?.projectPath;
+          if (projectPath) options.resources.set(resource.id, { ...resource, projectPath });
+        }
+      }
       for (const [sessionId, memory] of Object.entries(state.sessionMemories)) {
         if (!isMigratedSession(sessionId)) options.sessionMemories.set(sessionId, memory);
+      }
+      for (const attachment of options.attachments.values()) {
+        const projectPath = attachment.sessionId ? options.sessions.get(attachment.sessionId)?.projectPath : undefined;
+        const resource = projectPath ? resourceFromAttachment(attachment, projectPath) : undefined;
+        if (resource && !options.resources.has(resource.id)) options.resources.set(resource.id, resource);
+      }
+      for (const artifact of options.artifacts.values()) {
+        const projectPath = artifact.sessionId ? options.sessions.get(artifact.sessionId)?.projectPath : undefined;
+        const resource = projectPath ? resourceFromArtifact(artifact, projectPath) : undefined;
+        if (resource && !options.resources.has(resource.id)) options.resources.set(resource.id, resource);
+      }
+      for (const resource of options.resources.values()) {
+        const creator = options.sessions.get(resource.sessionId);
+        if (creator) linkSessionResource(creator, resource.id, resource.createdAt);
       }
     } catch (error) {
       console.warn("Failed to restore persisted state:", error);
@@ -141,6 +171,14 @@ export function createProjectStateStore(options: {
     for (const projectPath of projectPaths) {
       try {
         saveProjectState(projectPath, snapshotProjectState(projectPath));
+        const projectSessionIds = new Set(
+          Array.from(options.sessions.values())
+            .filter((session) => resolve(session.projectPath) === projectPath)
+            .map((session) => session.id)
+        );
+        saveProjectResources(projectPath, {
+          resources: Array.from(options.resources.values()).filter((resource) => resolve(resource.projectPath) === projectPath)
+        });
       } catch (error) {
         console.warn(`Failed to persist project state: ${projectPath}`, error);
       }

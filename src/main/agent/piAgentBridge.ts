@@ -14,8 +14,8 @@ import {
   type AgentSessionEvent,
   type ToolDefinition
 } from "@mariozechner/pi-coding-agent";
-import type { Api, AssistantMessage, Model, TextContent } from "@mariozechner/pi-ai";
-import { compactText } from "./agentTools";
+import type { Api, AssistantMessage, ImageContent, Model, TextContent } from "@mariozechner/pi-ai";
+import { compactText, isSupportedImageFile, MAX_VISION_IMAGE_BYTES, readImageDataUrl } from "./agentTools";
 import { buildAgentChatTools, executeAgentToolCall, type AgentToolExecutionResult, type AgentToolLayer } from "./agentToolRegistry";
 import {
   compactAgentMessagesLocally,
@@ -547,6 +547,9 @@ function createArchAgentPiTools(
               host.getSession(sessionId)?.projectPath
             ].filter(Boolean) as string[],
             allowedReadFiles: host.getSessionReadableFiles(sessionId),
+            attachmentPaths: Object.fromEntries(host.getSessionAttachments(sessionId).map((attachment) => [attachment.id, attachment.path])),
+            artifactPaths: Object.fromEntries(host.getSessionArtifacts(sessionId).map((artifact) => [artifact.id, artifact.path])),
+            resources: host.getSessionResources(sessionId),
             execBashEnabled: activeSettings.agent.execBashEnabled,
             bundledPythonRuntime: host.getBundledPythonRuntime(),
             getSceneSnapshot: host.getSceneSnapshot,
@@ -555,13 +558,21 @@ function createArchAgentPiTools(
             createReconstructionWorkflow: (input) => host.createReconstructionWorkflow(sessionId, input)
           });
 
-          host.appendSessionMemory(sessionId, `工具 ${result.toolName}`, result.content);
           if (result.artifactPath) {
-            host.createArtifact(sessionId, result.artifactPath);
+            const artifact = host.createArtifact(sessionId, result.artifactPath, result.parentResourceIds);
+            result.content = `${result.content}\nresource_id: ${artifact.id}`;
+            if (isSupportedImageFile(result.artifactPath)) {
+              result.imagePaths = [...(result.imagePaths ?? []), result.artifactPath];
+            }
           }
+          host.appendSessionMemory(sessionId, `工具 ${result.toolName}`, result.content);
 
+          const images = await readToolResultImages(result.imagePaths ?? []);
           return {
-            content: [{ type: "text", text: result.content } satisfies TextContent],
+            content: [
+              { type: "text", text: result.content } satisfies TextContent,
+              ...images
+            ],
             details: result
           };
         }
@@ -601,7 +612,7 @@ function registerArchAgentOpenAiModel(modelRegistry: ModelRegistry, settings: Ap
         name: modelId,
         api: "openai-completions",
         reasoning: settings.openai.thinkingEnabled,
-        input: settings.openai.chatImageInputEnabled ? ["text", "image"] : ["text"],
+        input: ["text", "image"],
         cost: {
           input: 0,
           output: 0,
@@ -650,6 +661,17 @@ export function buildArchAgentPiToolSchemaSignature(settings: AppSettings): stri
   });
 }
 
+async function readToolResultImages(paths: string[]): Promise<ImageContent[]> {
+  const uniquePaths = Array.from(new Set(paths));
+  const images: ImageContent[] = [];
+  for (const path of uniquePaths) {
+    if (!isSupportedImageFile(path)) continue;
+    const image = await readImageDataUrl(path, MAX_VISION_IMAGE_BYTES);
+    images.push({ type: "image", data: image.dataBase64, mimeType: image.mimeType });
+  }
+  return images;
+}
+
 function resolveAgentToolLayers(workflowStatus: string | undefined, execBashEnabled: boolean): AgentToolLayer[] {
   const layers: AgentToolLayer[] = ["foundation", "reference", "workflow", "scene", "delivery"];
   if (!workflowStatus || workflowStatus === "completed" || workflowStatus === "cancelled" || workflowStatus === "needs_attention") {
@@ -663,7 +685,6 @@ function buildConfigSignature(settings: AppSettings, workflowStatus?: string): s
   return JSON.stringify({
     baseUrl: settings.openai.baseUrl,
     chatModel: settings.openai.chatModel,
-    chatImageInputEnabled: settings.openai.chatImageInputEnabled,
     thinkingEnabled: settings.openai.thinkingEnabled,
     reasoningEffort: settings.openai.reasoningEffort,
     contextWindowTokens: settings.openai.contextWindowTokens,

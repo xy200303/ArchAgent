@@ -1,5 +1,5 @@
 import electron from "electron";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, statSync } from "node:fs";
 import { createConversationService } from "./agent/conversationService";
 import { createReconstructionWorkflowService } from "./agent/reconstructionWorkflowService";
 import { createAttachmentService } from "./files/attachmentService";
@@ -12,6 +12,7 @@ import { getProcessResourcesDir } from "./runtime/bundledRuntime";
 import { createSettingsService } from "./config/settingsService";
 import { createProjectStateStore } from "./projects/projectStateStore";
 import { createProjectService } from "./projects/projectService";
+import { linkSessionResource, resourceFromArtifact } from "./resources/sessionResources";
 import { createSceneService } from "./modeling3d/sceneService";
 import { loadProjectScene, saveProjectScene } from "./modeling3d/sceneProjectPersistence";
 import { createSceneExchangeService } from "./modeling3d/sceneExchangeService";
@@ -22,7 +23,8 @@ import type {
   AppMetadata,
   ArtifactSummary,
   AttachmentRef,
-  ChatSession
+  ChatSession,
+  SessionResource
 } from "../shared/types";
 
 const { app, BrowserWindow } = electron;
@@ -46,6 +48,7 @@ const { rootDir, docsDir, dataDir, inputDir, outputDir, statePath, envLocalPath,
 const sessions = new Map<string, ChatSession>();
 const attachments = new Map<string, AttachmentRef>();
 const artifacts = new Map<string, ArtifactSummary>();
+const resources = new Map<string, SessionResource>();
 const sessionMemories = new Map<string, SessionMemoryEntry[]>();
 let recentProjectPaths: string[] = [];
 
@@ -102,6 +105,7 @@ const projectStateStore = createProjectStateStore({
   statePath,
   sessions,
   attachments,
+  resources,
   artifacts,
   sessionMemories,
   getRecentProjectPaths: () => recentProjectPaths,
@@ -138,6 +142,7 @@ const fileService = createFileService({
   docsDir,
   sessions,
   attachments,
+  resources,
   artifacts,
   schedulePersistState
 });
@@ -154,6 +159,7 @@ const {
 const attachmentService = createAttachmentService({
   sessions,
   attachments,
+  resources,
   ensureDataDirs,
   ensureProjectDirs,
   ensureSessionImportDir,
@@ -169,15 +175,20 @@ const {
 const reconstructionWorkflowService = createReconstructionWorkflowService({
   rootDir,
   sessions,
-  getSessionOutputDir,
   createId,
   now,
   schedulePersistState,
   sendEvent,
-  placeComponentLibraryItem: (input) => {
-    const component = findGlobalComponent(rootDir, input.componentId);
-    if (!component) throw new Error("未找到全局构件。");
-    return sceneExchangeService.placeGlobalComponent(component, input);
+  confirmResourceLinks: ({ sessionId, resourceIds }) => {
+    const session = sessions.get(sessionId);
+    if (!session) throw new Error(`Session not found: ${sessionId}`);
+    for (const resourceId of resourceIds) {
+      if (!resources.has(resourceId)) continue;
+      linkSessionResource(session, resourceId, now());
+      const link = session.resourceLinks?.find((item) => item.resourceId === resourceId);
+      if (link) link.confirmed = true;
+    }
+    schedulePersistState();
   }
 });
 const conversationService = createConversationService({
@@ -190,6 +201,7 @@ const conversationService = createConversationService({
   sessions,
   attachments,
   artifacts,
+  resources,
   sessionMemories,
   ensureProjectDirs,
   getSessionInputDir,
@@ -207,10 +219,12 @@ const conversationService = createConversationService({
     const component = findGlobalComponent(rootDir, input.componentId);
     if (!component) throw new Error("未找到全局构件。");
     return sceneExchangeService.placeGlobalComponent(component, {
+      ...(input.name ? { name: input.name } : {}),
       ...(input.parentId ? { parentId: input.parentId } : {}),
       ...(input.position ? { position: input.position } : {}),
       ...(input.rotation ? { rotation: input.rotation } : {}),
-      ...(input.scale ? { scale: input.scale } : {})
+      ...(input.scale ? { scale: input.scale } : {}),
+      ...(input.footprint ? { footprint: input.footprint } : {})
     });
   },
   createReconstructionWorkflow: reconstructionWorkflowService.createPlan
@@ -294,7 +308,6 @@ app.whenReady().then(() => {
   ensureDataDirs();
   loadEnv();
   restorePersistedState();
-  reconstructionWorkflowService.resumeAll();
   registerIpc();
   createWindow();
 

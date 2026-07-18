@@ -85,7 +85,7 @@ export function createSceneExchangeService(options: {
   /** Copies one library asset into the active project and creates its scene node atomically. */
   function placeGlobalComponent(
     component: { name: string; file: string },
-    placement: Partial<Pick<Extract<SceneCommandInput, { type: "asset.create" }>, "parentId" | "position" | "rotation" | "scale">> = {}
+    placement: Partial<Pick<Extract<SceneCommandInput, { type: "asset.create" }>, "name" | "parentId" | "position" | "rotation" | "scale" | "footprint">> = {}
   ): SceneCommandResult {
     const projectPath = requireProjectPath(options.getActiveProjectPath());
     if (!existsSync(component.file)) throw new Error("全局构件模型文件不存在。");
@@ -99,12 +99,13 @@ export function createSceneExchangeService(options: {
       type: "asset.create",
       id,
       parentId: placement.parentId ?? findDefaultLevelId(options.getSnapshot()),
-      name: component.name,
+      name: placement.name ?? component.name,
       format,
       sourcePath: join("assets", destinationName),
       ...(placement.position ? { position: placement.position } : {}),
       ...(placement.rotation ? { rotation: placement.rotation } : {}),
-      ...(placement.scale ? { scale: placement.scale } : {})
+      ...(placement.scale ? { scale: placement.scale } : {}),
+      ...(placement.footprint ? { footprint: placement.footprint } : {})
     });
   }
 

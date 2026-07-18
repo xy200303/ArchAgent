@@ -1,7 +1,7 @@
 /** Defines the framework-neutral Agent runtime contract used by the Electron host. */
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import type { ImageContent } from "@mariozechner/pi-ai";
-import type { AppSettings, ChatSession, StreamItem } from "../../shared/types";
+import type { AppSettings, ArtifactSummary, AttachmentRef, ChatSession, SessionResource, StreamItem } from "../../shared/types";
 import type { SceneCommandInput, SceneCommandResult, SceneSnapshot } from "../../shared/modeling3d/sceneContracts";
 import type { BundledPythonRuntime } from "../runtime/bundledRuntime";
 import type { CreateReconstructionWorkflowInput } from "./reconstructionWorkflowService";
@@ -43,18 +43,23 @@ export interface AgentRuntimeHost {
   appendSessionMemory(sessionId: string, source: string, content: string): void;
   formatSessionMemory(sessionId: string): string;
   getSessionReadableFiles(sessionId: string): string[];
+  getSessionAttachments(sessionId: string): AttachmentRef[];
+  getSessionArtifacts(sessionId: string): ArtifactSummary[];
+  getSessionResources(sessionId: string): SessionResource[];
   getBundledPythonRuntime(): BundledPythonRuntime | undefined;
   getSceneSnapshot(): SceneSnapshot;
   executeSceneCommand(command: SceneCommandInput): SceneCommandResult;
   placeComponentLibraryItem(input: {
     componentId: string;
+    name?: string;
     parentId?: string;
     position?: [number, number, number];
     rotation?: [number, number, number];
     scale?: [number, number, number];
+    footprint?: [number, number];
   }): SceneCommandResult;
   createReconstructionWorkflow(sessionId: string, input: CreateReconstructionWorkflowInput): ReconstructionWorkflow;
-  createArtifact(sessionId: string, filePath: string): void;
+  createArtifact(sessionId: string, filePath: string, parentResourceIds?: string[]): ArtifactSummary;
 }
 
 export function createAgentRuntime(host: AgentRuntimeHost): AgentRuntime {

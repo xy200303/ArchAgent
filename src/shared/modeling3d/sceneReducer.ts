@@ -137,9 +137,9 @@ function createAssetCommand(snapshot: SceneSnapshot, input: Extract<SceneCommand
   const id = input.id?.trim() || `asset_${createId("asset")}`;
   if (snapshot.nodes[id]) return failure("duplicate_node", `模型 ID 已存在：${id}`);
   if (!isValidNodeId(id)) return failure("invalid_command", "模型 ID 只能包含字母、数字、下划线和连字符。");
-  const asset: SceneAssetNode = { id, type: "asset", name: input.name?.trim() || `参考模型 ${countNodes(snapshot, "asset") + 1}`, parentId: input.parentId, format: input.format, sourcePath: input.sourcePath, position: input.position ?? [0, 0, 0], rotation: input.rotation ?? [0, 0, 0], scale: input.scale ?? [1, 1, 1] };
-  if (![...asset.position, ...asset.rotation, ...asset.scale].every(Number.isFinite) || asset.scale.some((value) => value <= 0)) return failure("invalid_command", "参考模型的变换参数无效。");
-  const command: SceneCommand = { type: "asset.create", id, parentId: asset.parentId, name: asset.name, format: asset.format, sourcePath: asset.sourcePath, position: asset.position, rotation: asset.rotation, scale: asset.scale };
+  const asset: SceneAssetNode = { id, type: "asset", name: input.name?.trim() || `参考模型 ${countNodes(snapshot, "asset") + 1}`, parentId: input.parentId, format: input.format, sourcePath: input.sourcePath, position: input.position ?? [0, 0, 0], rotation: input.rotation ?? [0, 0, 0], scale: input.scale ?? [1, 1, 1], ...(input.footprint ? { footprint: input.footprint } : {}) };
+  if (![...asset.position, ...asset.rotation, ...asset.scale].every(Number.isFinite) || asset.scale.some((value) => value <= 0) || (asset.footprint && (!asset.footprint.every(Number.isFinite) || asset.footprint.some((value) => value <= 0)))) return failure("invalid_command", "参考模型的变换或占地参数无效。");
+  const command: SceneCommand = { type: "asset.create", id, parentId: asset.parentId, name: asset.name, format: asset.format, sourcePath: asset.sourcePath, position: asset.position, rotation: asset.rotation, scale: asset.scale, ...(asset.footprint ? { footprint: asset.footprint } : {}) };
   return success(snapshot, command, { ...snapshot.nodes, [id]: asset });
 }
 
@@ -153,10 +153,11 @@ function updateAssetCommand(snapshot: SceneSnapshot, input: Extract<SceneCommand
     ...(input.name !== undefined ? { name: input.name.trim() } : {}),
     ...(input.position ? { position: input.position } : {}),
     ...(input.rotation ? { rotation: input.rotation } : {}),
-    ...(input.scale ? { scale: input.scale } : {})
+    ...(input.scale ? { scale: input.scale } : {}),
+    ...(input.footprint ? { footprint: input.footprint } : {})
   };
   if (!asset.name) return failure("invalid_command", "参考模型名称不能为空。");
-  if (![...asset.position, ...asset.rotation, ...asset.scale].every(Number.isFinite) || asset.scale.some((value) => value <= 0)) return failure("invalid_command", "参考模型的变换参数无效。");
+  if (![...asset.position, ...asset.rotation, ...asset.scale].every(Number.isFinite) || asset.scale.some((value) => value <= 0) || (asset.footprint && (!asset.footprint.every(Number.isFinite) || asset.footprint.some((value) => value <= 0)))) return failure("invalid_command", "参考模型的变换或占地参数无效。");
   return success(snapshot, input, { ...snapshot.nodes, [asset.id]: asset });
 }
 

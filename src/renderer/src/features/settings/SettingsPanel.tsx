@@ -75,32 +75,22 @@ export function SettingsPanel({
   onSaved: (settings: AppSettings) => void;
   onError: (message: string) => void;
 }): JSX.Element {
-  const [baseUrl, setBaseUrl] = useState(settings?.openai.baseUrl || "https://api.openai.com/v1");
-  const [visionBaseUrl, setVisionBaseUrl] = useState(settings?.openai.visionBaseUrl || "");
-  const [chatModel, setChatModel] = useState(settings?.openai.chatModel || "gpt-5.5");
-  const [chatImageInputEnabled, setChatImageInputEnabled] = useState(settings?.openai.chatImageInputEnabled ?? false);
-  const [visionModel, setVisionModel] = useState(settings?.openai.visionModel || "");
+  const [baseUrl, setBaseUrl] = useState(settings?.openai.baseUrl || "https://tokenhub.tencentmaas.com/v1");
+  const [chatModel, setChatModel] = useState(settings?.openai.chatModel || "hy3-preview");
   const [thinkingEnabled, setThinkingEnabled] = useState(settings?.openai.thinkingEnabled ?? true);
   const [reasoningEffort, setReasoningEffort] = useState(settings?.openai.reasoningEffort || "");
   const [autoPdfExport, setAutoPdfExport] = useState(settings?.output.autoPdfExport ?? false);
   const [libreOfficePath, setLibreOfficePath] = useState(settings?.output.libreOfficePath || "");
   const [timeoutSeconds, setTimeoutSeconds] = useState(settings?.openai.requestTimeoutSeconds || 120);
-  const [imageRequestTimeoutSeconds, setImageRequestTimeoutSeconds] = useState(settings?.hunyuanImage.requestTimeoutSeconds || 120);
-  const [imagePollIntervalSeconds, setImagePollIntervalSeconds] = useState(settings?.hunyuanImage.pollIntervalSeconds || 3);
-  const [imageJobTimeoutSeconds, setImageJobTimeoutSeconds] = useState(settings?.hunyuanImage.jobTimeoutSeconds || 900);
-  const [imageRegion, setImageRegion] = useState(settings?.hunyuanImage.region || "ap-guangzhou");
-  const [imageResolution, setImageResolution] = useState(settings?.hunyuanImage.resolution || "1024:1024");
-  const [imageRevise, setImageRevise] = useState(settings?.hunyuanImage.revise ?? true);
-  const [imageLogoAdd, setImageLogoAdd] = useState(settings?.hunyuanImage.logoAdd ?? true);
+  const [imageRequestTimeoutSeconds, setImageRequestTimeoutSeconds] = useState(settings?.tokenHubImage.requestTimeoutSeconds || 300);
+  const [imageEndpoint, setImageEndpoint] = useState(settings?.tokenHubImage.endpoint || "https://tokenhub.tencentmaas.com/v1/api/image/lite");
+  const [imageModel, setImageModel] = useState(settings?.tokenHubImage.model || "hy-image-v3.0");
   const [contextWindowTokens, setContextWindowTokens] = useState(
     settings ? clampContextWindowTokens(settings.openai.contextWindowTokens) : CONTEXT_WINDOW_TOKENS_DEFAULT
   );
   const [maxTokens, setMaxTokens] = useState(settings?.openai.maxOutputTokens || 16000);
   const [execBashEnabled, setExecBashEnabled] = useState(settings?.agent.execBashEnabled ?? true);
   const [apiKey, setApiKey] = useState("");
-  const [imageSecretId, setImageSecretId] = useState("");
-  const [imageSecretKey, setImageSecretKey] = useState("");
-  const [visionApiKey, setVisionApiKey] = useState("");
   const [runtimeCheck, setRuntimeCheck] = useState<RuntimeCheckResult | undefined>();
   const [checkingRuntime, setCheckingRuntime] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -113,28 +103,18 @@ export function SettingsPanel({
         theme,
         openai: {
           baseUrl,
-          visionBaseUrl,
           chatModel,
-          chatImageInputEnabled,
-          visionModel,
           thinkingEnabled,
           reasoningEffort,
           requestTimeoutSeconds: timeoutSeconds,
           contextWindowTokens: clampContextWindowTokens(contextWindowTokens),
           maxOutputTokens: maxTokens,
           apiKey: apiKey.trim() || undefined,
-          visionApiKey: visionApiKey.trim() || undefined
         },
-        hunyuanImage: {
-          region: imageRegion,
-          resolution: imageResolution,
-          revise: imageRevise,
-          logoAdd: imageLogoAdd,
+        tokenHubImage: {
+          endpoint: imageEndpoint,
+          model: imageModel,
           requestTimeoutSeconds: imageRequestTimeoutSeconds,
-          pollIntervalSeconds: imagePollIntervalSeconds,
-          jobTimeoutSeconds: imageJobTimeoutSeconds,
-          secretId: imageSecretId.trim() || undefined,
-          secretKey: imageSecretKey.trim() || undefined
         },
         output: {
           autoPdfExport,
@@ -219,28 +199,18 @@ export function SettingsPanel({
                     />
                   </label>
                   <label>
-                    混元生图 SecretId
+                    TokenHub 生图端点
                     <input
-                      value={imageSecretId}
-                      onChange={(event) => setImageSecretId(event.target.value)}
-                      placeholder={settings?.hunyuanImage.secretIdConfigured ? "已配置，留空保持不变" : "腾讯云 SecretId"}
+                      value={imageEndpoint}
+                      onChange={(event) => setImageEndpoint(event.target.value)}
                     />
                   </label>
                   <label>
-                    混元生图 SecretKey
+                    TokenHub 生图模型
                     <input
-                      type="password"
-                      value={imageSecretKey}
-                      onChange={(event) => setImageSecretKey(event.target.value)}
-                      placeholder={settings?.hunyuanImage.secretKeyConfigured ? "已配置，留空保持不变" : "腾讯云 SecretKey"}
-                    />
-                  </label>
-                  <label>
-                    识图 API Key
-                    <input
-                      value={visionApiKey}
-                      onChange={(event) => setVisionApiKey(event.target.value)}
-                      placeholder={settings?.openai.visionApiKeyConfigured ? "已配置，留空保持不变" : "留空沿用 API Key"}
+                      value={imageModel}
+                      onChange={(event) => setImageModel(event.target.value)}
+                      placeholder="hy-image-v3.0"
                     />
                   </label>
                   <label>
@@ -248,20 +218,9 @@ export function SettingsPanel({
                     <input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} />
                   </label>
                   <label>
-                    识图 Base URL
-                    <input
-                      value={visionBaseUrl}
-                      onChange={(event) => setVisionBaseUrl(event.target.value)}
-                      placeholder="留空沿用 Base URL"
-                    />
-                  </label>
-                  <label>
                     Chat 模型
                     <input value={chatModel} onChange={(event) => setChatModel(event.target.value)} />
                   </label>
-                  <SwitchRow checked={chatImageInputEnabled} onCheckedChange={setChatImageInputEnabled}>
-                    Chat 模型支持图片输入
-                  </SwitchRow>
                   <SwitchRow checked={thinkingEnabled} onCheckedChange={setThinkingEnabled}>
                     启用模型思考模式
                   </SwitchRow>
@@ -277,28 +236,6 @@ export function SettingsPanel({
                       <option value="xhigh">xhigh</option>
                     </select>
                   </label>
-                  <label>
-                    识图模型
-                    <input
-                      value={visionModel}
-                      onChange={(event) => setVisionModel(event.target.value)}
-                      placeholder="留空沿用 Chat 模型"
-                    />
-                  </label>
-                  <label>
-                    混元生图地域
-                    <input value={imageRegion} onChange={(event) => setImageRegion(event.target.value)} placeholder="ap-guangzhou" />
-                  </label>
-                  <label>
-                    混元生图分辨率
-                    <input value={imageResolution} onChange={(event) => setImageResolution(event.target.value)} placeholder="1024:1024" />
-                  </label>
-                  <SwitchRow checked={imageRevise} onCheckedChange={setImageRevise}>
-                    混元生图启用提示词改写
-                  </SwitchRow>
-                  <SwitchRow checked={imageLogoAdd} onCheckedChange={setImageLogoAdd}>
-                    混元生图添加 AI 标识
-                  </SwitchRow>
                 </Tabs.Content>
 
                 <Tabs.Content className="settings-form" value="appearance">
@@ -358,14 +295,6 @@ export function SettingsPanel({
                       value={imageRequestTimeoutSeconds}
                       onChange={(event) => setImageRequestTimeoutSeconds(Number(event.target.value))}
                     />
-                  </label>
-                  <label>
-                    混元生图轮询间隔（秒）
-                    <input type="number" min={1} step={1} value={imagePollIntervalSeconds} onChange={(event) => setImagePollIntervalSeconds(Number(event.target.value))} />
-                  </label>
-                  <label>
-                    混元生图任务最长等待（秒）
-                    <input type="number" min={30} step={1} value={imageJobTimeoutSeconds} onChange={(event) => setImageJobTimeoutSeconds(Number(event.target.value))} />
                   </label>
                   <label>
                     上下文窗口 tokens

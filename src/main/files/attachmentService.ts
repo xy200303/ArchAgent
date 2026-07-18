@@ -9,6 +9,8 @@ import type {
   PasteAttachmentInput,
   PickAttachmentInput
 } from "../../shared/types";
+import type { SessionResource } from "../../shared/types";
+import { linkSessionResource, resourceFromAttachment } from "../resources/sessionResources";
 import { prepareImportedAttachments, sanitizeAttachmentName } from "./attachmentImport";
 
 const { clipboard, dialog } = electron;
@@ -16,6 +18,7 @@ const { clipboard, dialog } = electron;
 export function createAttachmentService(options: {
   sessions: Map<string, ChatSession>;
   attachments: Map<string, AttachmentRef>;
+  resources: Map<string, SessionResource>;
   ensureDataDirs: () => void;
   ensureProjectDirs: (projectPath: string) => void;
   ensureSessionImportDir: (sessionId: string) => string;
@@ -62,7 +65,7 @@ export function createAttachmentService(options: {
     if (result.canceled) return [];
 
     return result.filePaths.map((filePath) => {
-      const id = options.createId("attachment");
+      const id = options.createId("resource");
       const safeName = sanitizeAttachmentName(basename(filePath));
       const destPath = join(importDir, `${id}-${safeName}`);
       copyFileSync(filePath, destPath);
@@ -77,6 +80,8 @@ export function createAttachmentService(options: {
         createdAt: options.now()
       };
       options.attachments.set(attachment.id, attachment);
+      options.resources.set(attachment.id, resourceFromAttachment(attachment, options.sessions.get(sessionId)!.projectPath)!);
+      linkSessionResource(options.sessions.get(sessionId)!, attachment.id, options.now());
       options.schedulePersistState();
       return attachment;
     });
@@ -92,7 +97,7 @@ export function createAttachmentService(options: {
     const importDir = options.ensureSessionImportDir(sessionId);
     return prepareImportedAttachments(input, {
       inputDir: importDir,
-      createId: () => options.createId("attachment")
+      createId: () => options.createId("resource")
     }).map((file) => {
       writeFileSync(file.outputPath, file.buffer);
       const attachment: AttachmentRef = {
@@ -106,6 +111,8 @@ export function createAttachmentService(options: {
         createdAt: options.now()
       };
       options.attachments.set(attachment.id, attachment);
+      options.resources.set(attachment.id, resourceFromAttachment(attachment, options.sessions.get(sessionId)!.projectPath)!);
+      linkSessionResource(options.sessions.get(sessionId)!, attachment.id, options.now());
       options.schedulePersistState();
       return attachment;
     });
@@ -163,7 +170,7 @@ export function createAttachmentService(options: {
     const imported: AttachmentRef[] = [];
 
     for (const filePath of filePaths) {
-      const id = options.createId("attachment");
+      const id = options.createId("resource");
       const safeName = sanitizeAttachmentName(basename(filePath));
       const destPath = join(importDir, `${id}-${safeName}`);
       copyFileSync(filePath, destPath);
@@ -178,6 +185,8 @@ export function createAttachmentService(options: {
         createdAt: options.now()
       };
       options.attachments.set(attachment.id, attachment);
+      options.resources.set(attachment.id, resourceFromAttachment(attachment, options.sessions.get(sessionId)!.projectPath)!);
+      linkSessionResource(options.sessions.get(sessionId)!, attachment.id, options.now());
       imported.push(attachment);
     }
 

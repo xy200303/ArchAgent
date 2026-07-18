@@ -15,43 +15,40 @@ describe("piAgentBridge tool schemas", () => {
     }
   });
 
-  it("validates analyze_reference arguments through the Pi TypeBox path", () => {
+  it("validates extract_reference_object arguments through the Pi TypeBox path", () => {
     const tool = buildAgentChatTools({ includeExecBash: false, includeArtifactTools: true }).find(
-      (item) => item.type === "function" && item.function.name === "analyze_reference"
+      (item) => item.type === "function" && item.function.name === "extract_reference_object"
     );
-    if (tool?.type !== "function") throw new Error("analyze_reference tool not found");
+    if (tool?.type !== "function") throw new Error("extract_reference_object tool not found");
 
     const schema = convertJsonSchemaToTypeBoxSchema(tool.function.parameters);
     const validator = Compile(schema);
     const args = {
-      path: "data/output/notes.txt",
-      profile: "document"
+      resource_id: "resource_1",
+      name: "沙发",
+      instruction: "提取沙发"
     };
 
     expect(validator.Check(args)).toBe(true);
     expect([...validator.Errors(args)]).toEqual([]);
-    expect(validator.Check({ path: 123, profile: "document" })).toBe(false);
+    expect(validator.Check({ resource_id: 123, name: "沙发", instruction: "提取沙发" })).toBe(false);
   });
 
   it("includes the enabled Pi tool set in the schema signature", () => {
     const safeSettings = createSettings();
     const bashSettings = createSettings();
     bashSettings.agent.execBashEnabled = true;
-    const visionChatSettings = createSettings();
-    visionChatSettings.openai.chatImageInputEnabled = true;
     const largerContextSettings = createSettings();
     largerContextSettings.openai.contextWindowTokens = 512000;
 
     const safeSignature = buildArchAgentPiToolSchemaSignature(safeSettings);
     const bashSignature = buildArchAgentPiToolSchemaSignature(bashSettings);
-    const visionChatSignature = buildArchAgentPiToolSchemaSignature(visionChatSettings);
     const largerContextSignature = buildArchAgentPiToolSchemaSignature(largerContextSettings);
     const safeToolNames = (JSON.parse(safeSignature) as { tools?: Array<{ name: string }> }).tools?.map((tool) => tool.name) ?? [];
 
-    expect(safeToolNames).toContain("analyze_reference");
-    expect(safeToolNames).toContain("propose_reconstruction");
-    expect(safeToolNames).toContain("apply_scene_plan");
-    expect(safeToolNames).toContain("deliver_file");
+    expect(safeToolNames).toContain("create_reconstruction_plan");
+    expect(safeToolNames).toContain("create_architecture_elements");
+    expect(safeToolNames).toContain("send_file");
     expect(safeToolNames).not.toContain("load_csv");
     expect(safeToolNames).not.toContain("load_excel");
     expect(safeToolNames).not.toContain("load_json");
@@ -69,10 +66,9 @@ describe("piAgentBridge tool schemas", () => {
     expect(safeToolNames).not.toContain("write_document_word");
     expect(safeToolNames).not.toContain("validate_word_output");
     expect(safeToolNames).not.toContain("read_word");
-    expect(safeSignature).not.toContain("exec_external_script");
-    expect(bashSignature).toContain("exec_external_script");
+    expect(safeSignature).not.toContain("exec_bash");
+    expect(bashSignature).toContain("exec_bash");
     expect(bashSignature).not.toBe(safeSignature);
-    expect(visionChatSignature).toBe(safeSignature);
     expect(largerContextSignature).toBe(safeSignature);
   });
 });
@@ -88,22 +84,18 @@ function createSettings(): AppSettings {
     },
     openai: {
       baseUrl: "https://api.openai.com/v1",
-      visionBaseUrl: "",
       chatModel: "gpt-5.5",
-      chatImageInputEnabled: false,
-      visionModel: "",
       thinkingEnabled: true,
       reasoningEffort: "",
       requestTimeoutSeconds: 120,
       contextWindowTokens: 256000,
       maxOutputTokens: 16000,
-      apiKeyConfigured: false,
-      visionApiKeyConfigured: false
+      apiKeyConfigured: false
     },
-    hunyuanImage: {
-      region: "ap-guangzhou", resolution: "1024:1024", revise: true, logoAdd: true,
-      requestTimeoutSeconds: 120, pollIntervalSeconds: 3, jobTimeoutSeconds: 900,
-      secretIdConfigured: false, secretKeyConfigured: false
+    tokenHubImage: {
+      endpoint: "https://tokenhub.tencentmaas.com/v1/api/image/lite",
+      model: "hy-image-v3.0",
+      requestTimeoutSeconds: 300
     },
     output: {
       autoPdfExport: false,

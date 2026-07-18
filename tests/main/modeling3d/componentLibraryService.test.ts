@@ -26,7 +26,7 @@ describe("componentLibraryService", () => {
     writeFileSync(`${legacyFile}.semantic.json`, JSON.stringify({
       name: "Modern sofa",
       source: "hunyuan-3d",
-      model: "3.0",
+      model: "hy-3d-3.0",
       prompt: "Modern three-seat sofa",
       file: legacyFile,
       createdAt: "2026-07-17T00:00:00.000Z"

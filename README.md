@@ -73,8 +73,7 @@ npm run dev
 
 完整示例和中文说明见 [.env.example](./.env.example)。常用配置分为三类：
 
-- 模型接入：`HY3_API_KEY`、`HY3_BASE_URL`、`HY3_CHAT_MODEL`、`HY3_CHAT_IMAGE_INPUT_ENABLED`、`HY3_THINKING_ENABLED`
-- 识图能力：`HY3_VISION_*`
+- 模型接入：`HY3_API_KEY`、`HY3_BASE_URL`、`HY3_CHAT_MODEL`、`HY3_THINKING_ENABLED`（Hy3 主模型固定支持图片输入）
 - 运行控制：`AGENT_EXEC_BASH_ENABLED`
 
 项目仍兼容部分历史 `OPENAI_*` 环境变量作为迁移兜底，但新配置应优先使用 `HY3_*`。
@@ -92,7 +91,7 @@ npm run dev
 - `export_scene`：导出场景为 GLB / STL / OBJ / JSON。
 - `image_to_3d`：调用混元图像转 3D API。
 - `web_search`：按需检索公开网页信息。
-- `read_file` / `read_image`：读取本地资料内容。
+- `view_resources`：按资源类型读取会话资料；图片以多模态内容直接回传模型。
 - `write_file` / `send_file`：写入并发送产物。
 - `exec_bash`：可选命令执行工具，默认用于可信本地任务。
 
