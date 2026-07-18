@@ -15,21 +15,22 @@ describe("piAgentBridge tool schemas", () => {
     }
   });
 
-  it("validates read_file arguments through the Pi TypeBox path", () => {
+  it("validates analyze_reference arguments through the Pi TypeBox path", () => {
     const tool = buildAgentChatTools({ includeExecBash: false, includeArtifactTools: true }).find(
-      (item) => item.type === "function" && item.function.name === "read_file"
+      (item) => item.type === "function" && item.function.name === "analyze_reference"
     );
-    if (tool?.type !== "function") throw new Error("read_file tool not found");
+    if (tool?.type !== "function") throw new Error("analyze_reference tool not found");
 
     const schema = convertJsonSchemaToTypeBoxSchema(tool.function.parameters);
     const validator = Compile(schema);
     const args = {
-      path: "data/output/notes.txt"
+      path: "data/output/notes.txt",
+      profile: "document"
     };
 
     expect(validator.Check(args)).toBe(true);
     expect([...validator.Errors(args)]).toEqual([]);
-    expect(validator.Check({ path: 123 })).toBe(false);
+    expect(validator.Check({ path: 123, profile: "document" })).toBe(false);
   });
 
   it("includes the enabled Pi tool set in the schema signature", () => {
@@ -47,13 +48,10 @@ describe("piAgentBridge tool schemas", () => {
     const largerContextSignature = buildArchAgentPiToolSchemaSignature(largerContextSettings);
     const safeToolNames = (JSON.parse(safeSignature) as { tools?: Array<{ name: string }> }).tools?.map((tool) => tool.name) ?? [];
 
-    expect(safeToolNames).toContain("remember_project");
-    expect(safeToolNames).toContain("read_file");
-    expect(safeToolNames).toContain("read_pdf");
-    expect(safeToolNames).toContain("read_image");
-    expect(safeToolNames).toContain("write_file");
-    expect(safeToolNames).toContain("send_file");
-    expect(safeToolNames).toContain("web_search");
+    expect(safeToolNames).toContain("analyze_reference");
+    expect(safeToolNames).toContain("propose_reconstruction");
+    expect(safeToolNames).toContain("apply_scene_plan");
+    expect(safeToolNames).toContain("deliver_file");
     expect(safeToolNames).not.toContain("load_csv");
     expect(safeToolNames).not.toContain("load_excel");
     expect(safeToolNames).not.toContain("load_json");
@@ -71,8 +69,8 @@ describe("piAgentBridge tool schemas", () => {
     expect(safeToolNames).not.toContain("write_document_word");
     expect(safeToolNames).not.toContain("validate_word_output");
     expect(safeToolNames).not.toContain("read_word");
-    expect(safeSignature).not.toContain("exec_bash");
-    expect(bashSignature).toContain("exec_bash");
+    expect(safeSignature).not.toContain("exec_external_script");
+    expect(bashSignature).toContain("exec_external_script");
     expect(bashSignature).not.toBe(safeSignature);
     expect(visionChatSignature).toBe(safeSignature);
     expect(largerContextSignature).toBe(safeSignature);

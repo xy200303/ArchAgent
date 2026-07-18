@@ -3,6 +3,16 @@ import { basename, dirname, extname } from "node:path";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 
 export type BuiltinToolName =
+  | "analyze_reference"
+  | "isolate_reference_object"
+  | "search_assets"
+  | "propose_reconstruction"
+  | "preview_design"
+  | "apply_scene_plan"
+  | "update_scene"
+  | "place_asset"
+  | "deliver_file"
+  | "exec_external_script"
   | "time"
   | "remember_project"
   | "read_file"

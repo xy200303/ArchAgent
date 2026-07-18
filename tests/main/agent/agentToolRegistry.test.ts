@@ -14,27 +14,16 @@ describe("agentToolRegistry", () => {
     const tools = buildAgentChatTools({ includeExecBash: false, includeArtifactTools: true });
     const names = tools.map((tool) => tool.function.name);
 
-    expect(names).toContain("remember_project");
-    expect(names).toContain("read_file");
-    expect(names).toContain("read_pdf");
-    expect(names).toContain("read_image");
-    expect(names).toContain("write_file");
-    expect(names).toContain("send_file");
-    expect(names).toContain("web_search");
+    expect(names).toContain("analyze_reference");
+    expect(names).toContain("isolate_reference_object");
+    expect(names).toContain("search_assets");
+    expect(names).toContain("preview_design");
+    expect(names).toContain("propose_reconstruction");
+    expect(names).toContain("deliver_file");
     expect(names).toContain("get_scene");
-    expect(names).toContain("create_wall");
-    expect(names).toContain("update_wall");
-    expect(names).toContain("create_stair");
-    expect(names).toContain("update_stair");
-    expect(names).toContain("create_fence");
-    expect(names).toContain("update_fence");
-    expect(names).toContain("update_asset");
-    expect(names).toContain("generate_3d_asset");
-    expect(names).toContain("import_component_asset");
-    expect(names).toContain("get_component_library");
-    expect(names).toContain("place_component_asset");
-    expect(names).toContain("create_reconstruction_workflow");
-    expect(names).toContain("delete_node");
+    expect(names).toContain("apply_scene_plan");
+    expect(names).toContain("update_scene");
+    expect(names).toContain("place_asset");
     expect(names).not.toContain("load_csv");
     expect(names).not.toContain("load_excel");
     expect(names).not.toContain("load_json");
@@ -44,32 +33,26 @@ describe("agentToolRegistry", () => {
     expect(names).not.toContain("describe");
     expect(names).not.toContain("render_chart");
     expect(names).not.toContain("generate_report");
-    expect(names).not.toContain("exec_bash");
+    expect(names).not.toContain("exec_external_script");
   });
 
   it("prioritizes reusing library furniture before generating a new asset", () => {
     const prompt = buildAgentModelingSystemPrompt();
-    const generateTool = buildAgentChatTools({ includeExecBash: false }).find((tool) => tool.function.name === "generate_3d_asset");
+    const workflowTool = buildAgentChatTools({ includeExecBash: false }).find((tool) => tool.function.name === "propose_reconstruction");
 
-    expect(prompt).toContain("放置、添加或摆放沙发");
-    expect(prompt).toContain("get_component_library");
-    expect(prompt).toContain("place_component_asset");
-    expect(prompt).toContain("构件库没有可用资产");
-    expect(prompt).toContain("完整的中文正向 prompt");
-    expect(prompt).toContain("generate_3d_asset");
-    expect(prompt).toContain("import_component_asset");
-    expect(generateTool?.function.description).toContain("家具");
-    expect(generateTool?.function.description).toContain("构件库没有");
-    expect(generateTool?.function.description).toContain("output/assets");
-    expect(JSON.stringify(generateTool?.function.parameters)).toContain("detail_level");
+    expect(prompt).toContain("资产：先用 search_assets");
+    expect(prompt).toContain("place_asset");
+    expect(prompt).toContain("propose_reconstruction");
+    expect(prompt).toContain("propose_reconstruction");
+    expect(workflowTool?.function.description).toContain("必答问题");
   });
 
   it("keeps exec_bash opt-in for local diagnostics", () => {
     const disabledNames = buildAgentChatTools({ includeExecBash: false }).map((tool) => tool.function.name);
     const enabledNames = buildAgentChatTools({ includeExecBash: true }).map((tool) => tool.function.name);
 
-    expect(disabledNames).not.toContain("exec_bash");
-    expect(enabledNames).toContain("exec_bash");
+    expect(disabledNames).not.toContain("exec_external_script");
+    expect(enabledNames).toContain("exec_external_script");
   });
 
   it("returns failed exec_bash output as a tool result", async () => {
@@ -268,6 +251,17 @@ describe("agentToolRegistry", () => {
 
     expect(result.summary).toContain("已更新参考模型");
     expect(sceneService.getSnapshot().nodes.asset_sofa).toMatchObject({ position: [2, 0, 1], scale: [1.2, 1.2, 1.2] });
+  });
+
+  it("hides direct asset generation tools while a reconstruction workflow is awaiting confirmation", () => {
+    const names = buildAgentChatTools({
+      includeExecBash: false,
+      layers: ["foundation", "reference", "workflow", "scene", "delivery"]
+    }).map((tool) => tool.function.name);
+
+    expect(names).toContain("propose_reconstruction");
+    expect(names).toContain("deliver_file");
+    expect(names).not.toContain("generate_3d_asset");
   });
 
   it("places a library component before updating its generated scene asset ID", async () => {

@@ -241,6 +241,7 @@ function registerIpc(): void {
     answerReconstructionWorkflow: reconstructionWorkflowService.answer,
     confirmReconstructionWorkflow: reconstructionWorkflowService.confirm,
     cancelReconstructionWorkflow: reconstructionWorkflowService.cancel,
+    retryReconstructionWorkflowAsset: reconstructionWorkflowService.retry,
     pickAttachments,
     importClipboardAttachments,
     pasteAttachmentsFromClipboard,

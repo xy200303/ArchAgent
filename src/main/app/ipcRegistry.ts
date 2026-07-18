@@ -12,6 +12,7 @@ import type {
   ChatPromptInput,
   ChatSession,
   ConfirmWorkflowInput,
+  RetryWorkflowAssetInput,
   ReconstructionWorkflow,
   ClipboardAttachmentInput,
   CreateDirectoryInput,
@@ -53,6 +54,7 @@ export function registerIpcHandlers(options: {
   answerReconstructionWorkflow: (input: AnswerWorkflowQuestionInput) => ReconstructionWorkflow;
   confirmReconstructionWorkflow: (input: ConfirmWorkflowInput) => ReconstructionWorkflow;
   cancelReconstructionWorkflow: (input: Pick<ConfirmWorkflowInput, "sessionId" | "workflowId">) => ReconstructionWorkflow;
+  retryReconstructionWorkflowAsset: (input: RetryWorkflowAssetInput) => ReconstructionWorkflow;
   pickAttachments: (input: PickAttachmentInput) => Promise<AttachmentRef[]>;
   importClipboardAttachments: (input: ClipboardAttachmentInput) => AttachmentRef[];
   pasteAttachmentsFromClipboard: (input: PasteAttachmentInput) => AttachmentRef[];
@@ -109,6 +111,7 @@ export function registerIpcHandlers(options: {
   ipcMain.handle("workflow:answer", (_event, input: AnswerWorkflowQuestionInput) => options.answerReconstructionWorkflow(input));
   ipcMain.handle("workflow:confirm", (_event, input: ConfirmWorkflowInput) => options.confirmReconstructionWorkflow(input));
   ipcMain.handle("workflow:cancel", (_event, input: Pick<ConfirmWorkflowInput, "sessionId" | "workflowId">) => options.cancelReconstructionWorkflow(input));
+  ipcMain.handle("workflow:retry", (_event, input: RetryWorkflowAssetInput) => options.retryReconstructionWorkflowAsset(input));
   ipcMain.handle("attachment:pick", (_event, input: PickAttachmentInput) => options.pickAttachments(input));
   ipcMain.handle("attachment:import-clipboard", (_event, input: ClipboardAttachmentInput) =>
     options.importClipboardAttachments(input)

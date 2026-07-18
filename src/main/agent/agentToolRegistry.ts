@@ -74,7 +74,10 @@ export interface AgentToolExecutionResult {
   artifactPath?: string;
 }
 
-export function buildAgentChatTools(options: { includeExecBash: boolean; includeArtifactTools?: boolean }): ChatCompletionTool[] {
+export type AgentToolLayer = "foundation" | "reference" | "workflow" | "scene" | "asset" | "delivery" | "extension";
+
+export function buildAgentChatTools(options: { includeExecBash: boolean; includeArtifactTools?: boolean; layers?: readonly AgentToolLayer[] }): ChatCompletionTool[] {
+  return buildRefactoredAgentChatTools(options);
   const tools: ChatCompletionTool[] = [
     {
       type: "function",
@@ -180,12 +183,12 @@ export function buildAgentChatTools(options: { includeExecBash: boolean; include
     { type: "function", function: { name: "create_window", description: "在指定墙体上创建窗洞和窗。偏移从墙体起点开始计算，单位为米。", parameters: createWindowSchema } },
     { type: "function", function: { name: "update_window", description: "修改已有窗的尺寸、沿墙偏移或材质。", parameters: updateWindowSchema } },
     { type: "function", function: { name: "update_asset", description: "移动、旋转或缩放已导入的参考模型。旋转单位为弧度，缩放必须为正数。", parameters: updateAssetSchema } },
-    { type: "function", function: { name: "generate_3d_asset", description: "仅当构件库没有满足需求的资产时，用于创建家具、陈设、设备、人物和其他非建筑原生构件。调用前必须先检索构件库；调用混元生3D生成带面数预算的 GLB 并保存到当前项目的 output/assets。生成成功后应调用 import_component_asset 导入全局构件库。", parameters: generate3dAssetSchema } },
-    { type: "function", function: { name: "import_component_asset", description: "将当前项目内已生成或已下载的 GLB、GLTF、OBJ、STL 模型复制并登记到全局构件库。生成通用 3D 资产后必须立即调用；网络下载的模型完成后也应调用。", parameters: importComponentAssetSchema } },
-    { type: "function", function: { name: "get_component_library", description: "检索全局构件库的语义信息；放置或修改构件前必须先调用。", parameters: emptyObjectSchema } },
-    { type: "function", function: { name: "search_component_library", description: "按物件名称、类别、标签、描述检索全局构件库，返回最相关候选。对照片还原和 3D 重建，必须先检索再决定复用或生成。", parameters: componentLibrarySearchSchema } },
-    { type: "function", function: { name: "place_component_asset", description: "将 get_component_library 返回的 component_id 对应构件复制到当前项目并放入场景。该工具会创建并返回新的 asset 节点 ID；component_id 必须原样使用检索结果（它可能显示为构件库文件路径），不能直接传给 update_asset。", parameters: placeComponentAssetSchema } },
-    { type: "function", function: { name: "create_reconstruction_workflow", description: "创建需要用户反问、选项确认和生成授权的 3D 重建计划。面对户型图、平面图、实物照片还原或多资产场景时，必须先调用此工具，绝不能直接批量调用 generate_3d_asset。计划会先展示必答选项；全部回答后用户须点击确认，才会按最低低模配置并行复用/生成资产并逐件摆放。", parameters: reconstructionWorkflowSchema } },
+    { type: "function", function: { name: "generate_3d_asset", description: "独立家具/陈设/设备资产制作：仅在非重建工作流、且构件库没有匹配项或用户明确要求新资产时调用。输入中文 prompt 或单物件参考图之一；GLB 保存到 output/assets 后立即导入构件库。", parameters: generate3dAssetSchema } },
+    { type: "function", function: { name: "import_component_asset", description: "资产入库：登记当前项目内的 GLB、GLTF、OBJ、STL 到全局构件库。仅用于独立资产制作；重建工作流由编排器自动入库。", parameters: importComponentAssetSchema } },
+    { type: "function", function: { name: "get_component_library", description: "构件库全量浏览：仅在 search_component_library 不足以判断时调用。", parameters: emptyObjectSchema } },
+    { type: "function", function: { name: "search_component_library", description: "构件库候选检索：按名称、类别、标签和描述返回可复用 component_id。所有资产生成前必须先调用。", parameters: componentLibrarySearchSchema } },
+    { type: "function", function: { name: "place_component_asset", description: "放置已入库构件：使用检索返回的 component_id 创建场景资产并返回 asset 节点 ID。不得用 component_id 调用 update_asset。", parameters: placeComponentAssetSchema } },
+    { type: "function", function: { name: "create_reconstruction_workflow", description: "创建重建计划：记录资料、假设、必答选项、复用/待生成资产与摆放信息。计划未由用户确认前，禁止生成、入库或摆放计划资产。", parameters: reconstructionWorkflowSchema } },
     { type: "function", function: { name: "generate_design_preview", description: "根据已确认或明确标注假设的户型/空间方案生成一张 2D 效果图，供用户确认布局和风格；这是视觉预览，不得把它当作精确尺寸或 3D 生成授权。", parameters: designPreviewSchema } },
     { type: "function", function: { name: "analyze_spatial_reference", description: "结构化分析户型图或实物照片。对复杂照片必须返回场景复杂度、独立物件及其 [x,y,width,height] 千分比边界框、遮挡和不确定项，再创建重建计划。", parameters: spatialReferenceSchema } },
     { type: "function", function: { name: "extract_object_reference", description: "对复杂照片使用图生图提取单个确认物件，生成纯背景单物件参考图。必须先让用户确认提取图正确，才能把它用于图生3D。", parameters: objectExtractionSchema } },
@@ -232,7 +235,10 @@ export function buildAgentChatTools(options: { includeExecBash: boolean; include
     });
   }
 
-  return tools.map((tool) =>
+  const enabledLayers = options.layers ? new Set(options.layers) : undefined;
+  return tools
+    .filter((tool) => tool.type !== "function" || !enabledLayers || enabledLayers.has(resolveAgentToolLayer(tool.function.name)))
+    .map((tool) =>
     tool.type === "function"
       ? {
           ...tool,
@@ -242,7 +248,34 @@ export function buildAgentChatTools(options: { includeExecBash: boolean; include
           }
         }
       : tool
-  );
+    );
+}
+
+function buildRefactoredAgentChatTools(options: { includeExecBash: boolean }): ChatCompletionTool[] {
+  const tools: ChatCompletionTool[] = [
+    { type: "function", function: { name: "analyze_reference", description: "分析用户资料。profile=document 读取文档，image 识别普通图片，spatial 识别户型图或空间照片并输出事实、物件、不确定项。", parameters: analyzeReferenceSchema } },
+    { type: "function", function: { name: "isolate_reference_object", description: "从复杂照片图生图提取一个指定物件为纯背景参考图。提取图必须进入重建计划的必答确认，确认后才可图生3D。", parameters: objectExtractionSchema } },
+    { type: "function", function: { name: "search_assets", description: "检索全局资产库并返回可复用 component_id。生成或摆放资产前必须先调用。", parameters: componentLibrarySearchSchema } },
+    { type: "function", function: { name: "preview_design", description: "根据已知事实和明确假设生成户型/空间的二维效果预览，用于用户确认布局与风格，不代表精确尺寸。", parameters: designPreviewSchema } },
+    { type: "function", function: { name: "propose_reconstruction", description: "提出完整的重建计划：包含假设、必答问题、复用或待生成资产和摆放。该工具不会生成3D；用户确认后编排器执行。", parameters: reconstructionWorkflowSchema } },
+    { type: "function", function: { name: "get_scene", description: "读取当前权威场景快照、节点 ID 和版本。修改场景前必须读取。", parameters: emptyObjectSchema } },
+    { type: "function", function: { name: "apply_scene_plan", description: "批量创建或修改建筑场景。传入读取时的 expected_revision 和按顺序执行的 commands；任一失败即停止并报告。", parameters: scenePlanSchema } },
+    { type: "function", function: { name: "update_scene", description: "执行单个场景更新或删除操作。用于用户后续微调；operation 使用 wall.update、door.update、node.delete 等。", parameters: sceneUpdateSchema } },
+    { type: "function", function: { name: "place_asset", description: "把 search_assets 返回的 component_id 放入当前场景并设置变换，返回可编辑的场景 asset 节点 ID。", parameters: placeComponentAssetSchema } },
+    { type: "function", function: { name: "deliver_file", description: "把已生成的效果图、提取图、模型或报告显式发送给用户。", parameters: filePathSchema } }
+  ];
+  if (options.includeExecBash) tools.push({ type: "function", function: { name: "exec_external_script", description: "在受控项目目录执行外部脚本。仅用于有明确 purpose 和 expected_outputs 的可信处理任务。", parameters: execBashSchema } });
+  return tools.map((tool) => tool.type === "function" ? { ...tool, function: { ...tool.function, strict: true } } : tool);
+}
+
+function resolveAgentToolLayer(toolName: string): AgentToolLayer {
+  if (["get_scene", "create_wall", "update_wall", "create_slab", "update_slab", "create_ceiling", "update_ceiling", "create_column", "update_column", "create_zone", "update_zone", "create_stair", "update_stair", "create_fence", "update_fence", "create_door", "update_door", "create_window", "update_window", "update_asset", "delete_node"].includes(toolName)) return "scene";
+  if (["generate_3d_asset", "import_component_asset", "get_component_library", "place_component_asset"].includes(toolName)) return "asset";
+  if (["search_component_library", "create_reconstruction_workflow"].includes(toolName)) return "workflow";
+  if (["generate_design_preview", "analyze_spatial_reference", "extract_object_reference", "crop_reference_objects", "read_image"].includes(toolName)) return "reference";
+  if (["write_file", "send_file"].includes(toolName)) return "delivery";
+  if (toolName === "exec_bash") return "extension";
+  return "foundation";
 }
 
 export async function executeAgentToolCall(
@@ -261,6 +294,26 @@ export async function executeAgentToolCall(
   const args = parseToolArguments(toolCall.function.arguments);
 
   switch (toolName) {
+    case "analyze_reference":
+      return executeAnalyzeReference(args, context);
+    case "isolate_reference_object":
+      return renameToolResult(await executeExtractObjectReference(args, context), "isolate_reference_object");
+    case "search_assets":
+      return renameToolResult(executeSearchComponentLibrary(args, context), "search_assets");
+    case "propose_reconstruction":
+      return renameToolResult(executeCreateReconstructionWorkflow(args, context), "propose_reconstruction");
+    case "preview_design":
+      return renameToolResult(await executeGenerateDesignPreview(args, context), "preview_design");
+    case "apply_scene_plan":
+      return executeApplyScenePlan(args, context);
+    case "update_scene":
+      return executeUpdateScene(args, context);
+    case "place_asset":
+      return renameToolResult(executePlaceComponentAsset(args, context), "place_asset");
+    case "deliver_file":
+      return renameToolResult(await executeSendFile(args, context), "deliver_file");
+    case "exec_external_script":
+      return renameToolResult(await executeBash(args, context), "exec_external_script");
     case "time":
       return executeTime();
     case "remember_project":
@@ -773,7 +826,7 @@ async function executeExtractObjectReference(args: Record<string, unknown>, cont
   assertPathAllowed(sourcePath, context.allowedReadDirs, context.allowedReadFiles ?? [], "extract_object_reference");
   try {
     const generated = await extractObjectReference({ sourcePath, name, instruction, outputDir: join(context.outputDir, "object-references"), settings: context.settings });
-    return { toolName: "extract_object_reference", summary: `已生成“${name}”单物件提取图，等待用户确认`, content: `物件提取图：${generated.path}\n必须先让用户确认该图只包含正确目标且外观可接受；确认前不得将它用于图生3D或创建重建计划。`, artifactPath: generated.path };
+    return { toolName: "extract_object_reference", summary: `已生成“${name}”单物件提取图，等待用户确认`, content: `物件提取图：${generated.path}\n下一步创建重建计划时，必须加入“确认 ${name} 提取图正确”的必答选项；只有用户选择确认并点击“按当前方案生成”后，才能将该路径用于图生3D。`, artifactPath: generated.path };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return { toolName: "extract_object_reference", summary: `物件提取失败：${message}`, content: `extract_object_reference failed: ${message}` };
@@ -875,6 +928,52 @@ function readWorkflowPlacements(args: Record<string, unknown>): ReconstructionWo
   if (placements.some((item) => !item)) throw new Error("placements 中的每项都必须包含有效变换。");
   return placements as ReconstructionWorkflowPlacement[];
 }
+
+async function executeAnalyzeReference(args: Record<string, unknown>, context: AgentToolExecutionContext): Promise<AgentToolExecutionResult> {
+  const path = readStringArg(args, "path");
+  const profile = readStringArg(args, "profile");
+  if (!path || !["document", "image", "spatial"].includes(profile)) return { toolName: "analyze_reference", summary: "需要资料路径和分析类型 document、image 或 spatial。", content: "analyze_reference failed: invalid arguments" };
+  if (profile === "document") return renameToolResult(await executeReadFile({ path }, context, "read_file"), "analyze_reference");
+  if (profile === "spatial") return renameToolResult(await executeAnalyzeSpatialReference({ path }, context), "analyze_reference");
+  return renameToolResult(await executeReadImage({ path }, context), "analyze_reference");
+}
+
+async function executeApplyScenePlan(args: Record<string, unknown>, context: AgentToolExecutionContext): Promise<AgentToolExecutionResult> {
+  const expectedRevision = readOptionalNumberArg(args, "expected_revision");
+  if (expectedRevision !== undefined && context.getSceneSnapshot?.().revision !== expectedRevision) {
+    return { toolName: "apply_scene_plan", summary: "场景版本已变化，请重新读取场景后规划。", content: "apply_scene_plan failed: stale scene revision" };
+  }
+  const commands = Array.isArray(args.commands) ? args.commands : [];
+  if (!commands.length) return { toolName: "apply_scene_plan", summary: "场景计划不能为空。", content: "apply_scene_plan failed: missing commands" };
+  const results: AgentToolExecutionResult[] = [];
+  for (const item of commands) {
+    const record = readRecord(item);
+    const operation = record ? readStringArg(record, "operation") : "";
+    const input = record ? readRecord(record.input) : undefined;
+    const legacyName = sceneOperationMap[operation];
+    if (!legacyName || !input) return { toolName: "apply_scene_plan", summary: `不支持场景操作：${operation || "unknown"}`, content: `apply_scene_plan failed: unsupported operation ${operation}` };
+    const result = await executeAgentToolCall({ id: `scene_plan_${operation}`, type: "function", function: { name: legacyName, arguments: JSON.stringify(input) } }, context);
+    if (result.content.includes(" failed:")) return { toolName: "apply_scene_plan", summary: `场景计划中断：${result.summary}`, content: result.content };
+    results.push(result);
+  }
+  return { toolName: "apply_scene_plan", summary: `已应用 ${results.length} 项场景操作`, content: results.map((result) => result.content).join("\n\n") };
+}
+
+function executeUpdateScene(args: Record<string, unknown>, context: AgentToolExecutionContext): Promise<AgentToolExecutionResult> {
+  return executeApplyScenePlan({ expected_revision: args.expected_revision, commands: [{ operation: args.operation, input: args.input }] }, context).then((result) => renameToolResult(result, "update_scene"));
+}
+
+function renameToolResult(result: AgentToolExecutionResult, toolName: BuiltinToolName): AgentToolExecutionResult {
+  return { ...result, toolName };
+}
+
+const sceneOperationMap: Record<string, BuiltinToolName> = {
+  "wall.create": "create_wall", "wall.update": "update_wall", "slab.create": "create_slab", "slab.update": "update_slab",
+  "ceiling.create": "create_ceiling", "ceiling.update": "update_ceiling", "column.create": "create_column", "column.update": "update_column",
+  "zone.create": "create_zone", "zone.update": "update_zone", "stair.create": "create_stair", "stair.update": "update_stair",
+  "fence.create": "create_fence", "fence.update": "update_fence", "door.create": "create_door", "door.update": "update_door",
+  "window.create": "create_window", "window.update": "update_window", "asset.update": "update_asset", "node.delete": "delete_node"
+};
 
 function executeDeleteNode(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
   const id = readStringArg(args, "id");
@@ -1587,6 +1686,10 @@ const reconstructionQuestionSchema = { type: "object", properties: { id: { type:
 const reconstructionWorkflowSchema = { type: "object", properties: { mode: { type: "string", enum: ["floorplan", "photo_simple", "photo_complex"] }, title: { type: "string" }, summary: { type: "string" }, assumptions: { type: "array", items: { type: "string" } }, source_attachment_ids: { type: "array", items: { type: "string" } }, questions: { type: "array", items: reconstructionQuestionSchema }, assets: { type: "array", minItems: 1, items: reconstructionAssetSchema } }, required: ["mode", "title", "summary", "assets"], additionalProperties: false } as const;
 const designPreviewSchema = { type: "object", properties: { name: { type: "string" }, prompt: { type: "string", description: "中文效果图提示词，必须明确已知事实与假设。" } }, required: ["name", "prompt"], additionalProperties: false } as const;
 const componentLibrarySearchSchema = { type: "object", properties: { query: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 20 } }, required: ["query"], additionalProperties: false } as const;
+const analyzeReferenceSchema = { type: "object", properties: { path: { type: "string" }, profile: { type: "string", enum: ["document", "image", "spatial"] } }, required: ["path", "profile"], additionalProperties: false } as const;
+const scenePlanCommandSchema = { type: "object", properties: { operation: { type: "string", enum: ["wall.create", "wall.update", "slab.create", "slab.update", "ceiling.create", "ceiling.update", "column.create", "column.update", "zone.create", "zone.update", "stair.create", "stair.update", "fence.create", "fence.update", "door.create", "door.update", "window.create", "window.update", "asset.update", "node.delete"] }, input: { type: "object", additionalProperties: true } }, required: ["operation", "input"], additionalProperties: false } as const;
+const scenePlanSchema = { type: "object", properties: { expected_revision: { type: "integer", minimum: 0 }, commands: { type: "array", minItems: 1, items: scenePlanCommandSchema } }, required: ["expected_revision", "commands"], additionalProperties: false } as const;
+const sceneUpdateSchema = { type: "object", properties: { expected_revision: { type: "integer", minimum: 0 }, operation: scenePlanCommandSchema.properties.operation, input: { type: "object", additionalProperties: true } }, required: ["expected_revision", "operation", "input"], additionalProperties: false } as const;
 const spatialReferenceSchema = { type: "object", properties: { path: { type: "string" }, task: { type: "string" } }, required: ["path"], additionalProperties: false } as const;
 const objectExtractionSchema = { type: "object", properties: { path: { type: "string" }, name: { type: "string" }, instruction: { type: "string" } }, required: ["path", "name", "instruction"], additionalProperties: false } as const;
 const cropReferenceSchema = { type: "object", properties: { path: { type: "string" }, regions: { type: "array", minItems: 1, items: { type: "object", properties: { id: { type: "string" }, name: { type: "string" }, box: { type: "array", items: { type: "number" }, minItems: 4, maxItems: 4 } }, required: ["id", "name", "box"], additionalProperties: false } } }, required: ["path", "regions"], additionalProperties: false } as const;

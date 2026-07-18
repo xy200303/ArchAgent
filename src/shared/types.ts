@@ -184,6 +184,10 @@ export interface ConfirmWorkflowInput {
   revision: number;
 }
 
+export interface RetryWorkflowAssetInput extends ConfirmWorkflowInput {
+  assetId: string;
+}
+
 export type ArtifactKind = "docx" | "pdf" | "png" | "jpg" | "jpeg" | "webp" | "svg" | "json" | "md" | "txt" | "log" | "stl" | "obj" | "glb" | "gltf" | "3mf" | "step" | "iges" | "dxf" | "other";
 
 export interface ArtifactSummary {
@@ -452,6 +456,7 @@ export interface ArchAgentApi {
     answer(input: AnswerWorkflowQuestionInput): Promise<ReconstructionWorkflow>;
     confirm(input: ConfirmWorkflowInput): Promise<ReconstructionWorkflow>;
     cancel(input: Pick<ConfirmWorkflowInput, "sessionId" | "workflowId">): Promise<ReconstructionWorkflow>;
+    retry(input: RetryWorkflowAssetInput): Promise<ReconstructionWorkflow>;
   };
   clipboard: {
     writeText(text: string): Promise<void>;

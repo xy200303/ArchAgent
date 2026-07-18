@@ -3,6 +3,7 @@ import type {
   AnswerWorkflowQuestionInput,
   ChatSession,
   ConfirmWorkflowInput,
+  RetryWorkflowAssetInput,
   ReconstructionWorkflow,
   ReconstructionWorkflowAsset,
   ReconstructionWorkflowPlacement
@@ -45,6 +46,7 @@ export interface ReconstructionWorkflowService {
   answer(input: AnswerWorkflowQuestionInput): ReconstructionWorkflow;
   confirm(input: ConfirmWorkflowInput): ReconstructionWorkflow;
   cancel(input: Pick<ConfirmWorkflowInput, "sessionId" | "workflowId">): ReconstructionWorkflow;
+  retry(input: RetryWorkflowAssetInput): ReconstructionWorkflow;
   resumeAll(): void;
 }
 
@@ -156,6 +158,21 @@ export function createReconstructionWorkflowService(options: {
       if (asset.status === "planned" || asset.status === "queued") asset.status = "cancelled";
     }
     persist(session);
+    return workflow;
+  }
+
+  function retry(input: RetryWorkflowAssetInput): ReconstructionWorkflow {
+    const session = requireSession(input.sessionId);
+    const workflow = requireWorkflow(session, input.workflowId);
+    ensureRevision(workflow, input.revision);
+    const asset = workflow.assets.find((item) => item.id === input.assetId);
+    if (!asset || asset.status !== "failed") throw new Error("未找到可重试的失败资产。");
+    asset.status = "queued";
+    asset.error = undefined;
+    workflow.status = "generating";
+    workflow.updatedAt = options.now();
+    persist(session);
+    queueMicrotask(() => pump(session.id, workflow.id, workflow.revision));
     return workflow;
   }
 
@@ -289,7 +306,7 @@ export function createReconstructionWorkflowService(options: {
     if (workflow.revision !== revision) throw new Error("方案版本已变化，请重新确认。");
   }
 
-  return { createPlan, answer, confirm, cancel, resumeAll };
+  return { createPlan, answer, confirm, cancel, retry, resumeAll };
 }
 
 function validatePlan(input: CreateReconstructionWorkflowInput): void {

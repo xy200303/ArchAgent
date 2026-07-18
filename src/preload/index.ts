@@ -51,7 +51,8 @@ const api: ArchAgentApi = {
   workflow: {
     answer: (input) => ipcRenderer.invoke("workflow:answer", input),
     confirm: (input) => ipcRenderer.invoke("workflow:confirm", input),
-    cancel: (input) => ipcRenderer.invoke("workflow:cancel", input)
+    cancel: (input) => ipcRenderer.invoke("workflow:cancel", input),
+    retry: (input) => ipcRenderer.invoke("workflow:retry", input)
   },
   clipboard: {
     writeText: (text: string) => ipcRenderer.invoke("clipboard:write-text", text)

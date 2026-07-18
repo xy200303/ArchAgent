@@ -16,7 +16,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import type { Api, AssistantMessage, Model, TextContent } from "@mariozechner/pi-ai";
 import { compactText } from "./agentTools";
-import { buildAgentChatTools, executeAgentToolCall, type AgentToolExecutionResult } from "./agentToolRegistry";
+import { buildAgentChatTools, executeAgentToolCall, type AgentToolExecutionResult, type AgentToolLayer } from "./agentToolRegistry";
 import {
   compactAgentMessagesLocally,
   estimateContextUsage,
@@ -105,7 +105,7 @@ async function ensurePiSessionState(
   currentUserPrompt: string
 ): Promise<PiSessionState> {
   const settings = host.loadSettings();
-  const signature = buildConfigSignature(settings);
+  const signature = buildConfigSignature(settings, host.getSession(input.sessionId)?.workflow?.status);
   const existing = sessionStates.get(input.sessionId);
   if (existing?.configSignature === signature) {
     existing.systemPrompt = buildPiSystemPrompt(host, input.sessionId);
@@ -504,7 +504,8 @@ function createArchAgentPiTools(
 ): ToolDefinition[] {
   return buildAgentChatTools({
     includeExecBash: settings.agent.execBashEnabled,
-    includeArtifactTools: true
+    includeArtifactTools: true,
+    layers: resolveAgentToolLayers(host.getSession(sessionId)?.workflow?.status, settings.agent.execBashEnabled)
   })
     .filter((tool) => tool.type === "function")
     .map((tool) => {
@@ -649,7 +650,16 @@ export function buildArchAgentPiToolSchemaSignature(settings: AppSettings): stri
   });
 }
 
-function buildConfigSignature(settings: AppSettings): string {
+function resolveAgentToolLayers(workflowStatus: string | undefined, execBashEnabled: boolean): AgentToolLayer[] {
+  const layers: AgentToolLayer[] = ["foundation", "reference", "workflow", "scene", "delivery"];
+  if (!workflowStatus || workflowStatus === "completed" || workflowStatus === "cancelled" || workflowStatus === "needs_attention") {
+    layers.push("asset");
+  }
+  if (execBashEnabled) layers.push("extension");
+  return layers;
+}
+
+function buildConfigSignature(settings: AppSettings, workflowStatus?: string): string {
   return JSON.stringify({
     baseUrl: settings.openai.baseUrl,
     chatModel: settings.openai.chatModel,
@@ -659,6 +669,7 @@ function buildConfigSignature(settings: AppSettings): string {
     contextWindowTokens: settings.openai.contextWindowTokens,
     maxOutputTokens: settings.openai.maxOutputTokens,
     execBashEnabled: settings.agent.execBashEnabled,
+    workflowStatus,
     toolSchemaSignature: buildArchAgentPiToolSchemaSignature(settings)
   });
 }

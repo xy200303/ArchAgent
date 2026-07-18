@@ -160,6 +160,17 @@ function ReconstructionWorkflowCard({
     }
   }
 
+  async function retry(assetId: string): Promise<void> {
+    setPendingAction(`retry:${assetId}`);
+    try {
+      await api.workflow.retry({ sessionId, workflowId: workflow.id, revision: workflow.revision, assetId });
+    } catch (error) {
+      onError(`重试资产失败：${getErrorMessage(error)}`);
+    } finally {
+      setPendingAction(undefined);
+    }
+  }
+
   return (
     <section className={`reconstruction-workflow-card ${workflow.status}`}>
       <header>
@@ -198,7 +209,10 @@ function ReconstructionWorkflowCard({
       <section className="workflow-assets">
         <strong>资产执行清单</strong>
         {workflow.assets.map((asset) => (
-          <span key={asset.id}>{asset.name} × {asset.quantity} · {describeWorkflowAsset(asset)}</span>
+          <div className="workflow-asset-row" key={asset.id}>
+            <span>{asset.name} × {asset.quantity} · {describeWorkflowAsset(asset)}</span>
+            {asset.status === "failed" ? <button type="button" disabled={Boolean(pendingAction)} onClick={() => void retry(asset.id)}>{pendingAction === `retry:${asset.id}` ? "重试中…" : "重试"}</button> : null}
+          </div>
         ))}
       </section>
       {workflow.status === "ready_for_confirmation" ? (

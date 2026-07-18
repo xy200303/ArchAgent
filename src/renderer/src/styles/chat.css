@@ -409,6 +409,23 @@
   display: block;
 }
 
+.workflow-asset-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fluent-spacing-s);
+}
+
+.workflow-asset-row button {
+  border: 1px solid var(--fluent-color-brand-stroke);
+  border-radius: var(--fluent-radius-small);
+  background: transparent;
+  color: var(--fluent-color-brand-foreground1);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 3px 7px;
+}
+
 .reconstruction-workflow-card footer {
   border-top: 1px solid var(--fluent-color-neutral-stroke2);
   padding-top: var(--fluent-spacing-m);
