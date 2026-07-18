@@ -22,7 +22,6 @@ import {
   CONTEXT_WINDOW_TOKENS_DEFAULT,
   CONTEXT_WINDOW_TOKENS_MAX,
   CONTEXT_WINDOW_TOKENS_MIN,
-  IMAGE_GENERATION_REQUEST_TIMEOUT_DEFAULT_MS,
   clampContextWindowTokens,
   type AppSettings,
   type ArchAgentApi,
@@ -77,30 +76,30 @@ export function SettingsPanel({
   onError: (message: string) => void;
 }): JSX.Element {
   const [baseUrl, setBaseUrl] = useState(settings?.openai.baseUrl || "https://api.openai.com/v1");
-  const [imageBaseUrl, setImageBaseUrl] = useState(settings?.openai.imageBaseUrl || "");
   const [visionBaseUrl, setVisionBaseUrl] = useState(settings?.openai.visionBaseUrl || "");
   const [chatModel, setChatModel] = useState(settings?.openai.chatModel || "gpt-5.5");
   const [chatImageInputEnabled, setChatImageInputEnabled] = useState(settings?.openai.chatImageInputEnabled ?? false);
-  const [imageModel, setImageModel] = useState(settings?.openai.imageModel || "gpt-image-2");
   const [visionModel, setVisionModel] = useState(settings?.openai.visionModel || "");
-  const [imageSize, setImageSize] = useState(settings?.openai.imageSize || "1536x1024");
-  const [imageQuality, setImageQuality] = useState(settings?.openai.imageQuality || "high");
-  const [autoImageGeneration, setAutoImageGeneration] = useState(settings?.openai.autoImageGeneration ?? true);
   const [thinkingEnabled, setThinkingEnabled] = useState(settings?.openai.thinkingEnabled ?? true);
   const [reasoningEffort, setReasoningEffort] = useState(settings?.openai.reasoningEffort || "");
   const [autoPdfExport, setAutoPdfExport] = useState(settings?.output.autoPdfExport ?? false);
   const [libreOfficePath, setLibreOfficePath] = useState(settings?.output.libreOfficePath || "");
-  const [timeout, setTimeoutValue] = useState(settings?.openai.requestTimeoutMs || 120000);
-  const [imageTimeout, setImageTimeoutValue] = useState(
-    settings?.openai.imageRequestTimeoutMs || IMAGE_GENERATION_REQUEST_TIMEOUT_DEFAULT_MS
-  );
+  const [timeoutSeconds, setTimeoutSeconds] = useState(settings?.openai.requestTimeoutSeconds || 120);
+  const [imageRequestTimeoutSeconds, setImageRequestTimeoutSeconds] = useState(settings?.hunyuanImage.requestTimeoutSeconds || 120);
+  const [imagePollIntervalSeconds, setImagePollIntervalSeconds] = useState(settings?.hunyuanImage.pollIntervalSeconds || 3);
+  const [imageJobTimeoutSeconds, setImageJobTimeoutSeconds] = useState(settings?.hunyuanImage.jobTimeoutSeconds || 900);
+  const [imageRegion, setImageRegion] = useState(settings?.hunyuanImage.region || "ap-guangzhou");
+  const [imageResolution, setImageResolution] = useState(settings?.hunyuanImage.resolution || "1024:1024");
+  const [imageRevise, setImageRevise] = useState(settings?.hunyuanImage.revise ?? true);
+  const [imageLogoAdd, setImageLogoAdd] = useState(settings?.hunyuanImage.logoAdd ?? true);
   const [contextWindowTokens, setContextWindowTokens] = useState(
     settings ? clampContextWindowTokens(settings.openai.contextWindowTokens) : CONTEXT_WINDOW_TOKENS_DEFAULT
   );
   const [maxTokens, setMaxTokens] = useState(settings?.openai.maxOutputTokens || 16000);
   const [execBashEnabled, setExecBashEnabled] = useState(settings?.agent.execBashEnabled ?? true);
   const [apiKey, setApiKey] = useState("");
-  const [imageApiKey, setImageApiKey] = useState("");
+  const [imageSecretId, setImageSecretId] = useState("");
+  const [imageSecretKey, setImageSecretKey] = useState("");
   const [visionApiKey, setVisionApiKey] = useState("");
   const [runtimeCheck, setRuntimeCheck] = useState<RuntimeCheckResult | undefined>();
   const [checkingRuntime, setCheckingRuntime] = useState(false);
@@ -114,24 +113,28 @@ export function SettingsPanel({
         theme,
         openai: {
           baseUrl,
-          imageBaseUrl,
           visionBaseUrl,
           chatModel,
           chatImageInputEnabled,
-          imageModel,
           visionModel,
-          imageSize,
-          imageQuality,
-          autoImageGeneration,
           thinkingEnabled,
           reasoningEffort,
-          requestTimeoutMs: timeout,
-          imageRequestTimeoutMs: imageTimeout,
+          requestTimeoutSeconds: timeoutSeconds,
           contextWindowTokens: clampContextWindowTokens(contextWindowTokens),
           maxOutputTokens: maxTokens,
           apiKey: apiKey.trim() || undefined,
-          imageApiKey: imageApiKey.trim() || undefined,
           visionApiKey: visionApiKey.trim() || undefined
+        },
+        hunyuanImage: {
+          region: imageRegion,
+          resolution: imageResolution,
+          revise: imageRevise,
+          logoAdd: imageLogoAdd,
+          requestTimeoutSeconds: imageRequestTimeoutSeconds,
+          pollIntervalSeconds: imagePollIntervalSeconds,
+          jobTimeoutSeconds: imageJobTimeoutSeconds,
+          secretId: imageSecretId.trim() || undefined,
+          secretKey: imageSecretKey.trim() || undefined
         },
         output: {
           autoPdfExport,
@@ -216,11 +219,20 @@ export function SettingsPanel({
                     />
                   </label>
                   <label>
-                    生图 API Key
+                    混元生图 SecretId
                     <input
-                      value={imageApiKey}
-                      onChange={(event) => setImageApiKey(event.target.value)}
-                      placeholder={settings?.openai.imageApiKeyConfigured ? "已配置，留空保持不变" : "留空沿用 API Key"}
+                      value={imageSecretId}
+                      onChange={(event) => setImageSecretId(event.target.value)}
+                      placeholder={settings?.hunyuanImage.secretIdConfigured ? "已配置，留空保持不变" : "腾讯云 SecretId"}
+                    />
+                  </label>
+                  <label>
+                    混元生图 SecretKey
+                    <input
+                      type="password"
+                      value={imageSecretKey}
+                      onChange={(event) => setImageSecretKey(event.target.value)}
+                      placeholder={settings?.hunyuanImage.secretKeyConfigured ? "已配置，留空保持不变" : "腾讯云 SecretKey"}
                     />
                   </label>
                   <label>
@@ -234,14 +246,6 @@ export function SettingsPanel({
                   <label>
                     Base URL
                     <input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} />
-                  </label>
-                  <label>
-                    生图 Base URL
-                    <input
-                      value={imageBaseUrl}
-                      onChange={(event) => setImageBaseUrl(event.target.value)}
-                      placeholder="留空沿用 Base URL"
-                    />
                   </label>
                   <label>
                     识图 Base URL
@@ -274,10 +278,6 @@ export function SettingsPanel({
                     </select>
                   </label>
                   <label>
-                    生图模型
-                    <input value={imageModel} onChange={(event) => setImageModel(event.target.value)} />
-                  </label>
-                  <label>
                     识图模型
                     <input
                       value={visionModel}
@@ -286,13 +286,19 @@ export function SettingsPanel({
                     />
                   </label>
                   <label>
-                    生图尺寸
-                    <input value={imageSize} onChange={(event) => setImageSize(event.target.value)} />
+                    混元生图地域
+                    <input value={imageRegion} onChange={(event) => setImageRegion(event.target.value)} placeholder="ap-guangzhou" />
                   </label>
                   <label>
-                    生图质量
-                    <input value={imageQuality} onChange={(event) => setImageQuality(event.target.value)} />
+                    混元生图分辨率
+                    <input value={imageResolution} onChange={(event) => setImageResolution(event.target.value)} placeholder="1024:1024" />
                   </label>
+                  <SwitchRow checked={imageRevise} onCheckedChange={setImageRevise}>
+                    混元生图启用提示词改写
+                  </SwitchRow>
+                  <SwitchRow checked={imageLogoAdd} onCheckedChange={setImageLogoAdd}>
+                    混元生图添加 AI 标识
+                  </SwitchRow>
                 </Tabs.Content>
 
                 <Tabs.Content className="settings-form" value="appearance">
@@ -303,9 +309,6 @@ export function SettingsPanel({
                 </Tabs.Content>
 
                 <Tabs.Content className="settings-form" value="output">
-                  <SwitchRow checked={autoImageGeneration} onCheckedChange={setAutoImageGeneration}>
-                    允许 Agent 生成分析图表和可视化说明图
-                  </SwitchRow>
                   <SwitchRow checked={autoPdfExport} onCheckedChange={setAutoPdfExport}>
                     分析报告生成后自动导出 PDF
                   </SwitchRow>
@@ -337,22 +340,32 @@ export function SettingsPanel({
                     </button>
                   </div>
                   <label>
-                    请求超时 ms
+                    请求超时（秒）
                     <input
                       type="number"
-                      value={timeout}
-                      onChange={(event) => setTimeoutValue(Number(event.target.value))}
+                      min={1}
+                      step={1}
+                      value={timeoutSeconds}
+                      onChange={(event) => setTimeoutSeconds(Number(event.target.value))}
                     />
                   </label>
                   <label>
-                    生图请求超时 ms
+                    混元生图请求超时（秒）
                     <input
                       type="number"
-                      min={1000}
-                      step={1000}
-                      value={imageTimeout}
-                      onChange={(event) => setImageTimeoutValue(Number(event.target.value))}
+                      min={1}
+                      step={1}
+                      value={imageRequestTimeoutSeconds}
+                      onChange={(event) => setImageRequestTimeoutSeconds(Number(event.target.value))}
                     />
+                  </label>
+                  <label>
+                    混元生图轮询间隔（秒）
+                    <input type="number" min={1} step={1} value={imagePollIntervalSeconds} onChange={(event) => setImagePollIntervalSeconds(Number(event.target.value))} />
+                  </label>
+                  <label>
+                    混元生图任务最长等待（秒）
+                    <input type="number" min={30} step={1} value={imageJobTimeoutSeconds} onChange={(event) => setImageJobTimeoutSeconds(Number(event.target.value))} />
                   </label>
                   <label>
                     上下文窗口 tokens

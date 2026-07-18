@@ -6,7 +6,6 @@ export type SessionStatus = "idle" | "running" | "completed" | "failed";
 
 export type BundledPythonRuntimeSource = "resources" | "project";
 
-export const IMAGE_GENERATION_REQUEST_TIMEOUT_DEFAULT_MS = 300000;
 export const CONTEXT_WINDOW_TOKENS_MIN = 8192;
 export const CONTEXT_WINDOW_TOKENS_MAX = 2_000_000;
 export const CONTEXT_WINDOW_TOKENS_DEFAULT = 256_000;
@@ -146,7 +145,7 @@ export interface ReconstructionWorkflowAsset {
   dedupeKey?: string;
   providerJob?: {
     taskId: string;
-    model: "hy-3d-3.0" | "hy-3d-3.1" | "hy-3d-express";
+    model: "3.0" | "3.1";
     generateType: "normal" | "low_poly" | "geometry" | "sketch";
     faceCount?: number;
   };
@@ -324,24 +323,28 @@ export interface AppSettings {
   };
   openai: {
     baseUrl: string;
-    imageBaseUrl: string;
     visionBaseUrl: string;
     chatModel: string;
     chatImageInputEnabled: boolean;
-    imageModel: string;
     visionModel: string;
-    imageSize: string;
-    imageQuality: string;
-    autoImageGeneration: boolean;
     thinkingEnabled: boolean;
     reasoningEffort: string;
-    requestTimeoutMs: number;
-    imageRequestTimeoutMs: number;
+    requestTimeoutSeconds: number;
     contextWindowTokens: number;
     maxOutputTokens: number;
     apiKeyConfigured: boolean;
-    imageApiKeyConfigured: boolean;
     visionApiKeyConfigured: boolean;
+  };
+  hunyuanImage: {
+    region: string;
+    resolution: string;
+    revise: boolean;
+    logoAdd: boolean;
+    requestTimeoutSeconds: number;
+    pollIntervalSeconds: number;
+    jobTimeoutSeconds: number;
+    secretIdConfigured: boolean;
+    secretKeyConfigured: boolean;
   };
   output: {
     autoPdfExport: boolean;
@@ -356,24 +359,28 @@ export interface UpdateAppSettingsInput {
   theme: "light" | "dark";
   openai: {
     baseUrl: string;
-    imageBaseUrl: string;
     visionBaseUrl: string;
     chatModel: string;
     chatImageInputEnabled: boolean;
-    imageModel: string;
     visionModel: string;
-    imageSize: string;
-    imageQuality: string;
-    autoImageGeneration: boolean;
     thinkingEnabled: boolean;
     reasoningEffort: string;
-    requestTimeoutMs: number;
-    imageRequestTimeoutMs: number;
+    requestTimeoutSeconds: number;
     contextWindowTokens: number;
     maxOutputTokens: number;
     apiKey?: string;
-    imageApiKey?: string;
     visionApiKey?: string;
+  };
+  hunyuanImage: {
+    region: string;
+    resolution: string;
+    revise: boolean;
+    logoAdd: boolean;
+    requestTimeoutSeconds: number;
+    pollIntervalSeconds: number;
+    jobTimeoutSeconds: number;
+    secretId?: string;
+    secretKey?: string;
   };
   output: {
     autoPdfExport: boolean;

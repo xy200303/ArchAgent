@@ -126,24 +126,22 @@ function createSettings(): AppSettings {
     },
     openai: {
       baseUrl: "https://api.openai.com/v1",
-      imageBaseUrl: "",
       visionBaseUrl: "",
       chatModel: "gpt-5.5",
       chatImageInputEnabled: false,
-      imageModel: "gpt-image-2",
       visionModel: "",
-      imageSize: "1536x1024",
-      imageQuality: "high",
-      autoImageGeneration: true,
       thinkingEnabled: true,
       reasoningEffort: "",
-      requestTimeoutMs: 120000,
-      imageRequestTimeoutMs: 300000,
+      requestTimeoutSeconds: 120,
       contextWindowTokens: 256000,
       maxOutputTokens: 16000,
       apiKeyConfigured: false,
-      imageApiKeyConfigured: false,
       visionApiKeyConfigured: false
+    },
+    hunyuanImage: {
+      region: "ap-guangzhou", resolution: "1024:1024", revise: true, logoAdd: true,
+      requestTimeoutSeconds: 120, pollIntervalSeconds: 3, jobTimeoutSeconds: 900,
+      secretIdConfigured: false, secretKeyConfigured: false
     },
     output: {
       autoPdfExport: false,

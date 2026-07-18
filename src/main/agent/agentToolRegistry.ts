@@ -254,9 +254,9 @@ export function buildAgentChatTools(options: { includeExecBash: boolean; include
 function buildRefactoredAgentChatTools(options: { includeExecBash: boolean }): ChatCompletionTool[] {
   const tools: ChatCompletionTool[] = [
     { type: "function", function: { name: "analyze_reference", description: "分析用户资料。profile=document 读取文档，image 识别普通图片，spatial 识别户型图或空间照片并输出事实、物件、不确定项。", parameters: analyzeReferenceSchema } },
-    { type: "function", function: { name: "isolate_reference_object", description: "从复杂照片图生图提取一个指定物件为纯背景参考图。提取图必须进入重建计划的必答确认，确认后才可图生3D。", parameters: objectExtractionSchema } },
+    { type: "function", function: { name: "isolate_reference_object", description: "通过混元生图 3.0 的参考图能力，从复杂照片提取一个指定物件为纯背景参考图。提取图必须进入重建计划的必答确认，确认后才可图生3D。", parameters: objectExtractionSchema } },
     { type: "function", function: { name: "search_assets", description: "检索全局资产库并返回可复用 component_id。生成或摆放资产前必须先调用。", parameters: componentLibrarySearchSchema } },
-    { type: "function", function: { name: "preview_design", description: "根据已知事实和明确假设生成户型/空间的二维效果预览，用于用户确认布局与风格，不代表精确尺寸。", parameters: designPreviewSchema } },
+    { type: "function", function: { name: "preview_design", description: "使用混元生图 3.0 根据已知事实和明确假设生成户型/空间的二维效果预览，用于用户确认布局与风格，不代表精确尺寸。", parameters: designPreviewSchema } },
     { type: "function", function: { name: "propose_reconstruction", description: "提出完整的重建计划：包含假设、必答问题、复用或待生成资产和摆放。该工具不会生成3D；用户确认后编排器执行。", parameters: reconstructionWorkflowSchema } },
     { type: "function", function: { name: "get_scene", description: "读取当前权威场景快照、节点 ID 和版本。修改场景前必须读取。", parameters: emptyObjectSchema } },
     { type: "function", function: { name: "apply_scene_plan", description: "批量创建或修改建筑场景。传入读取时的 expected_revision 和按顺序执行的 commands；任一失败即停止并报告。", parameters: scenePlanSchema } },
@@ -1131,7 +1131,7 @@ async function executeReadImage(
   const client = new OpenAI({
     apiKey,
     baseURL: resolveVisionBaseUrl(context.settings),
-    timeout: context.settings.openai.requestTimeoutMs
+    timeout: toMilliseconds(resolveVisionTimeoutSeconds(context.settings))
   });
   const response = await client.chat.completions.create(
     {
@@ -1251,7 +1251,7 @@ async function executeBash(
   const execOptions: ExecOptions & { encoding: "buffer" } = {
     cwd: context.rootDir,
     env,
-    timeout: 15000,
+    timeout: toMilliseconds(resolveScriptTimeoutSeconds()),
     maxBuffer: 1024 * 256,
     windowsHide: true,
     signal: context.signal,
@@ -1538,6 +1538,24 @@ function resolveVisionBaseUrl(settings: AppSettings): string {
 
 function resolveVisionModel(settings: AppSettings): string {
   return settings.openai.visionModel.trim() || settings.openai.chatModel;
+}
+
+function resolveVisionTimeoutSeconds(settings: AppSettings): number {
+  return readConfiguredTimeoutSeconds("HY3_VISION_REQUEST_TIMEOUT_S", settings.openai.requestTimeoutSeconds, 1, 600);
+}
+
+function resolveScriptTimeoutSeconds(): number {
+  return readConfiguredTimeoutSeconds("AGENT_SCRIPT_TIMEOUT_S", 15, 1, 600);
+}
+
+function readConfiguredTimeoutSeconds(key: string, fallback: number, minimum: number, maximum: number): number {
+  const seconds = Number(process.env[key]?.trim());
+  const value = Number.isFinite(seconds) ? Math.trunc(seconds) : fallback;
+  return Math.min(Math.max(value, minimum), maximum);
+}
+
+function toMilliseconds(seconds: number): number {
+  return Math.max(1, Math.trunc(seconds)) * 1_000;
 }
 
 function looksDestructiveCommand(command: string): boolean {

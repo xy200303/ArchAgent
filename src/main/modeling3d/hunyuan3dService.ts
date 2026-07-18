@@ -1,17 +1,18 @@
-/** Calls Hunyuan 3D's OpenAI-compatible async API and returns the generated GLB. */
+/** Calls Tencent Hunyuan 3D Pro through the official Tencent Cloud SDK. */
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { ai3d } from "tencentcloud-sdk-nodejs";
 
-const SUBMIT_URL = "https://tokenhub.tencentmaas.com/v1/api/3d/submit";
-const QUERY_URL = "https://tokenhub.tencentmaas.com/v1/api/3d/query";
-const POLL_INTERVAL_MS = 3_000;
-const MAX_POLL_ATTEMPTS = 100;
-const DEFAULT_HUNYUAN_3D_MODEL = "hy-3d-3.0";
+const HUNYUAN_3D_HOST = "ai3d.tencentcloudapi.com";
+const DEFAULT_SUBMIT_TIMEOUT_SECONDS = 120;
+const DEFAULT_POLL_INTERVAL_SECONDS = 3;
+const DEFAULT_JOB_TIMEOUT_SECONDS = 900;
+const DEFAULT_HUNYUAN_3D_MODEL = "3.0";
 const DEFAULT_FACE_COUNT = 50_000;
 const MIN_FACE_COUNT = 3_000;
-const MAX_FACE_COUNT = 150_000;
+const MAX_FACE_COUNT = 1_500_000;
 
-type Hunyuan3dModel = "hy-3d-3.0" | "hy-3d-3.1" | "hy-3d-express";
+type Hunyuan3dModel = "3.0" | "3.1";
 export type Hunyuan3dDetailLevel = "draft" | "standard" | "high";
 
 const FACE_COUNT_BY_DETAIL_LEVEL: Record<Hunyuan3dDetailLevel, number> = {
@@ -44,32 +45,30 @@ export async function generateHunyuanGlb(input: HunyuanImageTo3dInput, outputDir
   return collectHunyuanGlb(submitted, { name: input.name, prompt: input.prompt }, outputDir);
 }
 
-/** Submits exactly one provider job. Persist the returned task ID before polling it. */
+/** Submits exactly one provider job. Persist the returned JobId before polling it. */
 export async function submitHunyuan3dJob(input: HunyuanImageTo3dInput): Promise<Hunyuan3dSubmittedJob> {
-  const apiKey = process.env.HY3_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim();
-  if (!apiKey) throw new Error("未配置 HY3_API_KEY，无法调用混元生3D。");
   const model = input.model ?? resolveHunyuan3dModel();
   const imageBase64 = input.imageBase64?.trim();
   const prompt = input.prompt?.trim();
-  // Scene reconstruction can place many assets; use the provider's actual low-poly mode unless a caller explicitly requests a detail budget.
   const requestedGenerateType = input.generateType ?? (input.detailLevel ? "normal" : "low_poly");
   const generateType = toHunyuanGenerateType(requestedGenerateType);
   const faceCount = generateType === "LowPoly" ? undefined : resolveFaceCount(input.faceCount, input.detailLevel);
   if (!imageBase64 && !prompt) throw new Error("文生3D需要 prompt，图生3D需要图片数据。");
   if (prompt && !containsChineseText(prompt)) throw new Error("混元文生3D仅支持中文正向提示词，请使用中文描述模型的形状、材质、颜色和风格。");
   if (imageBase64 && prompt && input.generateType !== "sketch") throw new Error("普通图生3D不能同时提交 prompt 和图片。");
+  if (model === "3.1" && generateType === "LowPoly") throw new Error("混元生3D 3.1 不支持 LowPoly，请使用 3.0 或选择其他生成类型。");
 
-  const job = await postJson(SUBMIT_URL, apiKey, {
-    model,
-    ...(imageBase64 ? { image_base64: imageBase64 } : { prompt }),
-    generate_type: generateType,
-    enable_pbr: input.enablePbr ?? true,
-    ...(faceCount ? { face_count: faceCount } : {})
+  const client = createHunyuan3dClient();
+  const submitted = await client.SubmitHunyuanTo3DProJob({
+    Model: model,
+    ...(imageBase64 ? { ImageBase64: imageBase64 } : { Prompt: prompt }),
+    GenerateType: generateType,
+    EnablePBR: input.enablePbr ?? true,
+    ...(faceCount ? { FaceCount: faceCount } : {})
   });
-  if (job.status === "failed" || job.status === "fail") throw new Error(readJobFailureMessage(job));
-  const jobId = typeof job.id === "string" ? job.id.trim() : "";
-  if (!jobId) throw new Error("混元生3D未返回任务 ID。");
-  return { taskId: jobId, model, generateType: requestedGenerateType, ...(faceCount ? { faceCount } : {}) };
+  const taskId = submitted.JobId?.trim();
+  if (!taskId) throw new Error("混元生3D未返回 JobId。");
+  return { taskId, model, generateType: requestedGenerateType, ...(faceCount ? { faceCount } : {}) };
 }
 
 /** Polls a previously submitted provider job and publishes its GLB locally without resubmitting. */
@@ -78,16 +77,15 @@ export async function collectHunyuanGlb(
   asset: Pick<HunyuanImageTo3dInput, "name" | "prompt">,
   outputDir: string
 ): Promise<{ path: string; previewImageUrl?: string; faceCount?: number }> {
-  const apiKey = process.env.HY3_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim();
-  if (!apiKey) throw new Error("未配置 HY3_API_KEY，无法查询混元生3D任务。");
-  const result = await waitForResult(apiKey, job.taskId, job.model);
-  const glb = result.data.find((item) => item.type.toLowerCase() === "glb");
-  if (!glb?.url) throw new Error("混元生3D任务完成但未返回 GLB 文件。");
+  const result = await waitForResult(job.taskId);
+  const glb = result.find((item) => item.Type?.toLowerCase() === "glb" && item.Url?.trim());
+  if (!glb?.Url) throw new Error("混元生3D任务完成但未返回 GLB 文件。");
 
-  const response = await fetch(glb.url);
+  const timeoutSeconds = readTimeoutSeconds("HY3_3D_SUBMIT_TIMEOUT_S", DEFAULT_SUBMIT_TIMEOUT_SECONDS);
+  const response = await fetchWithTimeout(glb.Url, timeoutSeconds);
   if (!response.ok) throw new Error(`下载混元 GLB 失败：HTTP ${response.status}`);
   const glbBytes = Buffer.from(await response.arrayBuffer());
-  const preview = await downloadHunyuanPreview(glb.preview_image_url);
+  const preview = await downloadHunyuanPreview(glb.PreviewImageUrl, timeoutSeconds);
   if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
   const destination = join(outputDir, `${safeName(asset.name)}.glb`);
   const previewFile = `${destination}.preview.${preview.extension}`;
@@ -107,21 +105,33 @@ export async function collectHunyuanGlb(
     previewFile,
     createdAt: new Date().toISOString()
   }, null, 2), "utf8");
-  return { path: destination, previewImageUrl: glb.preview_image_url, faceCount: job.faceCount };
+  return { path: destination, previewImageUrl: glb.PreviewImageUrl, faceCount: job.faceCount };
 }
 
-/** Resolves the deployment-level model choice before starting an asynchronous generation job. */
+function createHunyuan3dClient(): InstanceType<typeof ai3d.v20250513.Client> {
+  const secretId = process.env.TENCENT_SECRET_ID?.trim();
+  const secretKey = process.env.TENCENT_SECRET_KEY?.trim();
+  if (!secretId || !secretKey) throw new Error("未配置 TENCENT_SECRET_ID 和 TENCENT_SECRET_KEY，无法调用混元生3D。");
+  return new ai3d.v20250513.Client({
+    credential: { secretId, secretKey },
+    region: process.env.HY3_3D_REGION?.trim() || "ap-guangzhou",
+    profile: {
+      httpProfile: {
+        endpoint: HUNYUAN_3D_HOST,
+        reqTimeout: readTimeoutSeconds("HY3_3D_SUBMIT_TIMEOUT_S", DEFAULT_SUBMIT_TIMEOUT_SECONDS)
+      }
+    }
+  });
+}
+
 function resolveHunyuan3dModel(): Hunyuan3dModel {
-  const configuredModel = process.env.HY3_3D_MODEL?.trim();
-  if (!configuredModel) return DEFAULT_HUNYUAN_3D_MODEL;
-  if (configuredModel === "hy-3d-3.0" || configuredModel === "hy-3d-3.1" || configuredModel === "hy-3d-express") return configuredModel;
-  throw new Error("HY3_3D_MODEL 仅支持 hy-3d-3.0、hy-3d-3.1 或 hy-3d-express。");
+  const model = process.env.HY3_3D_MODEL_VERSION?.trim() || DEFAULT_HUNYUAN_3D_MODEL;
+  if (model === "3.0" || model === "3.1") return model;
+  throw new Error("HY3_3D_MODEL_VERSION 仅支持 3.0 或 3.1。");
 }
 
-/** Keeps generated library assets within a practical editor rendering budget. */
 function resolveFaceCount(explicitFaceCount: number | undefined, detailLevel: Hunyuan3dDetailLevel | undefined): number {
-  const requested = explicitFaceCount
-    ?? (detailLevel ? FACE_COUNT_BY_DETAIL_LEVEL[detailLevel] : readConfiguredFaceCount());
+  const requested = explicitFaceCount ?? (detailLevel ? FACE_COUNT_BY_DETAIL_LEVEL[detailLevel] : readConfiguredFaceCount());
   if (!Number.isInteger(requested) || requested < MIN_FACE_COUNT || requested > MAX_FACE_COUNT) {
     throw new Error(`混元生3D面数必须是 ${MIN_FACE_COUNT.toLocaleString("en-US")} 到 ${MAX_FACE_COUNT.toLocaleString("en-US")} 的整数。`);
   }
@@ -136,74 +146,29 @@ function readConfiguredFaceCount(): number {
   return value;
 }
 
-function containsChineseText(value: string): boolean {
-  return /[\u3400-\u9fff]/.test(value);
-}
+function containsChineseText(value: string): boolean { return /[\u3400-\u9fff]/.test(value); }
 
-/** OpenAI-compatible fields use snake case, but Tencent keeps these enum values in PascalCase. */
 function toHunyuanGenerateType(value: NonNullable<HunyuanImageTo3dInput["generateType"]>): "Normal" | "LowPoly" | "Geometry" | "Sketch" {
-  const types = {
-    normal: "Normal",
-    low_poly: "LowPoly",
-    geometry: "Geometry",
-    sketch: "Sketch"
-  } as const;
-  return types[value];
+  const generateTypes = { normal: "Normal", low_poly: "LowPoly", geometry: "Geometry", sketch: "Sketch" } as const;
+  return generateTypes[value];
 }
 
-async function waitForResult(apiKey: string, id: string, model: string): Promise<{ data: Array<{ type: string; url: string; preview_image_url?: string }> }> {
-  for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt += 1) {
-    const result = await postJson(QUERY_URL, apiKey, { model, id });
-    if (result.status === "completed" && Array.isArray(result.data)) return result as { data: Array<{ type: string; url: string; preview_image_url?: string }> };
-    if (result.status === "failed" || result.status === "fail") throw new Error(readJobFailureMessage(result));
-    await delay(POLL_INTERVAL_MS);
+async function waitForResult(taskId: string): Promise<Array<{ Type?: string; Url?: string; PreviewImageUrl?: string }>> {
+  const client = createHunyuan3dClient();
+  const deadline = Date.now() + toMilliseconds(readTimeoutSeconds("HY3_3D_JOB_TIMEOUT_S", DEFAULT_JOB_TIMEOUT_SECONDS, 30, 3_600));
+  const intervalSeconds = readTimeoutSeconds("HY3_3D_POLL_INTERVAL_S", DEFAULT_POLL_INTERVAL_SECONDS, 1, 60);
+  while (Date.now() < deadline) {
+    const result = await client.QueryHunyuanTo3DProJob({ JobId: taskId });
+    if (result.Status === "DONE") return result.ResultFile3Ds ?? [];
+    if (result.Status === "FAIL") throw new Error(result.ErrorMessage?.trim() || result.ErrorCode?.trim() || "混元生3D任务失败。");
+    await delay(intervalSeconds);
   }
-  throw new Error("混元生3D任务超时，请稍后在构建库重试。");
+  throw new Error("混元生3D任务超时，请稍后在构件库重试。");
 }
 
-async function postJson(url: string, apiKey: string, body: Record<string, unknown>): Promise<any> {
-  const response = await fetch(url, { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  const payload: unknown = await response.json().catch(() => undefined);
-  if (!response.ok) throw new Error(readApiError(payload, response.status));
-  if (!payload || typeof payload !== "object") throw new Error("混元生3D返回了无效响应。");
-  return payload;
-}
-
-function readApiError(payload: unknown, status: number): string {
-  const details = getApiErrorDetails(payload);
-  if (details.message) return `混元生3D请求失败${details.code ? `（${details.code}）` : ""}：${details.message}`;
-  return `混元生3D请求失败：HTTP ${status}`;
-}
-
-/** Handles both OpenAI-compatible and Tencent Cloud error envelopes without exposing request secrets. */
-function getApiErrorDetails(payload: unknown): { code?: string; message?: string } {
-  if (!payload || typeof payload !== "object") return {};
-  const record = payload as Record<string, unknown>;
-  const error = record.error ?? record.Error;
-  const errorRecord = error && typeof error === "object" ? error as Record<string, unknown> : {};
-  const message = [
-    errorRecord.message,
-    errorRecord.Message,
-    record.message,
-    record.Message,
-    record.ErrorMessage,
-    record.msg,
-    record.Msg,
-    typeof error === "string" ? error : undefined
-  ].find((value): value is string => typeof value === "string" && value.trim().length > 0);
-  const code = [errorRecord.code, errorRecord.Code, record.code, record.Code, record.ErrorCode]
-    .find((value): value is string | number => typeof value === "string" || typeof value === "number");
-  return { ...(code !== undefined ? { code: String(code) } : {}), ...(message ? { message } : {}) };
-}
-
-function readJobFailureMessage(payload: unknown): string {
-  return getApiErrorDetails(payload).message ?? "混元生3D任务失败。";
-}
-
-/** Downloads the provider thumbnail before publishing a Hunyuan asset to the local project. */
-async function downloadHunyuanPreview(previewUrl: string | undefined): Promise<{ bytes: Buffer; extension: "png" | "jpg" | "webp" }> {
-  if (!previewUrl) throw new Error("混元生3D任务未返回 preview_image_url，无法生成可预览资产。");
-  const response = await fetch(previewUrl);
+async function downloadHunyuanPreview(previewUrl: string | undefined, timeoutSeconds: number): Promise<{ bytes: Buffer; extension: "png" | "jpg" | "webp" }> {
+  if (!previewUrl) throw new Error("混元生3D任务未返回 PreviewImageUrl，无法生成可预览资产。");
+  const response = await fetchWithTimeout(previewUrl, timeoutSeconds);
   if (!response.ok) throw new Error(`下载混元预览图失败：HTTP ${response.status}`);
   const bytes = Buffer.from(await response.arrayBuffer());
   if (!bytes.byteLength) throw new Error("下载混元预览图失败：响应为空。");
@@ -219,4 +184,10 @@ function getImageExtension(contentType: string | null, bytes: Buffer): "png" | "
 }
 
 function safeName(value: string): string { return value.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").trim() || "hunyuan-model"; }
-function delay(ms: number): Promise<void> { return new Promise((resolve) => setTimeout(resolve, ms)); }
+function readTimeoutSeconds(key: string, fallback: number, minimum = 1, maximum = 600): number {
+  const value = Number(process.env[key]?.trim());
+  return Math.min(Math.max(Number.isFinite(value) ? Math.trunc(value) : fallback, minimum), maximum);
+}
+function delay(seconds: number): Promise<void> { return new Promise((resolve) => setTimeout(resolve, toMilliseconds(seconds))); }
+function toMilliseconds(seconds: number): number { return Math.max(1, Math.trunc(seconds)) * 1_000; }
+function fetchWithTimeout(url: string, timeoutSeconds: number): Promise<Response> { return fetch(url, { signal: AbortSignal.timeout(toMilliseconds(timeoutSeconds)) }); }

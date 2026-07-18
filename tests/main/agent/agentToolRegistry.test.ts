@@ -357,24 +357,22 @@ function createSettings(): AppSettings {
     },
     openai: {
       baseUrl: "https://tokenhub.tencentmaas.com/v1",
-      imageBaseUrl: "",
       visionBaseUrl: "",
       chatModel: "hy3-preview",
       chatImageInputEnabled: true,
-      imageModel: "hy3-preview",
       visionModel: "",
-      imageSize: "1024x1024",
-      imageQuality: "standard",
-      autoImageGeneration: true,
       thinkingEnabled: true,
       reasoningEffort: "",
-      requestTimeoutMs: 60000,
-      imageRequestTimeoutMs: 60000,
+      requestTimeoutSeconds: 60,
       contextWindowTokens: 256000,
       maxOutputTokens: 16000,
       apiKeyConfigured: true,
-      imageApiKeyConfigured: false,
       visionApiKeyConfigured: false
+    },
+    hunyuanImage: {
+      region: "ap-guangzhou", resolution: "1024:1024", revise: true, logoAdd: true,
+      requestTimeoutSeconds: 60, pollIntervalSeconds: 1, jobTimeoutSeconds: 60,
+      secretIdConfigured: false, secretKeyConfigured: false
     },
     output: {
       autoPdfExport: false,
