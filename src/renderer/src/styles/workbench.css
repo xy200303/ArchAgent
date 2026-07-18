@@ -303,6 +303,61 @@ body.is-resizing-chat-panel * {
   color: var(--fluent-color-brand-foreground1);
 }
 
+.personal-component-card {
+  position: relative;
+  display: block;
+  overflow: visible;
+}
+
+.personal-component-card.selected {
+  border-color: var(--fluent-color-brand-stroke);
+  box-shadow: inset 0 0 0 1px var(--fluent-color-brand-stroke);
+}
+
+.personal-component-main {
+  display: grid;
+  width: 100%;
+  min-height: 58px;
+  grid-template-columns: 72px minmax(0, 1fr);
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  overflow: hidden;
+  padding: 0;
+  text-align: left;
+}
+
+.personal-component-main .component-library-item-copy {
+  padding-right: 38px;
+}
+
+.component-card-more {
+  position: absolute;
+  top: 7px;
+  right: 6px;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: var(--fluent-radius-small);
+  background: transparent;
+  color: var(--fluent-color-neutral-foreground2);
+  cursor: pointer;
+}
+
+.component-card-more:hover,
+.component-card-more[data-state="open"] {
+  background: var(--fluent-color-neutral-background-hover);
+  color: var(--fluent-color-neutral-foreground1);
+}
+
+.component-card-menu {
+  min-width: 142px;
+}
+
 .component-built-in-preview,
 .component-model-preview {
   display: block;
@@ -412,6 +467,23 @@ body.is-resizing-chat-panel * {
 .component-semantic-editor > div {
   display: flex;
   gap: var(--fluent-spacing-s);
+}
+
+.component-semantic-dialog {
+  width: min(500px, calc(100vw - 36px));
+}
+
+.component-semantic-dialog .component-semantic-editor {
+  max-height: none;
+  border-top: 0;
+  overflow: visible;
+  padding-top: 0;
+}
+
+.component-library-error {
+  margin: var(--fluent-spacing-s) var(--fluent-spacing-l) 0;
+  color: var(--fluent-color-danger-foreground1);
+  font-size: 12px;
 }
 
 .component-library-note {

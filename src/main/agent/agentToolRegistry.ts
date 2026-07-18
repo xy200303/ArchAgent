@@ -623,7 +623,7 @@ function executeSceneTool(
   const result = context.executeSceneCommand(command);
   if (!result.accepted) return sceneToolFailure(toolName, result.message);
 
-  const nodeId = result.command.type === "node.delete" ? result.command.id : result.command.id;
+  const nodeId = result.command.type === "level.clear" ? result.command.levelId : result.command.id;
   const action = result.command.type === "wall.create" ? "已创建墙体"
     : result.command.type === "wall.update" ? "已更新墙体"
     : result.command.type === "slab.create" ? "已创建楼板"
@@ -643,6 +643,7 @@ function executeSceneTool(
     : result.command.type === "window.create" ? "已创建窗"
     : result.command.type === "window.update" ? "已更新窗"
     : result.command.type === "asset.update" ? "已更新参考模型"
+    : result.command.type === "level.clear" ? "已清空楼层"
     : "已删除构件";
   return {
     toolName,

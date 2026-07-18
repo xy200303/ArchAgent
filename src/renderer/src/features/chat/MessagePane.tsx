@@ -70,7 +70,7 @@ export const MessagePane = memo(function MessagePane({
               </span>
               <span>
                 <Eye size={14} />
-                Pascal 预览
+                三维预览
               </span>
               <span>
                 <Image size={14} />

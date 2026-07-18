@@ -97,7 +97,7 @@ export interface SceneStairNode {
 
 export type FenceStyle = "slat" | "rail" | "privacy";
 
-/** A free-standing boundary element rendered by Pascal's native fence system. */
+/** A free-standing boundary element rendered by the editor's fence geometry. */
 export interface SceneFenceNode {
   id: string;
   type: "fence";
@@ -314,6 +314,12 @@ export interface DeleteNodeCommandInput {
   id: string;
 }
 
+/** Removes every descendant of one level while retaining the level itself. */
+export interface ClearLevelCommandInput {
+  type: "level.clear";
+  levelId: string;
+}
+
 export interface CreateAssetCommandInput {
   type: "asset.create";
   id?: string;
@@ -356,6 +362,7 @@ export type SceneCommandInput =
   | UpdateWindowCommandInput
   | CreateAssetCommandInput
   | UpdateAssetCommandInput
+  | ClearLevelCommandInput
   | DeleteNodeCommandInput;
 
 export type SceneCommand =
@@ -379,6 +386,7 @@ export type SceneCommand =
   | UpdateFenceCommandInput
   | UpdateDoorCommandInput
   | UpdateWindowCommandInput
+  | ClearLevelCommandInput
   | DeleteNodeCommandInput;
 
 export interface SceneCommandSuccess {

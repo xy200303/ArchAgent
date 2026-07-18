@@ -1,7 +1,7 @@
-/** Renders persisted external meshes without adding them to Pascal's semantic node graph. */
+/** Renders persisted external meshes without coupling them to an editor implementation. */
+import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import { useEffect, useState, type JSX } from "react";
-import type { ThreeEvent } from "@react-three/fiber";
-import type { Object3D } from "three";
+import { Box3, Box3Helper, type Object3D } from "three";
 import type { ArchAgentApi } from "../../../../../shared/types";
 import type { SceneAssetNode } from "../../../../../shared/modeling3d/sceneContracts";
 import { loadMeshObject } from "../scene/loadMeshObject";
@@ -19,7 +19,7 @@ export function ImportedAssetLayer({
   selectedNodeId?: string;
   onError: (message: string) => void;
   onSelectNode: (id: string) => void;
-  onObjectChange: (id: string, object?: Object3D) => void;
+  onObjectChange?: (id: string, object?: Object3D) => void;
 }): JSX.Element {
   return <>{assets.map((asset) => <ImportedAsset key={asset.id} api={api} asset={asset} selected={selectedNodeId === asset.id} onError={onError} onSelectNode={onSelectNode} onObjectChange={onObjectChange} />)}</>;
 }
@@ -37,7 +37,7 @@ function ImportedAsset({
   selected: boolean;
   onError: (message: string) => void;
   onSelectNode: (id: string) => void;
-  onObjectChange: (id: string, object?: Object3D) => void;
+  onObjectChange?: (id: string, object?: Object3D) => void;
 }): JSX.Element | null {
   const [object, setObject] = useState<Object3D>();
 
@@ -53,22 +53,35 @@ function ImportedAsset({
   }, [api, asset.id, asset.name, onError]);
 
   useEffect(() => {
-    onObjectChange(asset.id, object);
-    return () => onObjectChange(asset.id, undefined);
+    onObjectChange?.(asset.id, object);
+    return () => onObjectChange?.(asset.id, undefined);
   }, [asset.id, object, onObjectChange]);
 
   if (!object) return null;
   return (
-    <primitive
-      object={object}
-      position={asset.position}
-      rotation={asset.rotation}
-      scale={asset.scale}
-      onClick={(event: ThreeEvent<MouseEvent>) => {
-        event.stopPropagation();
-        onSelectNode(asset.id);
-      }}
-      userData={{ archAgentSelected: selected }}
-    />
+    <>
+      <primitive
+        object={object}
+        position={asset.position}
+        rotation={asset.rotation}
+        scale={asset.scale}
+        onClick={(event: ThreeEvent<MouseEvent>) => {
+          event.stopPropagation();
+          onSelectNode(asset.id);
+        }}
+      />
+      {selected ? <AssetSelectionOutline object={object} /> : null}
+    </>
   );
+}
+
+/** Keeps the imported mesh selection visible without mutating source materials. */
+function AssetSelectionOutline({ object }: { object: Object3D }): JSX.Element {
+  const [helper] = useState(() => new Box3Helper(new Box3(), "#1677c8"));
+  useFrame(() => helper.box.setFromObject(object));
+  useEffect(() => {
+    helper.userData.archAgentExportable = false;
+    return () => helper.dispose();
+  }, [helper]);
+  return <primitive object={helper} />;
 }

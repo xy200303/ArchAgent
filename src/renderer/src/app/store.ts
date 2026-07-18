@@ -1,4 +1,4 @@
-/** Owns application-shell state; 3D domain state remains in Pascal stores. */
+/** Owns application-shell state; the 3D domain remains in shared scene services. */
 import { configureStore, createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import type {
   AppSettings,

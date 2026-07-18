@@ -1,4 +1,4 @@
-/** Applies validated scene commands without depending on Electron, React, or Pascal. */
+/** Applies validated scene commands without depending on Electron or React. */
 import type {
   CreateWallCommandInput,
   CreateSlabCommandInput,
@@ -124,6 +124,8 @@ export function applySceneCommand(
       return updateAssetCommand(snapshot, input);
     case "node.delete":
       return deleteNodeCommand(snapshot, input);
+    case "level.clear":
+      return clearLevelCommand(snapshot, input);
   }
 }
 
@@ -562,9 +564,38 @@ function deleteNodeCommand(snapshot: SceneSnapshot, input: Extract<SceneCommandI
   if (!node) return failure("node_not_found", `未找到节点：${input.id}`);
   if (node.type !== "wall" && node.type !== "slab" && node.type !== "ceiling" && node.type !== "column" && node.type !== "zone" && node.type !== "stair" && node.type !== "fence" && node.type !== "door" && node.type !== "window" && node.type !== "asset") return failure("unsupported_node", "当前仅支持删除建筑构件或参考模型。");
 
+  const nodeIdsToDelete = collectDescendantNodeIds(snapshot, input.id);
+  nodeIdsToDelete.add(input.id);
   const nodes = { ...snapshot.nodes };
-  delete nodes[input.id];
+  for (const id of nodeIdsToDelete) delete nodes[id];
   return success(snapshot, input, nodes);
+}
+
+/** Deletes a level's complete component subtree as one undoable scene command. */
+function clearLevelCommand(snapshot: SceneSnapshot, input: Extract<SceneCommandInput, { type: "level.clear" }>): SceneCommandResult {
+  const level = snapshot.nodes[input.levelId];
+  if (!level) return failure("node_not_found", `未找到楼层：${input.levelId}`);
+  if (level.type !== "level") return failure("invalid_command", "只能清空楼层节点。");
+
+  const nodeIdsToDelete = collectDescendantNodeIds(snapshot, level.id);
+  const nodes = { ...snapshot.nodes };
+  for (const id of nodeIdsToDelete) delete nodes[id];
+  return success(snapshot, input, nodes);
+}
+
+function collectDescendantNodeIds(snapshot: SceneSnapshot, parentId: string): Set<string> {
+  const nodeIds = new Set<string>();
+  const pendingParentIds = [parentId];
+  while (pendingParentIds.length) {
+    const currentParentId = pendingParentIds.pop();
+    if (!currentParentId) continue;
+    for (const node of Object.values(snapshot.nodes)) {
+      if (node.parentId !== currentParentId || nodeIds.has(node.id)) continue;
+      nodeIds.add(node.id);
+      pendingParentIds.push(node.id);
+    }
+  }
+  return nodeIds;
 }
 
 function createWall(
@@ -590,7 +621,7 @@ function validateWall(wall: SceneWallNode): string | undefined {
   return undefined;
 }
 
-/** Validates a simple, non-degenerate floor footprint before it reaches Pascal. */
+/** Validates a simple, non-degenerate floor footprint before rendering. */
 function validateSlab(slab: SceneSlabNode): string | undefined {
   if (!slab.name.trim()) return "楼板名称不能为空。";
   if (slab.polygon.length < 3 || !slab.polygon.every(isFinitePoint)) return "楼板轮廓至少需要三个有限坐标点。";

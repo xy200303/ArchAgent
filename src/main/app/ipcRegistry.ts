@@ -85,6 +85,7 @@ export function registerIpcHandlers(options: {
   saveComponentLibraryPreview: (id: string, dataBase64: string) => void;
   placeComponentLibraryItem: (id: string) => SceneSnapshot;
   updateComponentLibraryItem: (id: string, input: Pick<GlobalComponentSummary, "name" | "description" | "category" | "tags" | "placementRule">) => GlobalComponentRecord;
+  deleteComponentLibraryItem: (id: string) => void;
 }): void {
   ipcMain.handle("app:metadata", options.getAppMetadata);
   ipcMain.handle("app:recent-projects", options.listRecentProjects);
@@ -164,6 +165,7 @@ export function registerIpcHandlers(options: {
   ipcMain.handle("component-library:load-preview", (_event, id: string) => options.loadComponentLibraryPreview(id));
   ipcMain.handle("component-library:save-preview", (_event, id: string, dataBase64: string) => options.saveComponentLibraryPreview(id, dataBase64));
   ipcMain.handle("component-library:update", (_event, id, input) => options.updateComponentLibraryItem(id, input));
+  ipcMain.handle("component-library:delete", (_event, id: string) => options.deleteComponentLibraryItem(id));
   ipcMain.handle("component-library:place", (_event, id: string) => options.placeComponentLibraryItem(id));
 }
 

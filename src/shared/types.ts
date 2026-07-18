@@ -407,7 +407,7 @@ export interface ArchAgentApi {
     saveExport(target: SceneExportTarget, dataBase64?: string): Promise<string>;
     loadAsset(assetId: string): Promise<SceneAssetPayload>;
   };
-  componentLibrary: { list(): Promise<GlobalComponentSummary[]>; loadAsset(id: string): Promise<SceneAssetPayload>; loadPreview(id: string): Promise<string | undefined>; savePreview(id: string, dataBase64: string): Promise<void>; update(id: string, input: Pick<GlobalComponentSummary, "name" | "description" | "category" | "tags" | "placementRule">): Promise<GlobalComponentSummary>; place(id: string): Promise<SceneSnapshot>; };
+  componentLibrary: { list(): Promise<GlobalComponentSummary[]>; loadAsset(id: string): Promise<SceneAssetPayload>; loadPreview(id: string): Promise<string | undefined>; savePreview(id: string, dataBase64: string): Promise<void>; update(id: string, input: Pick<GlobalComponentSummary, "name" | "description" | "category" | "tags" | "placementRule">): Promise<GlobalComponentSummary>; delete(id: string): Promise<void>; place(id: string): Promise<SceneSnapshot>; };
   events: {
     subscribe(listener: (event: RendererEvent) => void): () => void;
   };

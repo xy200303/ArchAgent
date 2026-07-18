@@ -1,83 +1,29 @@
-# ArchAgent 接口文档
+# ArchAgent 三维接口约定
 
-## 1. 原则
+## 权威入口
 
-Renderer、人工编辑工具和 Agent 不直接跨进程修改 Pascal store 或项目文件。所有建筑场景变更通过 Main 进程的 `SceneService` 执行；Pascal Viewer 只消费广播后的只读快照。产品没有 R3F/WebGL 编辑器回退。
+Renderer、人工工具和 Agent 都不能跨进程直接修改项目文件或 Three 对象。所有场景变更通过 Main 进程的 `SceneService`：
 
-## 2. 共享场景契约
-
-```ts
-type ScenePoint = [number, number];
-
-type SceneCommandInput =
-  | {
-      type: "wall.create";
-      id?: string;
-      parentId: string;
-      name?: string;
-      start: ScenePoint;
-      end: ScenePoint;
-      height?: number;
-      thickness?: number;
-      materialPreset?: WallMaterialPreset;
-    }
-  | {
-      type: "wall.update";
-      id: string;
-      name?: string;
-      start?: ScenePoint;
-      end?: ScenePoint;
-      height?: number;
-      thickness?: number;
-      materialPreset?: WallMaterialPreset;
-    }
-  | { type: "node.delete"; id: string };
-
-type SceneCommandResult =
-  | { accepted: true; command: SceneCommand; snapshot: SceneSnapshot }
-  | {
-      accepted: false;
-      code: "invalid_command" | "node_not_found" | "duplicate_node" | "invalid_parent" | "unsupported_node";
-      message: string;
-    };
+```text
+scene.getSnapshot()       -> SceneSnapshot
+scene.execute(command)    -> SceneCommandResult
+scene.undo()/redo()       -> SceneHistoryResult
+scene.import()/export()   -> 项目文件与 SceneSnapshot
 ```
 
-完整命令契约以 `src/shared/modeling3d/sceneContracts.ts` 为准，当前支持墙体、楼板、门和窗的创建与修改，以及 `node.delete`。`SceneSnapshot` 使用 `rootNodeIds` 与扁平 `nodes` 保存 Site、Building、Level、Slab、Wall、Door 与 Window。坐标为米：X/Z 是建筑平面，Y 是高度。墙体和楼板只能创建在有效 Level 下；门窗只能创建在有效墙体上，并受墙端余量、墙高和洞口重叠校验约束；`node.delete` 支持墙体、楼板、门和窗。
+成功命令广播 `scene.command.applied`，项目切换、撤销和重做广播 `scene.snapshot.restored`。R3F Viewer 收到新快照后重新投影几何；失败命令不改变快照。
 
-## 3. IPC
+## 命令边界
 
-```ts
-interface ArchAgentApi {
-  scene: {
-    activateProject(projectPath: string): Promise<SceneSnapshot>;
-    getSnapshot(): Promise<SceneSnapshot>;
-    execute(command: SceneCommandInput): Promise<SceneCommandResult>;
-    getHistoryState(): Promise<SceneHistoryState>;
-    undo(): Promise<SceneHistoryResult>;
-    redo(): Promise<SceneHistoryResult>;
-  };
-  events: {
-    subscribe(listener: (event: RendererEvent) => void): () => void;
-  };
-}
-```
+当前命令覆盖墙、楼板、天花、柱、分区、楼梯、围栏、门、窗与外部资产的创建、更新或删除。门窗以墙体 ID 为前置条件；外部资产只有名称、格式、位置、旋转与缩放的语义，不能被当作参数化建筑构件。
 
-`scene.execute` 成功后 Main 广播 `scene.command.applied`，其 payload 含已应用的命令和最新快照。撤销、重做或切换项目会广播 `scene.snapshot.restored`。Renderer 按事件更新 Pascal 场景投影；失败结果不修改快照，也不广播事件。
+Agent 必须先读取需要的节点 ID，再调用同一条命令链路，并在响应中报告受影响节点和 snapshot revision。
 
-## 4. Agent 工具
+## 文件边界
 
-| 工具 | 用途 |
-| --- | --- |
-| `get_scene` | 读取当前 revision、楼层、墙体、楼板、门和窗摘要；更新或删除前必须调用 |
-| `create_wall` | 在指定楼层创建直墙 |
-| `update_wall` | 修改已存在墙体的名称、端点、尺寸或材质 |
-| `create_slab` / `update_slab` | 创建或修改有效楼层下的多边形楼板 |
-| `create_door` / `update_door` | 在指定墙体上创建或修改门洞和门 |
-| `create_window` / `update_window` | 在指定墙体上创建或修改窗洞和窗 |
-| `delete_node` | 删除指定墙体、楼板、门或窗 |
+- 场景：`.agent/scene.json`
+- 资产：`.agent/assets/`
+- 可导入：GLB、GLTF、OBJ、STL
+- 可导出：GLB、GLTF、OBJ、STL 与场景 JSON
 
-Agent 工具只把参数转换为 `SceneCommandInput` 并调用 `SceneService`。它不得直接写 Pascal store、创建未支持节点、声明已导入通用 Mesh，或声称导出了当前未提供的格式。场景命令成功后，Agent 应报告受影响节点 ID 与 snapshot revision。
-
-## 5. 能力扩展
-
-当前正式构件 `wall`、`slab`、`ceiling`、`column`、`zone`、`stair`、`fence`、`door`、`window` 均遵循共享命令、Reducer 校验、Pascal 映射、UI 检查器和 Agent 工具的同一条链路。Roof、RoofSegment、Skylight 与资产类节点必须先建立完整父子关系和几何约束，之后才能开放对应 Agent 工具；不能只增加不可验证的卡片。
+GLTF 仅保证内嵌资源或自包含 GLB；带外部 `.bin`、贴图依赖的模型应预先打包。IPC 只传受控路径或 Base64 载荷，避免泄露任意绝对路径。

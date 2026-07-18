@@ -1,5 +1,8 @@
 /** Renders only built-in components that have a complete scene-command workflow. */
-import { ChevronDown, ChevronRight } from "lucide-react";
+import * as AlertDialog from "@radix-ui/react-alert-dialog";
+import * as Dialog from "@radix-ui/react-dialog";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { ChevronDown, ChevronRight, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
 import { memo, useEffect, useState, type JSX } from "react";
 import type { ArchAgentApi, GlobalComponentSummary } from "../../../../../shared/types";
 import type { BuiltInComponentId } from "./componentLibraryContracts";
@@ -32,6 +35,9 @@ export const ComponentLibraryPanel = memo(function ComponentLibraryPanel({
 }): JSX.Element {
   const [assets, setAssets] = useState<GlobalComponentSummary[]>([]);
   const [selectedAsset, setSelectedAsset] = useState<GlobalComponentSummary>();
+  const [editingAsset, setEditingAsset] = useState<GlobalComponentSummary>();
+  const [assetPendingDelete, setAssetPendingDelete] = useState<GlobalComponentSummary>();
+  const [libraryMessage, setLibraryMessage] = useState("");
   const [structureOpen, setStructureOpen] = useState(true);
   const [customOpen, setCustomOpen] = useState(true);
   useEffect(() => {
@@ -78,24 +84,71 @@ export const ComponentLibraryPanel = memo(function ComponentLibraryPanel({
         </button>
         {customOpen ? <div id="custom-components" className="component-library-list">
           <div className="component-library-grid">
-            {assets.map((asset) => (
-              <button key={asset.id} type="button" className="component-library-item" onClick={() => setSelectedAsset(asset)} aria-label={`编辑构件 ${asset.name}`}>
-                <ComponentModelPreview api={api} assetId={asset.id} label={asset.name} />
-                <div className="component-library-item-copy">
-                  <span>{asset.name}</span>
-                  <small>{asset.category || asset.prompt || asset.model}</small>
-                </div>
-              </button>
-            ))}
+            {assets.map((asset) => <PersonalComponentCard key={asset.id} asset={asset} api={api} selected={selectedAsset?.id === asset.id} onSelect={() => setSelectedAsset(asset)} onEdit={() => setEditingAsset(asset)} onPlace={() => onPlaceComponent(asset.id)} onDelete={() => setAssetPendingDelete(asset)} />)}
             {!assets.length ? <p className="component-library-note">通过 Agent 调用混元生3D生成的模型会显示在这里。</p> : null}
           </div>
         </div> : null}
-        {customOpen && selectedAsset ? <ComponentSemanticEditor asset={selectedAsset} api={api} onSaved={(next) => { setAssets((current) => current.map((item) => item.id === next.id ? next : item)); setSelectedAsset(next); }} onPlace={() => onPlaceComponent(selectedAsset.id)} /> : null}
       </section>
+      {libraryMessage ? <p className="component-library-error" role="alert">{libraryMessage}</p> : null}
       <p className="component-library-note">门窗均绑定墙体并经过洞口重叠校验，确保建筑关系始终可验证。</p>
+      <ComponentSemanticDialog asset={editingAsset} api={api} onOpenChange={(open) => { if (!open) setEditingAsset(undefined); }} onSaved={(next) => { setAssets((current) => current.map((item) => item.id === next.id ? next : item)); setSelectedAsset(next); setEditingAsset(undefined); }} onPlace={() => { if (editingAsset) onPlaceComponent(editingAsset.id); }} />
+      <DeleteComponentDialog asset={assetPendingDelete} onOpenChange={(open) => { if (!open) setAssetPendingDelete(undefined); }} onDelete={() => {
+        const asset = assetPendingDelete;
+        if (!asset) return;
+        void api.componentLibrary.delete(asset.id)
+          .then(() => {
+            setAssets((current) => current.filter((item) => item.id !== asset.id));
+            if (selectedAsset?.id === asset.id) setSelectedAsset(undefined);
+            setAssetPendingDelete(undefined);
+          })
+          .catch((error: unknown) => setLibraryMessage(error instanceof Error ? error.message : String(error)));
+      }} />
     </WorkspaceSidePanel>
   );
 });
+
+function PersonalComponentCard({
+  asset,
+  api,
+  selected,
+  onSelect,
+  onEdit,
+  onPlace,
+  onDelete
+}: {
+  asset: GlobalComponentSummary;
+  api: ArchAgentApi;
+  selected: boolean;
+  onSelect: () => void;
+  onEdit: () => void;
+  onPlace: () => void;
+  onDelete: () => void;
+}): JSX.Element {
+  return (
+    <article className={`component-library-item personal-component-card${selected ? " selected" : ""}`}>
+      <button type="button" className="personal-component-main" onClick={onSelect} aria-label={`选中构件 ${asset.name}`}>
+        <ComponentModelPreview api={api} assetId={asset.id} label={asset.name} />
+        <div className="component-library-item-copy">
+          <span>{asset.name}</span>
+          <small>{asset.category || asset.prompt || asset.model}</small>
+        </div>
+      </button>
+      <DropdownMenu.Root>
+        <DropdownMenu.Trigger asChild>
+          <button type="button" className="component-card-more" aria-label={`管理构件 ${asset.name}`}><MoreHorizontal size={17} /></button>
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content className="dropdown-content component-card-menu" align="end" sideOffset={6}>
+            <DropdownMenu.Item className="dropdown-item" onSelect={onPlace}><Plus size={14} />放入场景</DropdownMenu.Item>
+            <DropdownMenu.Item className="dropdown-item" onSelect={onEdit}><Pencil size={14} />编辑语义</DropdownMenu.Item>
+            <DropdownMenu.Separator className="dropdown-separator" />
+            <DropdownMenu.Item className="dropdown-item danger" onSelect={onDelete}><Trash2 size={14} />删除构件</DropdownMenu.Item>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
+    </article>
+  );
+}
 
 function ComponentLibraryItem({
   component,
@@ -112,6 +165,34 @@ function ComponentLibraryItem({
         <small>{component.description}</small>
       </div>
     </button>
+  );
+}
+
+function ComponentSemanticDialog({
+  asset,
+  api,
+  onSaved,
+  onPlace,
+  onOpenChange
+}: {
+  asset?: GlobalComponentSummary;
+  api: ArchAgentApi;
+  onSaved: (asset: GlobalComponentSummary) => void;
+  onPlace: () => void;
+  onOpenChange: (open: boolean) => void;
+}): JSX.Element {
+  if (!asset) return <></>;
+  return (
+    <Dialog.Root open={Boolean(asset)} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="modal-backdrop" />
+        <Dialog.Content className="modal-panel component-semantic-dialog" aria-describedby="component-semantic-description">
+          <Dialog.Title>编辑构件语义</Dialog.Title>
+          <Dialog.Description id="component-semantic-description">补充构件的名称、分类、用途与放置规则，供 Agent 理解和调用。</Dialog.Description>
+          <ComponentSemanticEditor asset={asset} api={api} onSaved={onSaved} onPlace={onPlace} />
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
 
@@ -162,5 +243,23 @@ function ComponentSemanticEditor({
         <button type="button" className="primary-action" onClick={onPlace}>放入场景</button>
       </div>
     </div>
+  );
+}
+
+function DeleteComponentDialog({ asset, onOpenChange, onDelete }: { asset?: GlobalComponentSummary; onOpenChange: (open: boolean) => void; onDelete: () => void }): JSX.Element {
+  return (
+    <AlertDialog.Root open={Boolean(asset)} onOpenChange={onOpenChange}>
+      <AlertDialog.Portal>
+        <AlertDialog.Overlay className="modal-backdrop" />
+        <AlertDialog.Content className="modal-panel delete-panel">
+          <AlertDialog.Title>删除构件？</AlertDialog.Title>
+          <AlertDialog.Description>将永久删除“{asset?.name}”的模型、语义信息和预览图，已放入场景的实例不会被删除。</AlertDialog.Description>
+          <footer>
+            <AlertDialog.Cancel asChild><button type="button" className="secondary-action">取消</button></AlertDialog.Cancel>
+            <AlertDialog.Action asChild><button type="button" className="danger-action" onClick={onDelete}>删除构件</button></AlertDialog.Action>
+          </footer>
+        </AlertDialog.Content>
+      </AlertDialog.Portal>
+    </AlertDialog.Root>
   );
 }

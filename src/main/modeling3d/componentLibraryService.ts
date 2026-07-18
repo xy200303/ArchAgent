@@ -1,6 +1,6 @@
 /** Reads the global user component library without exposing arbitrary filesystem paths. */
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { basename, extname, join, resolve } from "node:path";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { basename, extname, isAbsolute, join, relative, resolve } from "node:path";
 import type { GlobalComponentSummary } from "../../shared/types";
 import type { SceneAssetPayload, SceneAssetNode } from "../../shared/modeling3d/sceneContracts";
 
@@ -33,6 +33,25 @@ export function updateGlobalComponent(rootDir: string, id: string, input: Pick<G
   const next = { ...component, ...input, tags: input.tags.map((tag) => tag.trim()).filter(Boolean) };
   writeFileSync(`${component.file}.semantic.json`, JSON.stringify(next, null, 2), "utf8");
   return next;
+}
+
+/** Removes one registered personal-library asset and its owned metadata files. */
+export function deleteGlobalComponent(rootDir: string, id: string): void {
+  const component = findGlobalComponent(rootDir, id);
+  if (!component) throw new Error("未找到全局构件。");
+
+  const directory = getComponentLibraryDirectory(rootDir);
+  const files = new Set([
+    component.file,
+    `${component.file}.semantic.json`,
+    component.previewFile,
+    getDefaultPreviewFile(component.file)
+  ].filter((file): file is string => Boolean(file)));
+
+  for (const file of files) {
+    if (!isWithinDirectory(file, directory)) throw new Error("构件文件不在个人构建库目录中。");
+    if (existsSync(file)) unlinkSync(file);
+  }
 }
 
 /** Copies a project-local mesh into the global personal library with stable semantic metadata. */
@@ -110,6 +129,11 @@ export function listGlobalComponents(rootDir: string, legacyProjectPath?: string
 
 function getComponentLibraryDirectory(rootDir: string): string {
   return join(rootDir, "data", "component-library", "assets");
+}
+
+function isWithinDirectory(filePath: string, directory: string): boolean {
+  const relativePath = relative(resolve(directory), resolve(filePath));
+  return Boolean(relativePath) && !relativePath.startsWith("..") && !isAbsolute(relativePath);
 }
 
 const SUPPORTED_COMPONENT_EXTENSIONS = new Set([".glb", ".gltf", ".obj", ".stl"]);

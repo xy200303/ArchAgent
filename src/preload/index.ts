@@ -96,6 +96,7 @@ const api: ArchAgentApi = {
     loadPreview: (id: string) => ipcRenderer.invoke("component-library:load-preview", id),
     savePreview: (id: string, dataBase64: string) => ipcRenderer.invoke("component-library:save-preview", id, dataBase64),
     update: (id: string, input: Pick<GlobalComponentSummary, "name" | "description" | "category" | "tags" | "placementRule">) => ipcRenderer.invoke("component-library:update", id, input),
+    delete: (id: string) => ipcRenderer.invoke("component-library:delete", id),
     place: (id: string) => ipcRenderer.invoke("component-library:place", id)
   },
   events: {

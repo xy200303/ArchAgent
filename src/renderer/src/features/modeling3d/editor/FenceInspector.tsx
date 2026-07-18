@@ -1,4 +1,4 @@
-/** Creates and edits Pascal-native boundary fences through the scene command boundary. */
+/** Creates and edits boundary fences through the shared scene command boundary. */
 import { Fence, Save, Trash2 } from "lucide-react";
 import { useEffect, useState, type FormEvent, type JSX } from "react";
 import type { FenceStyle, SceneCommandInput, SceneFenceNode, WallMaterialPreset } from "../../../../../shared/modeling3d/sceneContracts";

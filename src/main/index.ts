@@ -14,7 +14,7 @@ import { createProjectService } from "./projects/projectService";
 import { createSceneService } from "./modeling3d/sceneService";
 import { loadProjectScene, saveProjectScene } from "./modeling3d/sceneProjectPersistence";
 import { createSceneExchangeService } from "./modeling3d/sceneExchangeService";
-import { findGlobalComponent, listGlobalComponents, loadGlobalComponentAsset, loadGlobalComponentPreview, saveGlobalComponentPreview, updateGlobalComponent } from "./modeling3d/componentLibraryService";
+import { deleteGlobalComponent, findGlobalComponent, listGlobalComponents, loadGlobalComponentAsset, loadGlobalComponentPreview, saveGlobalComponentPreview, updateGlobalComponent } from "./modeling3d/componentLibraryService";
 import type { SessionMemoryEntry } from "./projects/sessionPersistence";
 import { APP_DISPLAY_NAME, createAppMetadata } from "../shared/appMetadata";
 import type {
@@ -27,12 +27,8 @@ import type {
 const { app, BrowserWindow } = electron;
 app.setName(APP_DISPLAY_NAME);
 
-// 启用 WebGPU：Electron 39 的 Chromium 132 已支持 WebGPU，但部分环境仍需要显式打开特性开关。
-app.commandLine.appendSwitch("enable-unsafe-webgpu");
-app.commandLine.appendSwitch("enable-features", "WebGPU");
-
 // 调试开关：在极少数无 GPU 驱动的 CI/远程环境中可设 ARCH_AGENT_DISABLE_GPU=1 禁用硬件加速。
-// 正常 Windows 桌面环境必须启用 GPU，Pascal 3D 编辑器依赖 WebGPU。
+// 正常 Windows 桌面环境启用 GPU，以获得 Three.js WebGL 的最佳交互性能。
 if (process.env.ARCH_AGENT_DISABLE_GPU === "1") {
   app.disableHardwareAcceleration();
 }
@@ -253,6 +249,7 @@ function registerIpc(): void {
     loadComponentLibraryPreview: (id) => loadGlobalComponentPreview(rootDir, id),
     saveComponentLibraryPreview: (id, dataBase64) => saveGlobalComponentPreview(rootDir, id, dataBase64),
     updateComponentLibraryItem: (id, input) => updateGlobalComponent(rootDir, id, input),
+    deleteComponentLibraryItem: (id) => deleteGlobalComponent(rootDir, id),
     placeComponentLibraryItem: (id) => {
       const component = findGlobalComponent(rootDir, id);
       if (!component) throw new Error("未找到全局构件。");

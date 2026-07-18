@@ -1,7 +1,7 @@
-/** Coordinates scene commands, snapshots, and the renderer-side Pascal viewport. */
+/** Coordinates scene commands, snapshots, and the renderer-owned WebGL viewport. */
 import { Axis3d, Check, ChevronDown, Crosshair, Download, Layers3, Library, Orbit, PanelsTopLeft, PencilRuler, Plus, Redo2, Square, Undo2, Upload, type LucideIcon } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type JSX } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type JSX } from "react";
 import type { ArchAgentApi } from "../../../../../shared/types";
 import type { SceneCeilingNode, SceneColumnNode, SceneCommandInput, SceneDoorNode, SceneExchangeFormat, SceneExportTarget, SceneSlabNode, SceneSnapshot, SceneWallNode, SceneWindowNode } from "../../../../../shared/modeling3d/sceneContracts";
 import type { SceneHistoryState } from "../../../../../shared/modeling3d/sceneContracts";
@@ -20,15 +20,15 @@ import { FenceInspector } from "../editor/FenceInspector";
 import { AssetInspector } from "../editor/AssetInspector";
 import type { BuiltInComponentId, ComponentLibraryRequest } from "../editor/componentLibraryContracts";
 import { SceneToolbar } from "../editor/SceneToolbar";
-import { PascalPreviewBoundary } from "./PascalPreviewBoundary";
-import type { PascalCameraPreset } from "./PascalViewer";
+import { ScenePreviewBoundary } from "./ScenePreviewBoundary";
+import type { EditorCameraPreset } from "./R3FViewer";
 import { useWallDrawing } from "./useWallDrawing";
 import { applySceneCommand } from "../../../../../shared/modeling3d/sceneReducer";
 import { buildRelocationCommand, canRelocateSceneNode } from "./relocationCommand";
 
-const PascalViewer = lazy(() => import("./PascalViewer"));
+const R3FViewer = lazy(() => import("./R3FViewer"));
 
-const CAMERA_PRESET_OPTIONS: Array<{ id: PascalCameraPreset; label: string; icon: LucideIcon }> = [
+const CAMERA_PRESET_OPTIONS: Array<{ id: EditorCameraPreset; label: string; icon: LucideIcon }> = [
   { id: "free", label: "自由视角", icon: Orbit },
   { id: "top", label: "顶视图", icon: Square },
   { id: "front", label: "正视图", icon: PanelsTopLeft },
@@ -51,15 +51,14 @@ export function SpatialEditor({
   const [draggingNodeId, setDraggingNodeId] = useState<string>();
   const [dragPreviewPoint, setDragPreviewPoint] = useState<[number, number]>();
   const [panelMode, setPanelMode] = useState<"none" | "create-wall" | "create-slab" | "create-ceiling" | "create-column" | "create-zone" | "create-stair" | "create-fence" | "create-door" | "create-window" | "selected">("none");
-  const [pascalCameraPreset, setPascalCameraPreset] = useState<PascalCameraPreset>("free");
-  const [pascalCameraRevision, setPascalCameraRevision] = useState(0);
+  const [cameraPreset, setCameraPreset] = useState<EditorCameraPreset>("free");
+  const [cameraRevision, setCameraRevision] = useState(0);
   const [focusRevision, setFocusRevision] = useState(0);
-  const [pascalPreviewKey, setPascalPreviewKey] = useState(0);
+  const [previewKey, setPreviewKey] = useState(0);
   const [message, setMessage] = useState("");
   const [historyState, setHistoryState] = useState<SceneHistoryState>({ canUndo: false, canRedo: false });
   const [exportRequest, setExportRequest] = useState<{ format: Exclude<SceneExchangeFormat, "scene-json">; revision: number }>();
   const [pendingExportTarget, setPendingExportTarget] = useState<SceneExportTarget>();
-  const lastFocusedSelectionId = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     let active = true;
@@ -113,16 +112,6 @@ export function SpatialEditor({
   );
   const focusTarget = useMemo(() => getFocusTarget(selectedNode, snapshot), [selectedNode, snapshot]);
 
-  /** Centers a newly selected component once without fighting property edits or drag previews. */
-  useEffect(() => {
-    if (!selectedNodeId || !focusTarget) {
-      lastFocusedSelectionId.current = undefined;
-      return;
-    }
-    if (lastFocusedSelectionId.current === selectedNodeId) return;
-    lastFocusedSelectionId.current = selectedNodeId;
-    setFocusRevision((revision) => revision + 1);
-  }, [focusTarget, selectedNodeId]);
   const previewSnapshot = useMemo(() => {
     if (!snapshot || !draggingNode || !dragPreviewPoint) return snapshot;
     const relocation = buildRelocationCommand(draggingNode, dragPreviewPoint);
@@ -171,14 +160,14 @@ export function SpatialEditor({
     if (componentRequest?.componentId === "window") openWindowCreation();
   }, [componentRequest?.componentId, componentRequest?.revision, openCeilingCreation, openColumnCreation, openDoorCreation, openFenceCreation, openSlabCreation, openStairCreation, openWallCreation, openWindowCreation, openZoneCreation]);
 
-  const handlePascalError = useCallback((error: string): void => {
+  const handleViewerError = useCallback((error: string): void => {
     setMessage(`三维场景同步失败：${error}`);
   }, []);
 
   /** Requests a camera move even when the selected preset has not changed. */
-  const selectCameraPreset = useCallback((preset: PascalCameraPreset): void => {
-    setPascalCameraPreset(preset);
-    setPascalCameraRevision((revision) => revision + 1);
+  const selectCameraPreset = useCallback((preset: EditorCameraPreset): void => {
+    setCameraPreset(preset);
+    setCameraRevision((revision) => revision + 1);
   }, []);
 
   const focusSelectedNode = useCallback((): void => {
@@ -228,7 +217,7 @@ export function SpatialEditor({
         setSelectedNodeId(result.command.id);
         setPanelMode("selected");
       }
-      if (result.command.type === "node.delete") {
+      if (result.command.type === "node.delete" || result.command.type === "level.clear") {
         setSelectedNodeId(undefined);
         setPanelMode("none");
       }
@@ -316,6 +305,10 @@ export function SpatialEditor({
     void execute({ type: "node.delete", id });
   }, [execute]);
 
+  const clearLevel = useCallback((levelId: string): void => {
+    void execute({ type: "level.clear", levelId });
+  }, [execute]);
+
   /** Starts export by selecting a destination before expensive geometry serialization begins. */
   const exportScene = useCallback(async (): Promise<void> => {
     try {
@@ -371,7 +364,7 @@ export function SpatialEditor({
             <TooltipButton label="聚焦选中构件" className="scene-tool-button" disabled={!focusTarget} onClick={focusSelectedNode}>
               <Crosshair size={17} />
             </TooltipButton>
-            <CameraPresetMenu preset={pascalCameraPreset} onSelectPreset={selectCameraPreset} />
+            <CameraPresetMenu preset={cameraPreset} onSelectPreset={selectCameraPreset} />
             <span className="scene-toolbar-divider" aria-hidden="true" />
             <TooltipButton label="撤销上一步" className="scene-tool-button" onClick={() => void restoreHistory("undo")} disabled={!historyState.canUndo}>
               <Undo2 size={17} />
@@ -398,7 +391,15 @@ export function SpatialEditor({
         className={`scene-editor-layout${showInspector ? " has-inspector" : ""}${componentLibraryOpen ? " component-library-mode" : ""}${sceneNavigationOpen ? "" : " no-navigation"}`}
       >
         {componentLibraryOpen ? <ComponentLibraryPanel api={api} onSelectComponent={onSelectBuiltInComponent} onPlaceComponent={(id) => { void api.componentLibrary.place(id).then(setSnapshot).catch((error: unknown) => setMessage(`放入构件失败：${getErrorMessage(error)}`)); }} /> : null}
-        {sceneNavigationOpen ? <SceneNavigationPanel snapshot={snapshot} selectedNodeId={selectedNodeId} onSelectNode={selectNode} /> : null}
+        {sceneNavigationOpen ? (
+          <SceneNavigationPanel
+            snapshot={snapshot}
+            selectedNodeId={selectedNodeId}
+            onSelectNode={selectNode}
+            onDeleteNode={deleteNode}
+            onClearLevel={clearLevel}
+          />
+        ) : null}
         <div className={`scene-viewport${wallDrawing.active ? " drawing" : ""}`}>
           {wallDrawing.active ? (
             <div className="spatial-editor-notice" role="status">
@@ -408,13 +409,13 @@ export function SpatialEditor({
               </div>
             </div>
           ) : null}
-          <PascalPreviewBoundary key={pascalPreviewKey} onRetry={() => setPascalPreviewKey((key) => key + 1)}>
+          <ScenePreviewBoundary key={previewKey} onRetry={() => setPreviewKey((key) => key + 1)}>
             <Suspense fallback={<div className="spatial-editor-fallback">正在加载三维视图…</div>}>
-              <PascalViewer
+              <R3FViewer
                 api={api}
                 snapshot={previewSnapshot ?? snapshot}
-                cameraPreset={pascalCameraPreset}
-                cameraRevision={pascalCameraRevision}
+                cameraPreset={cameraPreset}
+                cameraRevision={cameraRevision}
                 wallDrawingActive={wallDrawing.active}
                 wallDrawingDraft={wallDrawing.draft}
                 manualDragActive={Boolean(draggingNode)}
@@ -428,12 +429,13 @@ export function SpatialEditor({
                 onSelectNode={selectNode}
                 focusTarget={focusTarget}
                 focusRevision={focusRevision}
-                onError={handlePascalError}
+                onError={handleViewerError}
                 exportRequest={exportRequest}
                 onExportComplete={completeExport}
+                onCameraPreset={selectCameraPreset}
               />
             </Suspense>
-          </PascalPreviewBoundary>
+          </ScenePreviewBoundary>
         </div>
         {panelMode === "create-wall" || selectedWall ? (
           <WallInspector
@@ -476,8 +478,8 @@ function CameraPresetMenu({
   preset,
   onSelectPreset
 }: {
-  preset: PascalCameraPreset;
-  onSelectPreset: (preset: PascalCameraPreset) => void;
+  preset: EditorCameraPreset;
+  onSelectPreset: (preset: EditorCameraPreset) => void;
 }): JSX.Element {
   const current = CAMERA_PRESET_OPTIONS.find((option) => option.id === preset) ?? CAMERA_PRESET_OPTIONS[0];
   const CurrentIcon = current.icon;

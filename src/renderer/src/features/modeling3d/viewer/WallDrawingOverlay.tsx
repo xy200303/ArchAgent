@@ -1,4 +1,4 @@
-/** Renders the Pascal-hosted wall-tool hit surface and non-persistent preview. */
+/** Renders the R3F wall-tool hit surface and non-persistent preview. */
 import type { ThreeEvent } from "@react-three/fiber";
 import type { JSX } from "react";
 import type { ScenePoint } from "../../../../../shared/modeling3d/sceneContracts";

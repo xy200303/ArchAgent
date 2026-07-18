@@ -2,7 +2,6 @@
 import { useThree } from "@react-three/fiber";
 import { useEffect, useRef, type JSX } from "react";
 import { Plane, Raycaster, Vector2, Vector3 } from "three";
-import { useViewer } from "@pascal-app/viewer";
 import type { ScenePoint } from "../../../../../shared/modeling3d/sceneContracts";
 import { snapWallDrawingPoint } from "./wallDrawingMath";
 
@@ -54,7 +53,6 @@ export function SelectedNodeDragController({
       const current = interaction.current;
       if (current.timer !== undefined) window.clearTimeout(current.timer);
       if (current.dragging) {
-        useViewer.getState().setInputDragging(false);
         onDragState(false, current.nodeId);
       }
       interaction.current = { nodeId: "", pointerId: -1, startX: 0, startY: 0, dragging: false };
@@ -77,8 +75,6 @@ export function SelectedNodeDragController({
         if (interaction.current.pointerId !== event.pointerId) return;
         interaction.current.dragging = true;
         canvas.setPointerCapture(event.pointerId);
-        // Pascal ignores the click synthesized on release while the host owns placement.
-        useViewer.getState().setInputDragging(true);
         onDragState(true, nodeId);
         const point = toGroundPoint(event);
         if (point) schedulePreview(nodeId, point);

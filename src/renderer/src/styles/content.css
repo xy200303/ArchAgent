@@ -65,7 +65,7 @@
   background: var(--fluent-color-neutral-background1);
 }
 
-.pascal-viewer-host {
+.r3f-viewer-host {
   flex: 1 1 auto;
   min-height: 0;
   position: relative;
@@ -73,12 +73,29 @@
 }
 
 .spatial-editor > canvas,
-.pascal-viewer-host canvas {
+.r3f-viewer-host canvas:not(.viewport-navigation-gizmo) {
   display: block;
   flex: 1 1 auto;
   min-height: 0;
   width: 100% !important;
   height: 100% !important;
+}
+
+.viewport-navigation-gizmo {
+  position: absolute;
+  right: var(--fluent-spacing-xl);
+  bottom: var(--fluent-spacing-xl);
+  z-index: 3;
+  display: block;
+  width: 120px;
+  height: 120px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.viewport-navigation-gizmo:active {
+  cursor: grabbing;
 }
 
 .spatial-editor-fallback {
@@ -188,7 +205,7 @@
   margin: 0 2px;
 }
 
-.pascal-preview-fallback {
+.scene-preview-fallback {
   display: grid;
   place-items: center;
   align-content: center;
@@ -199,7 +216,7 @@
   text-align: center;
 }
 
-.pascal-preview-fallback strong {
+.scene-preview-fallback strong {
   color: var(--fluent-color-neutral-foreground1);
 }
 
@@ -505,7 +522,7 @@
 }
 
 .scene-viewport > .spatial-editor-fallback,
-.scene-viewport > .pascal-viewer-host,
+.scene-viewport > .r3f-viewer-host,
 .scene-viewport > .scene-r3f-viewport {
   height: 100%;
 }
