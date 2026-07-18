@@ -99,6 +99,89 @@ export interface ChatSession {
   createdAt: string;
   updatedAt: string;
   items: StreamItem[];
+  workflow?: ReconstructionWorkflow;
+}
+
+export type ReconstructionWorkflowStatus =
+  | "needs_clarification"
+  | "ready_for_confirmation"
+  | "generating"
+  | "completed"
+  | "needs_attention"
+  | "cancelled";
+
+export interface ReconstructionWorkflowQuestionOption {
+  id: string;
+  label: string;
+  description?: string;
+}
+
+export interface ReconstructionWorkflowQuestion {
+  id: string;
+  prompt: string;
+  required: boolean;
+  options: ReconstructionWorkflowQuestionOption[];
+  selectedOptionId?: string;
+}
+
+export interface ReconstructionWorkflowPlacement {
+  position?: [number, number, number];
+  rotation?: [number, number, number];
+  scale?: [number, number, number];
+}
+
+export interface ReconstructionWorkflowAsset {
+  id: string;
+  name: string;
+  quantity: number;
+  source: "library" | "image" | "text";
+  componentId?: string;
+  imagePath?: string;
+  prompt?: string;
+  placement?: ReconstructionWorkflowPlacement;
+  placements?: ReconstructionWorkflowPlacement[];
+  status: "planned" | "queued" | "running" | "placed" | "failed" | "cancelled";
+  componentIdResult?: string;
+  sceneAssetIds?: string[];
+  dedupeKey?: string;
+  providerJob?: {
+    taskId: string;
+    model: "hy-3d-3.0" | "hy-3d-3.1" | "hy-3d-express";
+    generateType: "normal" | "low_poly" | "geometry" | "sketch";
+    faceCount?: number;
+  };
+  error?: string;
+}
+
+/** A user-approved, resumable plan for expensive 3D reconstruction work. */
+export interface ReconstructionWorkflow {
+  id: string;
+  revision: number;
+  mode: "floorplan" | "photo_simple" | "photo_complex";
+  title: string;
+  summary: string;
+  assumptions: string[];
+  sourceAttachmentIds: string[];
+  questions: ReconstructionWorkflowQuestion[];
+  assets: ReconstructionWorkflowAsset[];
+  status: ReconstructionWorkflowStatus;
+  confirmedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AnswerWorkflowQuestionInput {
+  sessionId: string;
+  workflowId: string;
+  revision: number;
+  questionId: string;
+  optionId: string;
+}
+
+export interface ConfirmWorkflowInput {
+  sessionId: string;
+  workflowId: string;
+  revision: number;
 }
 
 export type ArtifactKind = "docx" | "pdf" | "png" | "jpg" | "jpeg" | "webp" | "svg" | "json" | "md" | "txt" | "log" | "stl" | "obj" | "glb" | "gltf" | "3mf" | "step" | "iges" | "dxf" | "other";
@@ -364,6 +447,11 @@ export interface ArchAgentApi {
   chat: {
     prompt(input: ChatPromptInput): Promise<{ accepted: true }>;
     abort(sessionId: string): Promise<void>;
+  };
+  workflow: {
+    answer(input: AnswerWorkflowQuestionInput): Promise<ReconstructionWorkflow>;
+    confirm(input: ConfirmWorkflowInput): Promise<ReconstructionWorkflow>;
+    cancel(input: Pick<ConfirmWorkflowInput, "sessionId" | "workflowId">): Promise<ReconstructionWorkflow>;
   };
   clipboard: {
     writeText(text: string): Promise<void>;

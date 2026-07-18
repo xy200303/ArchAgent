@@ -35,6 +35,13 @@ export type BuiltinToolName =
   | "generate_3d_asset"
   | "import_component_asset"
   | "get_component_library"
+  | "search_component_library"
+  | "place_component_asset"
+  | "create_reconstruction_workflow"
+  | "generate_design_preview"
+  | "analyze_spatial_reference"
+  | "extract_object_reference"
+  | "crop_reference_objects"
   | "delete_node";
 
 export interface ReadToolResult {

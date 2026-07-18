@@ -316,6 +316,119 @@
   white-space: pre-wrap;
 }
 
+.reconstruction-workflow-card {
+  display: grid;
+  gap: var(--fluent-spacing-m);
+  margin: 0 0 var(--fluent-spacing-l) 42px;
+  border: 1px solid var(--fluent-color-brand-stroke);
+  border-radius: var(--fluent-radius-large);
+  background: var(--fluent-color-neutral-background2);
+  padding: var(--fluent-spacing-l);
+  box-shadow: var(--fluent-shadow-4);
+}
+
+.reconstruction-workflow-card > header,
+.reconstruction-workflow-card > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fluent-spacing-m);
+}
+
+.reconstruction-workflow-card header > div {
+  display: grid;
+  gap: 2px;
+}
+
+.workflow-kicker,
+.workflow-status,
+.reconstruction-workflow-card > small,
+.workflow-assets > span,
+.workflow-options small,
+.reconstruction-workflow-card footer > span {
+  color: var(--fluent-color-neutral-foreground3);
+  font-size: 12px;
+}
+
+.workflow-status {
+  border-radius: var(--fluent-radius-circle);
+  background: var(--fluent-color-neutral-background-selected);
+  color: var(--fluent-color-brand-foreground1);
+  font-weight: 600;
+  padding: 4px 8px;
+  white-space: nowrap;
+}
+
+.reconstruction-workflow-card > p {
+  margin: 0;
+  color: var(--fluent-color-neutral-foreground1);
+}
+
+.workflow-question,
+.workflow-assets {
+  display: grid;
+  gap: var(--fluent-spacing-s);
+  border-top: 1px solid var(--fluent-color-neutral-stroke2);
+  padding-top: var(--fluent-spacing-m);
+}
+
+.workflow-options {
+  display: grid;
+  gap: var(--fluent-spacing-s);
+}
+
+.workflow-options button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px var(--fluent-spacing-m);
+  align-items: center;
+  border: 1px solid var(--fluent-color-neutral-stroke1);
+  border-radius: var(--fluent-radius-medium);
+  background: var(--fluent-color-neutral-background1);
+  color: var(--fluent-color-neutral-foreground1);
+  cursor: pointer;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.workflow-options button:hover:not(:disabled),
+.workflow-options button.selected {
+  border-color: var(--fluent-color-brand-stroke);
+  background: var(--fluent-color-neutral-background-selected);
+}
+
+.workflow-options button:disabled {
+  cursor: default;
+}
+
+.workflow-options button small {
+  grid-column: 1 / -1;
+}
+
+.workflow-assets > span {
+  display: block;
+}
+
+.reconstruction-workflow-card footer {
+  border-top: 1px solid var(--fluent-color-neutral-stroke2);
+  padding-top: var(--fluent-spacing-m);
+}
+
+.workflow-confirm {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  border: 1px solid var(--fluent-color-brand-stroke);
+  border-radius: var(--fluent-radius-medium);
+  background: var(--fluent-color-brand-background);
+  color: var(--fluent-color-neutral-foreground-on-brand);
+  cursor: pointer;
+  font-weight: 600;
+  padding: 0 12px;
+}
+
 /* Keep rich Markdown inside the resizable conversation pane. Code blocks retain
  * their own horizontal scrolling because source formatting must not be reflowed. */
 .message-body,

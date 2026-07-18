@@ -1,5 +1,5 @@
 /** Chat transcript rendering, process grouping, tool details, and artifact actions. */
-import { memo, useEffect, useMemo, useRef, type JSX } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type JSX } from "react";
 import * as Collapsible from "@radix-ui/react-collapsible";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as ScrollArea from "@radix-ui/react-scroll-area";
@@ -21,7 +21,7 @@ import {
   User,
   XCircle
 } from "lucide-react";
-import type { ArchAgentApi, ChatSession, StreamItem } from "../../../../shared/types";
+import type { ArchAgentApi, ChatSession, ReconstructionWorkflow, StreamItem } from "../../../../shared/types";
 import { getErrorMessage } from "../../platform/bridge";
 import {
   groupStreamItemsForDisplay,
@@ -99,6 +99,7 @@ export const MessagePane = memo(function MessagePane({
                 />
               )
             ))}
+            {session.workflow ? <ReconstructionWorkflowCard api={api} sessionId={session.id} workflow={session.workflow} onError={onError} /> : null}
             {shouldShowPendingThinking ? <PendingAssistantRow /> : null}
           </>
         )}
@@ -109,6 +110,117 @@ export const MessagePane = memo(function MessagePane({
     </ScrollArea.Root>
   );
 });
+
+function ReconstructionWorkflowCard({
+  api,
+  sessionId,
+  workflow,
+  onError
+}: {
+  api: ArchAgentApi;
+  sessionId: string;
+  workflow: ReconstructionWorkflow;
+  onError: (message: string) => void;
+}): JSX.Element {
+  const [pendingAction, setPendingAction] = useState<string>();
+  const statusLabel = {
+    needs_clarification: "等待你的选择",
+    ready_for_confirmation: "等待生成确认",
+    generating: "正在生成并摆放",
+    completed: "已完成",
+    needs_attention: "需要处理失败项",
+    cancelled: "已取消"
+  }[workflow.status];
+
+  async function answer(questionId: string, optionId: string): Promise<void> {
+    setPendingAction(`${questionId}:${optionId}`);
+    try {
+      await api.workflow.answer({
+        sessionId,
+        workflowId: workflow.id,
+        revision: workflow.revision,
+        questionId,
+        optionId
+      });
+    } catch (error) {
+      onError(`保存选择失败：${getErrorMessage(error)}`);
+    } finally {
+      setPendingAction(undefined);
+    }
+  }
+
+  async function confirm(): Promise<void> {
+    setPendingAction("confirm");
+    try {
+      await api.workflow.confirm({ sessionId, workflowId: workflow.id, revision: workflow.revision });
+    } catch (error) {
+      onError(`确认生成失败：${getErrorMessage(error)}`);
+    } finally {
+      setPendingAction(undefined);
+    }
+  }
+
+  return (
+    <section className={`reconstruction-workflow-card ${workflow.status}`}>
+      <header>
+        <div>
+          <span className="workflow-kicker">3D 重建计划 · v{workflow.revision}</span>
+          <strong>{workflow.title}</strong>
+        </div>
+        <span className="workflow-status">{statusLabel}</span>
+      </header>
+      <p>{workflow.summary}</p>
+      {workflow.assumptions.length ? <small>假设：{workflow.assumptions.join("；")}</small> : null}
+      {workflow.questions.map((question) => (
+        <section className="workflow-question" key={question.id}>
+          <strong>{question.prompt}{question.required ? " *" : ""}</strong>
+          <div className="workflow-options">
+            {question.options.map((option) => {
+              const selected = question.selectedOptionId === option.id;
+              const action = `${question.id}:${option.id}`;
+              return (
+                <button
+                  type="button"
+                  key={option.id}
+                  className={selected ? "selected" : ""}
+                  disabled={workflow.status !== "needs_clarification" || Boolean(pendingAction)}
+                  onClick={() => void answer(question.id, option.id)}
+                >
+                  <span>{option.label}</span>
+                  {option.description ? <small>{option.description}</small> : null}
+                  {pendingAction === action ? <Loader2 size={13} className="spin" /> : null}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+      <section className="workflow-assets">
+        <strong>资产执行清单</strong>
+        {workflow.assets.map((asset) => (
+          <span key={asset.id}>{asset.name} × {asset.quantity} · {describeWorkflowAsset(asset)}</span>
+        ))}
+      </section>
+      {workflow.status === "ready_for_confirmation" ? (
+        <footer>
+          <span>确认后按当前版本并行处理；缺失资产默认使用最低低模配置。</span>
+          <button type="button" className="workflow-confirm" disabled={pendingAction === "confirm"} onClick={() => void confirm()}>
+            {pendingAction === "confirm" ? <Loader2 size={14} className="spin" /> : <CheckCircle2 size={14} />}
+            按当前方案生成
+          </button>
+        </footer>
+      ) : null}
+    </section>
+  );
+}
+
+function describeWorkflowAsset(asset: ReconstructionWorkflow["assets"][number]): string {
+  if (asset.status === "failed") return `失败：${asset.error || "请重试"}`;
+  if (asset.status === "placed") return "已放置";
+  if (asset.status === "running") return asset.source === "library" ? "正在放置" : "正在生成";
+  if (asset.status === "queued") return "等待执行";
+  return asset.source === "library" ? "复用构件库" : asset.source === "image" ? "图生低模" : "文生低模";
+}
 
 function isUnfinishedAssistantMessage(item: StreamItem): boolean {
   return item.kind === "message" && item.role === "assistant" && !item.isFinished;

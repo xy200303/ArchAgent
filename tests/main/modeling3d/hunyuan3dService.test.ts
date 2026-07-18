@@ -41,7 +41,8 @@ describe("hunyuan3dService", () => {
     }, process.cwd())).rejects.toThrow("GenerateType");
 
     const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
-    expect(JSON.parse(String(request.body))).toMatchObject({ generate_type: "Normal", face_count: 50_000 });
+    expect(JSON.parse(String(request.body))).toMatchObject({ generate_type: "LowPoly" });
+    expect(JSON.parse(String(request.body))).not.toHaveProperty("face_count");
   });
 
   it("honors a compact detail budget instead of the provider's 500,000-face default", async () => {

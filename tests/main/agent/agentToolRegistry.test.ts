@@ -32,6 +32,8 @@ describe("agentToolRegistry", () => {
     expect(names).toContain("generate_3d_asset");
     expect(names).toContain("import_component_asset");
     expect(names).toContain("get_component_library");
+    expect(names).toContain("place_component_asset");
+    expect(names).toContain("create_reconstruction_workflow");
     expect(names).toContain("delete_node");
     expect(names).not.toContain("load_csv");
     expect(names).not.toContain("load_excel");
@@ -45,17 +47,19 @@ describe("agentToolRegistry", () => {
     expect(names).not.toContain("exec_bash");
   });
 
-  it("directs furniture requests to Hunyuan 3D asset generation", () => {
+  it("prioritizes reusing library furniture before generating a new asset", () => {
     const prompt = buildAgentModelingSystemPrompt();
     const generateTool = buildAgentChatTools({ includeExecBash: false }).find((tool) => tool.function.name === "generate_3d_asset");
 
-    expect(prompt).toContain("创建、生成或制作沙发");
-    expect(prompt).toContain("绝不能回复“无法创建家具或通用 Mesh”");
+    expect(prompt).toContain("放置、添加或摆放沙发");
+    expect(prompt).toContain("get_component_library");
+    expect(prompt).toContain("place_component_asset");
+    expect(prompt).toContain("构件库没有可用资产");
     expect(prompt).toContain("完整的中文正向 prompt");
     expect(prompt).toContain("generate_3d_asset");
     expect(prompt).toContain("import_component_asset");
     expect(generateTool?.function.description).toContain("家具");
-    expect(generateTool?.function.description).toContain("文生3D");
+    expect(generateTool?.function.description).toContain("构件库没有");
     expect(generateTool?.function.description).toContain("output/assets");
     expect(JSON.stringify(generateTool?.function.parameters)).toContain("detail_level");
   });
@@ -264,6 +268,41 @@ describe("agentToolRegistry", () => {
 
     expect(result.summary).toContain("已更新参考模型");
     expect(sceneService.getSnapshot().nodes.asset_sofa).toMatchObject({ position: [2, 0, 1], scale: [1.2, 1.2, 1.2] });
+  });
+
+  it("places a library component before updating its generated scene asset ID", async () => {
+    const placeComponentLibraryItem = vi.fn(() => ({
+      accepted: true as const,
+      command: {
+        type: "asset.create" as const,
+        id: "asset_library_sofa",
+        parentId: "level_default",
+        name: "现代沙发",
+        format: "glb" as const,
+        sourcePath: "assets/asset_library_sofa.glb",
+        position: [2, 0, 1] as [number, number, number],
+        rotation: [0, 1.57, 0] as [number, number, number],
+        scale: [1, 1, 1] as [number, number, number]
+      },
+      snapshot: { revision: 5, rootNodeIds: ["site_default"], nodes: {} }
+    }));
+
+    const result = await executeAgentToolCall(
+      createToolCall("place_component_asset", {
+        component_id: "C:/library/modern-sofa.glb",
+        position: [2, 0, 1],
+        rotation: [0, 1.57, 0]
+      }),
+      createContext({ placeComponentLibraryItem })
+    );
+
+    expect(placeComponentLibraryItem).toHaveBeenCalledWith({
+      componentId: "C:/library/modern-sofa.glb",
+      position: [2, 0, 1],
+      rotation: [0, 1.57, 0]
+    });
+    expect(result.summary).toContain("现代沙发");
+    expect(result.content).toContain("asset_library_sofa");
   });
 
   const itWindows = process.platform === "win32" ? it : it.skip;

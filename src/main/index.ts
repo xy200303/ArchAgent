@@ -1,6 +1,7 @@
 import electron from "electron";
 import { existsSync, mkdirSync } from "node:fs";
 import { createConversationService } from "./agent/conversationService";
+import { createReconstructionWorkflowService } from "./agent/reconstructionWorkflowService";
 import { createAttachmentService } from "./files/attachmentService";
 import { createFileService } from "./files/fileService";
 import { resolveAppPaths } from "./app/appPaths";
@@ -165,6 +166,20 @@ const {
   importClipboardAttachments,
   pasteAttachmentsFromClipboard
 } = attachmentService;
+const reconstructionWorkflowService = createReconstructionWorkflowService({
+  rootDir,
+  sessions,
+  getSessionOutputDir,
+  createId,
+  now,
+  schedulePersistState,
+  sendEvent,
+  placeComponentLibraryItem: (input) => {
+    const component = findGlobalComponent(rootDir, input.componentId);
+    if (!component) throw new Error("未找到全局构件。");
+    return sceneExchangeService.placeGlobalComponent(component, input);
+  }
+});
 const conversationService = createConversationService({
   rootDir,
   docsDir,
@@ -187,7 +202,18 @@ const conversationService = createConversationService({
   now,
   loadEnv,
   getSceneSnapshot: sceneService.getSnapshot,
-  executeSceneCommand: sceneService.execute
+  executeSceneCommand: sceneService.execute,
+  placeComponentLibraryItem: (input) => {
+    const component = findGlobalComponent(rootDir, input.componentId);
+    if (!component) throw new Error("未找到全局构件。");
+    return sceneExchangeService.placeGlobalComponent(component, {
+      ...(input.parentId ? { parentId: input.parentId } : {}),
+      ...(input.position ? { position: input.position } : {}),
+      ...(input.rotation ? { rotation: input.rotation } : {}),
+      ...(input.scale ? { scale: input.scale } : {})
+    });
+  },
+  createReconstructionWorkflow: reconstructionWorkflowService.createPlan
 });
 const {
   createSession,
@@ -212,6 +238,9 @@ function registerIpc(): void {
     deleteSession,
     handlePrompt,
     abortPrompt,
+    answerReconstructionWorkflow: reconstructionWorkflowService.answer,
+    confirmReconstructionWorkflow: reconstructionWorkflowService.confirm,
+    cancelReconstructionWorkflow: reconstructionWorkflowService.cancel,
     pickAttachments,
     importClipboardAttachments,
     pasteAttachmentsFromClipboard,
@@ -253,7 +282,9 @@ function registerIpc(): void {
     placeComponentLibraryItem: (id) => {
       const component = findGlobalComponent(rootDir, id);
       if (!component) throw new Error("未找到全局构件。");
-      return sceneExchangeService.placeGlobalComponent(component);
+      const result = sceneExchangeService.placeGlobalComponent(component);
+      if (!result.accepted) throw new Error(result.message);
+      return result.snapshot;
     }
   });
 }
@@ -262,6 +293,7 @@ app.whenReady().then(() => {
   ensureDataDirs();
   loadEnv();
   restorePersistedState();
+  reconstructionWorkflowService.resumeAll();
   registerIpc();
   createWindow();
 

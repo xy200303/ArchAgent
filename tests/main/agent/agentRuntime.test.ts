@@ -106,6 +106,11 @@ function createHost(items: StreamItem[], settings: AppSettings = createSettings(
     formatSessionMemory: () => "",
     getSessionReadableFiles: () => [],
     getBundledPythonRuntime: () => undefined,
+    placeComponentLibraryItem: () => ({
+      accepted: false,
+      code: "unsupported_node",
+      message: "测试未实现"
+    }),
     createArtifact: () => {}
   };
 }

@@ -4,6 +4,8 @@ import type { ImageContent } from "@mariozechner/pi-ai";
 import type { AppSettings, ChatSession, StreamItem } from "../../shared/types";
 import type { SceneCommandInput, SceneCommandResult, SceneSnapshot } from "../../shared/modeling3d/sceneContracts";
 import type { BundledPythonRuntime } from "../runtime/bundledRuntime";
+import type { CreateReconstructionWorkflowInput } from "./reconstructionWorkflowService";
+import type { ReconstructionWorkflow } from "../../shared/types";
 import { createPiAgentBridge } from "./piAgentBridge";
 
 export type MessageStreamItem = Extract<StreamItem, { kind: "message" }>;
@@ -44,6 +46,14 @@ export interface AgentRuntimeHost {
   getBundledPythonRuntime(): BundledPythonRuntime | undefined;
   getSceneSnapshot(): SceneSnapshot;
   executeSceneCommand(command: SceneCommandInput): SceneCommandResult;
+  placeComponentLibraryItem(input: {
+    componentId: string;
+    parentId?: string;
+    position?: [number, number, number];
+    rotation?: [number, number, number];
+    scale?: [number, number, number];
+  }): SceneCommandResult;
+  createReconstructionWorkflow(sessionId: string, input: CreateReconstructionWorkflowInput): ReconstructionWorkflow;
   createArtifact(sessionId: string, filePath: string): void;
 }
 

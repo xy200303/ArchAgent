@@ -2,7 +2,7 @@
 import electron from "electron";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, extname, join, resolve } from "node:path";
-import type { SceneAssetPayload, SceneCommandResult, SceneExchangeFormat, SceneExportTarget, SceneImportResult, SceneSnapshot } from "../../shared/modeling3d/sceneContracts";
+import type { SceneAssetPayload, SceneCommandInput, SceneCommandResult, SceneExchangeFormat, SceneExportTarget, SceneImportResult, SceneSnapshot } from "../../shared/modeling3d/sceneContracts";
 
 const { dialog } = electron;
 const MESH_FORMATS = ["glb", "gltf", "obj", "stl"] as const;
@@ -12,7 +12,7 @@ export function createSceneExchangeService(options: {
   getActiveProjectPath: () => string | undefined;
   getSnapshot: () => SceneSnapshot;
   replaceSnapshot: (snapshot: SceneSnapshot) => SceneSnapshot;
-  executeSceneCommand: (command: { type: "asset.create"; id: string; parentId: string; name: string; format: typeof MESH_FORMATS[number]; sourcePath: string }) => SceneCommandResult;
+  executeSceneCommand: (command: Extract<SceneCommandInput, { type: "asset.create" }>) => SceneCommandResult;
 }) {
   async function importFromDialog(): Promise<SceneImportResult | undefined> {
     const projectPath = requireProjectPath(options.getActiveProjectPath());
@@ -82,16 +82,30 @@ export function createSceneExchangeService(options: {
     if (!existsSync(filePath) || !statSync(filePath).isFile()) throw new Error("参考模型文件不存在。");
     return { id: asset.id, format: asset.format, dataBase64: readFileSync(filePath).toString("base64") };
   }
-  function placeGlobalComponent(component: { name: string; file: string }): SceneSnapshot {
+  /** Copies one library asset into the active project and creates its scene node atomically. */
+  function placeGlobalComponent(
+    component: { name: string; file: string },
+    placement: Partial<Pick<Extract<SceneCommandInput, { type: "asset.create" }>, "parentId" | "position" | "rotation" | "scale">> = {}
+  ): SceneCommandResult {
     const projectPath = requireProjectPath(options.getActiveProjectPath());
     if (!existsSync(component.file)) throw new Error("全局构件模型文件不存在。");
     const id = `asset_${options.createId("library")}`;
+    const format = getMeshFormat(component.file);
     const assetsDir = join(projectPath, ".agent", "assets");
     if (!existsSync(assetsDir)) mkdirSync(assetsDir, { recursive: true });
-    copyFileSync(component.file, join(assetsDir, `${id}.glb`));
-    const result = options.executeSceneCommand({ type: "asset.create", id, parentId: findDefaultLevelId(options.getSnapshot()), name: component.name, format: "glb", sourcePath: join("assets", `${id}.glb`) });
-    if (!result.accepted) throw new Error(result.message);
-    return result.snapshot;
+    const destinationName = `${id}.${format}`;
+    copyFileSync(component.file, join(assetsDir, destinationName));
+    return options.executeSceneCommand({
+      type: "asset.create",
+      id,
+      parentId: placement.parentId ?? findDefaultLevelId(options.getSnapshot()),
+      name: component.name,
+      format,
+      sourcePath: join("assets", destinationName),
+      ...(placement.position ? { position: placement.position } : {}),
+      ...(placement.rotation ? { rotation: placement.rotation } : {}),
+      ...(placement.scale ? { scale: placement.scale } : {})
+    });
   }
 
   return { importFromDialog, selectExportTarget, saveExport, loadAsset, placeGlobalComponent };
@@ -104,6 +118,12 @@ function requireProjectPath(projectPath: string | undefined): string {
 
 function isMeshFormat(value: string): value is typeof MESH_FORMATS[number] {
   return MESH_FORMATS.includes(value as typeof MESH_FORMATS[number]);
+}
+
+function getMeshFormat(filePath: string): typeof MESH_FORMATS[number] {
+  const extension = extname(filePath).slice(1).toLowerCase();
+  if (!isMeshFormat(extension)) throw new Error("构件库模型格式无效。");
+  return extension;
 }
 
 function findDefaultLevelId(snapshot: SceneSnapshot): string {

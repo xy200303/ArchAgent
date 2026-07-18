@@ -5,7 +5,7 @@ import { TextDecoder, promisify } from "node:util";
 import { basename, extname, isAbsolute, join, relative, resolve } from "node:path";
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam, ChatCompletionMessageToolCall, ChatCompletionTool } from "openai/resources/chat/completions";
-import type { AppSettings } from "../../shared/types";
+import type { AppSettings, ReconstructionWorkflowPlacement } from "../../shared/types";
 import type { SceneCommandInput, SceneCommandResult, ScenePoint, SceneSnapshot, WallMaterialPreset } from "../../shared/modeling3d/sceneContracts";
 import { summarizeSceneForAgent } from "../modeling3d/sceneSummary";
 import {
@@ -25,6 +25,9 @@ import {
 import { createBundledPythonEnv, type BundledPythonRuntime } from "../runtime/bundledRuntime";
 import { formatWebSearchResults, searchWeb } from "./webSearch";
 import { generateHunyuanGlb, type Hunyuan3dDetailLevel } from "../modeling3d/hunyuan3dService";
+import type { CreateReconstructionWorkflowInput } from "./reconstructionWorkflowService";
+import { extractObjectReference, generateDesignPreview } from "./designPreviewService";
+import { cropReferenceObjects } from "./referenceCropService";
 import { importGlobalComponent, listGlobalComponents } from "../modeling3d/componentLibraryService";
 
 export { parseDuckDuckGoHtml, searchWeb } from "./webSearch";
@@ -54,6 +57,14 @@ export interface AgentToolExecutionContext {
   bundledPythonRuntime?: BundledPythonRuntime;
   getSceneSnapshot?: () => SceneSnapshot;
   executeSceneCommand?: (command: SceneCommandInput) => SceneCommandResult;
+  placeComponentLibraryItem?: (input: {
+    componentId: string;
+    parentId?: string;
+    position?: [number, number, number];
+    rotation?: [number, number, number];
+    scale?: [number, number, number];
+  }) => SceneCommandResult;
+  createReconstructionWorkflow?: (input: CreateReconstructionWorkflowInput) => unknown;
 }
 
 export interface AgentToolExecutionResult {
@@ -169,9 +180,16 @@ export function buildAgentChatTools(options: { includeExecBash: boolean; include
     { type: "function", function: { name: "create_window", description: "在指定墙体上创建窗洞和窗。偏移从墙体起点开始计算，单位为米。", parameters: createWindowSchema } },
     { type: "function", function: { name: "update_window", description: "修改已有窗的尺寸、沿墙偏移或材质。", parameters: updateWindowSchema } },
     { type: "function", function: { name: "update_asset", description: "移动、旋转或缩放已导入的参考模型。旋转单位为弧度，缩放必须为正数。", parameters: updateAssetSchema } },
-    { type: "function", function: { name: "generate_3d_asset", description: "必须用于创建家具、陈设、设备、人物和其他非建筑原生构件。调用混元生3D生成带面数预算的 GLB 并保存到当前项目的 output/assets；默认使用标准细节，只有用户明确要求近景展示时才使用 high。文生3D必须传入完整的中文正向 prompt，或传入已上传附件的 image_path 走图生3D，二者只能选一个。生成成功后应调用 import_component_asset 导入全局构件库。", parameters: generate3dAssetSchema } },
+    { type: "function", function: { name: "generate_3d_asset", description: "仅当构件库没有满足需求的资产时，用于创建家具、陈设、设备、人物和其他非建筑原生构件。调用前必须先检索构件库；调用混元生3D生成带面数预算的 GLB 并保存到当前项目的 output/assets。生成成功后应调用 import_component_asset 导入全局构件库。", parameters: generate3dAssetSchema } },
     { type: "function", function: { name: "import_component_asset", description: "将当前项目内已生成或已下载的 GLB、GLTF、OBJ、STL 模型复制并登记到全局构件库。生成通用 3D 资产后必须立即调用；网络下载的模型完成后也应调用。", parameters: importComponentAssetSchema } },
     { type: "function", function: { name: "get_component_library", description: "检索全局构件库的语义信息；放置或修改构件前必须先调用。", parameters: emptyObjectSchema } },
+    { type: "function", function: { name: "search_component_library", description: "按物件名称、类别、标签、描述检索全局构件库，返回最相关候选。对照片还原和 3D 重建，必须先检索再决定复用或生成。", parameters: componentLibrarySearchSchema } },
+    { type: "function", function: { name: "place_component_asset", description: "将 get_component_library 返回的 component_id 对应构件复制到当前项目并放入场景。该工具会创建并返回新的 asset 节点 ID；component_id 必须原样使用检索结果（它可能显示为构件库文件路径），不能直接传给 update_asset。", parameters: placeComponentAssetSchema } },
+    { type: "function", function: { name: "create_reconstruction_workflow", description: "创建需要用户反问、选项确认和生成授权的 3D 重建计划。面对户型图、平面图、实物照片还原或多资产场景时，必须先调用此工具，绝不能直接批量调用 generate_3d_asset。计划会先展示必答选项；全部回答后用户须点击确认，才会按最低低模配置并行复用/生成资产并逐件摆放。", parameters: reconstructionWorkflowSchema } },
+    { type: "function", function: { name: "generate_design_preview", description: "根据已确认或明确标注假设的户型/空间方案生成一张 2D 效果图，供用户确认布局和风格；这是视觉预览，不得把它当作精确尺寸或 3D 生成授权。", parameters: designPreviewSchema } },
+    { type: "function", function: { name: "analyze_spatial_reference", description: "结构化分析户型图或实物照片。对复杂照片必须返回场景复杂度、独立物件及其 [x,y,width,height] 千分比边界框、遮挡和不确定项，再创建重建计划。", parameters: spatialReferenceSchema } },
+    { type: "function", function: { name: "extract_object_reference", description: "对复杂照片使用图生图提取单个确认物件，生成纯背景单物件参考图。必须先让用户确认提取图正确，才能把它用于图生3D。", parameters: objectExtractionSchema } },
+    { type: "function", function: { name: "crop_reference_objects", description: "把复杂照片中已识别的独立物件按千分比边界框裁成单物件 PNG，供重建计划使用 image_path 逐件图生 3D。", parameters: cropReferenceSchema } },
     {
       type: "function",
       function: {
@@ -299,6 +317,20 @@ export async function executeAgentToolCall(
       return executeImportComponentAsset(args, context);
     case "get_component_library":
       return executeGetComponentLibrary(context);
+    case "search_component_library":
+      return executeSearchComponentLibrary(args, context);
+    case "place_component_asset":
+      return executePlaceComponentAsset(args, context);
+    case "create_reconstruction_workflow":
+      return executeCreateReconstructionWorkflow(args, context);
+    case "generate_design_preview":
+      return executeGenerateDesignPreview(args, context);
+    case "analyze_spatial_reference":
+      return executeAnalyzeSpatialReference(args, context);
+    case "extract_object_reference":
+      return executeExtractObjectReference(args, context);
+    case "crop_reference_objects":
+      return executeCropReferenceObjects(args, context);
     case "delete_node":
       return executeDeleteNode(args, context);
     default:
@@ -604,8 +636,244 @@ function executeImportComponentAsset(args: Record<string, unknown>, context: Age
 
 function executeGetComponentLibrary(context: AgentToolExecutionContext): AgentToolExecutionResult {
   const components = listGlobalComponents(context.componentLibraryRootDir ?? context.rootDir);
-  const content = components.length ? components.map((item) => `- ${item.name}（${item.id}）：${item.category ?? "未分类"}；标签 ${item.tags.join("、") || "无"}；${item.description ?? item.prompt ?? "无描述"}；放置规则 ${item.placementRule ?? "未指定"}`).join("\n") : "构件库为空。";
+  const content = components.length
+    ? `${components.map((item) => `- ${item.name}（component_id: ${item.id}）：${item.category ?? "未分类"}；标签 ${item.tags.join("、") || "无"}；${item.description ?? item.prompt ?? "无描述"}；放置规则 ${item.placementRule ?? "未指定"}`).join("\n")}\n\n命中构件时，必须调用 place_component_asset 并原样传 component_id 放入场景；它可能显示为构件库文件路径，但不能直接传给 update_asset。`
+    : "构件库为空。";
   return { toolName: "get_component_library", summary: `已读取 ${components.length} 个全局构件`, content };
+}
+
+function executeSearchComponentLibrary(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
+  const query = readStringArg(args, "query");
+  if (!query) return { toolName: "search_component_library", summary: "缺少构件检索关键词。", content: "search_component_library failed: missing query" };
+  const limit = Math.min(Math.max(Math.floor(readNumberArg(args, "limit", 6)), 1), 20);
+  const terms = query.toLowerCase().split(/[\s,，、/]+/).filter((term) => term.length > 0);
+  const matches = listGlobalComponents(context.componentLibraryRootDir ?? context.rootDir)
+    .map((component) => {
+      const searchable = `${component.name} ${component.category ?? ""} ${component.tags.join(" ")} ${component.description ?? component.prompt ?? ""}`.toLowerCase();
+      const score = terms.reduce((total, term) => total + (searchable.includes(term) ? 1 : 0), 0);
+      return { component, score };
+    })
+    .filter((item) => item.score > 0)
+    .sort((left, right) => right.score - left.score || right.component.createdAt.localeCompare(left.component.createdAt))
+    .slice(0, limit);
+  const content = matches.length
+    ? matches.map(({ component, score }) => `- ${component.name}（component_id: ${component.id}，匹配 ${score}）：${component.category ?? "未分类"}；标签 ${component.tags.join("、") || "无"}；${component.description ?? component.prompt ?? "无描述"}`).join("\n")
+    : "未找到语义匹配的构件。可以在重建计划中将该物件标为待生成，但必须等待用户确认。";
+  return { toolName: "search_component_library", summary: matches.length ? `找到 ${matches.length} 个“${query}”候选构件` : `未找到“${query}”候选构件`, content };
+}
+
+/** Places a registered library model and returns the generated scene asset ID for later edits. */
+function executePlaceComponentAsset(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
+  const componentId = readStringArg(args, "component_id");
+  if (!componentId) return { toolName: "place_component_asset", summary: "缺少构件库 component_id。", content: "place_component_asset failed: missing component_id" };
+  if (!context.placeComponentLibraryItem) return { toolName: "place_component_asset", summary: "当前应用未连接构件库放置服务。", content: "place_component_asset failed: component placement unavailable" };
+
+  const position = "position" in args ? readPoint3Arg(args, "position") : undefined;
+  const rotation = "rotation" in args ? readPoint3Arg(args, "rotation") : undefined;
+  const scale = "scale" in args ? readPoint3Arg(args, "scale") : undefined;
+  if (("position" in args && !position) || ("rotation" in args && !rotation) || ("scale" in args && (!scale || scale.some((value) => value <= 0)))) {
+    return { toolName: "place_component_asset", summary: "位置、旋转和缩放必须是三个有效数字；缩放必须大于 0。", content: "place_component_asset failed: invalid transform" };
+  }
+
+  try {
+    const result = context.placeComponentLibraryItem({
+      componentId,
+      parentId: readStringArg(args, "parent_id") || undefined,
+      ...(position ? { position } : {}),
+      ...(rotation ? { rotation } : {}),
+      ...(scale ? { scale } : {})
+    });
+    if (!result.accepted) return { toolName: "place_component_asset", summary: result.message, content: `place_component_asset failed: ${result.message}` };
+    if (result.command.type !== "asset.create") return { toolName: "place_component_asset", summary: "构件放置未返回参考模型节点。", content: "place_component_asset failed: unexpected scene command" };
+    return {
+      toolName: "place_component_asset",
+      summary: `已放置构件：${result.command.name}`,
+      content: `已将构件“${result.command.name}”放入场景。\n参考模型节点 ID：${result.command.id}\n场景版本：${result.snapshot.revision}`
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { toolName: "place_component_asset", summary: `放置构件失败：${message}`, content: `place_component_asset failed: ${message}` };
+  }
+}
+
+function executeCreateReconstructionWorkflow(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
+  if (!context.createReconstructionWorkflow) {
+    return { toolName: "create_reconstruction_workflow", summary: "当前应用未连接重建编排服务。", content: "create_reconstruction_workflow failed: workflow unavailable" };
+  }
+  const mode = readStringArg(args, "mode");
+  if (mode !== "floorplan" && mode !== "photo_simple" && mode !== "photo_complex") {
+    return { toolName: "create_reconstruction_workflow", summary: "方案类型必须是 floorplan、photo_simple 或 photo_complex。", content: "create_reconstruction_workflow failed: invalid mode" };
+  }
+  const assets = readReconstructionAssets(args, context);
+  if (!assets.length) return { toolName: "create_reconstruction_workflow", summary: "请至少提供一个资产计划。", content: "create_reconstruction_workflow failed: missing assets" };
+  const questions = readReconstructionQuestions(args);
+  try {
+    const workflow = context.createReconstructionWorkflow({
+      mode,
+      title: readStringArg(args, "title"),
+      summary: readStringArg(args, "summary"),
+      assumptions: readStringListArg(args, "assumptions"),
+      sourceAttachmentIds: readStringListArg(args, "source_attachment_ids"),
+      questions,
+      assets
+    }) as { id: string; revision: number; status: string; questions: Array<{ required: boolean; selectedOptionId?: string }>; assets: unknown[] };
+    const pendingQuestions = workflow.questions.filter((question) => question.required && !question.selectedOptionId).length;
+    return {
+      toolName: "create_reconstruction_workflow",
+      summary: pendingQuestions ? `已创建方案，等待回答 ${pendingQuestions} 个必答问题。` : "已创建方案，等待用户确认生成。",
+      content: `重建方案已创建：${workflow.id}（版本 ${workflow.revision}）。\n状态：${workflow.status}\n资产：${workflow.assets.length} 项。${pendingQuestions ? "请让用户在方案卡片中选择必答选项；全部回答后，仍必须点击“按当前方案生成”。" : "请让用户检查方案卡片后点击“按当前方案生成”；在此之前不得调用 generate_3d_asset。"}`
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { toolName: "create_reconstruction_workflow", summary: `创建方案失败：${message}`, content: `create_reconstruction_workflow failed: ${message}` };
+  }
+}
+
+async function executeGenerateDesignPreview(args: Record<string, unknown>, context: AgentToolExecutionContext): Promise<AgentToolExecutionResult> {
+  const name = readStringArg(args, "name");
+  const prompt = readStringArg(args, "prompt");
+  if (!name || !prompt) {
+    return { toolName: "generate_design_preview", summary: "效果图需要名称和中文方案提示词。", content: "generate_design_preview failed: missing name or prompt" };
+  }
+  try {
+    const generated = await generateDesignPreview({
+      name,
+      prompt,
+      outputDir: join(context.outputDir, "previews"),
+      settings: context.settings
+    });
+    return {
+      toolName: "generate_design_preview",
+      summary: `已生成方案效果图：${name}`,
+      content: `方案效果图已生成：${generated.path}\n请让用户确认布局、风格和假设；确认 3D 场景前仍需创建并确认重建计划。`,
+      artifactPath: generated.path
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { toolName: "generate_design_preview", summary: `生成方案效果图失败：${message}`, content: `generate_design_preview failed: ${message}` };
+  }
+}
+
+function executeAnalyzeSpatialReference(args: Record<string, unknown>, context: AgentToolExecutionContext): Promise<AgentToolExecutionResult> {
+  const path = readStringArg(args, "path");
+  const task = readStringArg(args, "task") || "识别空间重建信息";
+  return executeReadImage({
+    path,
+    detail: "high",
+    question: `${task}。请严格以 JSON 输出：{scene_type,complexity(simple|complex),facts,assumptions,objects:[{id,name,category,bbox:[x,y,width,height],occluded}],unknowns}。bbox 使用 0-1000 千分比坐标；无法可靠定位时 bbox 为 null，绝不能编造。`
+  }, context);
+}
+
+async function executeExtractObjectReference(args: Record<string, unknown>, context: AgentToolExecutionContext): Promise<AgentToolExecutionResult> {
+  const inputPath = readStringArg(args, "path");
+  const name = readStringArg(args, "name");
+  const instruction = readStringArg(args, "instruction");
+  if (!inputPath || !name || !instruction) return { toolName: "extract_object_reference", summary: "提取物件需要图片、名称和目标描述。", content: "extract_object_reference failed: missing arguments" };
+  const sourcePath = resolveReadablePath(inputPath, context);
+  assertPathAllowed(sourcePath, context.allowedReadDirs, context.allowedReadFiles ?? [], "extract_object_reference");
+  try {
+    const generated = await extractObjectReference({ sourcePath, name, instruction, outputDir: join(context.outputDir, "object-references"), settings: context.settings });
+    return { toolName: "extract_object_reference", summary: `已生成“${name}”单物件提取图，等待用户确认`, content: `物件提取图：${generated.path}\n必须先让用户确认该图只包含正确目标且外观可接受；确认前不得将它用于图生3D或创建重建计划。`, artifactPath: generated.path };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { toolName: "extract_object_reference", summary: `物件提取失败：${message}`, content: `extract_object_reference failed: ${message}` };
+  }
+}
+
+async function executeCropReferenceObjects(args: Record<string, unknown>, context: AgentToolExecutionContext): Promise<AgentToolExecutionResult> {
+  const inputPath = readStringArg(args, "path");
+  const regions = readCropRegions(args);
+  if (!inputPath || !regions.length) return { toolName: "crop_reference_objects", summary: "裁图需要图片路径和至少一个边界框。", content: "crop_reference_objects failed: missing path or regions" };
+  const sourcePath = resolveReadablePath(inputPath, context);
+  assertPathAllowed(sourcePath, context.allowedReadDirs, context.allowedReadFiles ?? [], "crop_reference_objects");
+  try {
+    const crops = await cropReferenceObjects({ sourcePath, regions, outputDir: join(context.outputDir, "reference-crops") });
+    return { toolName: "crop_reference_objects", summary: `已裁出 ${crops.length} 个独立物件参考图`, content: crops.map((crop) => `- ${crop.name}（${crop.id}）：${crop.path}`).join("\n") };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { toolName: "crop_reference_objects", summary: `裁图失败：${message}`, content: `crop_reference_objects failed: ${message}` };
+  }
+}
+
+function readCropRegions(args: Record<string, unknown>): Array<{ id: string; name: string; box: [number, number, number, number] }> {
+  if (!Array.isArray(args.regions)) return [];
+  return args.regions.flatMap((item) => {
+    const record = readRecord(item);
+    const id = record ? readStringArg(record, "id") : "";
+    const name = record ? readStringArg(record, "name") : "";
+    const box = record?.box;
+    const validBox = Array.isArray(box) && box.length === 4 && box.every((value) => typeof value === "number" && Number.isFinite(value)) ? box as [number, number, number, number] : undefined;
+    return id && name && validBox ? [{ id, name, box: validBox }] : [];
+  });
+}
+
+function readReconstructionQuestions(args: Record<string, unknown>): CreateReconstructionWorkflowInput["questions"] {
+  const value = args.questions;
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const record = readRecord(item);
+    const id = record ? readStringArg(record, "id") : "";
+    const prompt = record ? readStringArg(record, "prompt") : "";
+    const options = record && Array.isArray(record.options)
+      ? record.options.flatMap((option) => {
+        const optionRecord = readRecord(option);
+        const optionId = optionRecord ? readStringArg(optionRecord, "id") : "";
+        const label = optionRecord ? readStringArg(optionRecord, "label") : "";
+        return optionId && label ? [{ id: optionId, label, ...(optionRecord && readStringArg(optionRecord, "description") ? { description: readStringArg(optionRecord, "description") } : {}) }] : [];
+      })
+      : [];
+    return id && prompt && options.length >= 2 ? [{ id, prompt, required: record ? readBooleanArg(record, "required", true) : true, options }] : [];
+  });
+}
+
+function readReconstructionAssets(args: Record<string, unknown>, context: AgentToolExecutionContext): CreateReconstructionWorkflowInput["assets"] {
+  const value = args.assets;
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const record = readRecord(item);
+    if (!record) return [];
+    const id = readStringArg(record, "id");
+    const name = readStringArg(record, "name");
+    const source = readStringArg(record, "source");
+    if (!id || !name || (source !== "library" && source !== "image" && source !== "text")) return [];
+    const imagePath = readStringArg(record, "image_path");
+    if (source === "image") {
+      const resolved = resolveReadablePath(imagePath, context);
+      assertPathAllowed(resolved, context.allowedReadDirs, context.allowedReadFiles ?? [], "create_reconstruction_workflow");
+      if (!isSupportedImageFile(resolved)) throw new Error("图生资产仅支持 JPG、PNG、WEBP 图片。");
+    }
+    const placement = readWorkflowPlacement(record);
+    const placements = readWorkflowPlacements(record);
+    return [{
+      id,
+      name,
+      source,
+      quantity: readNumberArg(record, "quantity", 1),
+      ...(readStringArg(record, "component_id") ? { componentId: readStringArg(record, "component_id") } : {}),
+      ...(imagePath ? { imagePath: source === "image" ? resolveReadablePath(imagePath, context) : imagePath } : {}),
+      ...(readStringArg(record, "prompt") ? { prompt: readStringArg(record, "prompt") } : {}),
+      ...(placement ? { placement } : {}),
+      ...(placements ? { placements } : {})
+    }];
+  });
+}
+
+function readWorkflowPlacement(args: Record<string, unknown>): CreateReconstructionWorkflowInput["assets"][number]["placement"] | undefined {
+  const position = "position" in args ? readPoint3Arg(args, "position") : undefined;
+  const rotation = "rotation" in args ? readPoint3Arg(args, "rotation") : undefined;
+  const scale = "scale" in args ? readPoint3Arg(args, "scale") : undefined;
+  if (("position" in args && !position) || ("rotation" in args && !rotation) || ("scale" in args && (!scale || scale.some((value) => value <= 0)))) {
+    throw new Error("资产摆放的位置、旋转和缩放必须是有效三维数值，缩放必须大于 0。");
+  }
+  return position || rotation || scale ? { ...(position ? { position } : {}), ...(rotation ? { rotation } : {}), ...(scale ? { scale } : {}) } : undefined;
+}
+
+function readWorkflowPlacements(args: Record<string, unknown>): ReconstructionWorkflowPlacement[] | undefined {
+  const value = args.placements;
+  if (!Array.isArray(value)) return undefined;
+  const placements = value.map((item) => readWorkflowPlacement(readRecord(item) ?? {}));
+  if (placements.some((item) => !item)) throw new Error("placements 中的每项都必须包含有效变换。");
+  return placements as ReconstructionWorkflowPlacement[];
 }
 
 function executeDeleteNode(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
@@ -1312,6 +1580,16 @@ const updateDoorSchema = { type: "object", properties: { id: { type: "string" },
 const createWindowSchema = { type: "object", properties: { wall_id: { type: "string" }, name: { type: "string" }, offset: { type: "number" }, width: { type: "number" }, height: { type: "number" }, sill_height: { type: "number" }, material_preset: materialPresetSchema }, required: ["wall_id", "offset"], additionalProperties: false } as const;
 const updateWindowSchema = { type: "object", properties: { id: { type: "string" }, name: { type: "string" }, offset: { type: "number" }, width: { type: "number" }, height: { type: "number" }, sill_height: { type: "number" }, material_preset: materialPresetSchema }, required: ["id"], additionalProperties: false } as const;
 const updateAssetSchema = { type: "object", properties: { id: { type: "string" }, name: { type: "string" }, position: point3Schema, rotation: point3Schema, scale: point3Schema }, required: ["id"], additionalProperties: false } as const;
+const placeComponentAssetSchema = { type: "object", properties: { component_id: { type: "string" }, parent_id: { type: "string" }, position: point3Schema, rotation: point3Schema, scale: point3Schema }, required: ["component_id"], additionalProperties: false } as const;
+const reconstructionPlacementSchema = { type: "object", properties: { position: point3Schema, rotation: point3Schema, scale: point3Schema }, additionalProperties: false } as const;
+const reconstructionAssetSchema = { type: "object", properties: { id: { type: "string" }, name: { type: "string" }, source: { type: "string", enum: ["library", "image", "text"] }, quantity: { type: "integer", minimum: 1 }, component_id: { type: "string" }, image_path: { type: "string" }, prompt: { type: "string" }, position: point3Schema, rotation: point3Schema, scale: point3Schema, placements: { type: "array", items: reconstructionPlacementSchema } }, required: ["id", "name", "source"], additionalProperties: false } as const;
+const reconstructionQuestionSchema = { type: "object", properties: { id: { type: "string" }, prompt: { type: "string" }, required: { type: "boolean" }, options: { type: "array", minItems: 2, items: { type: "object", properties: { id: { type: "string" }, label: { type: "string" }, description: { type: "string" } }, required: ["id", "label"], additionalProperties: false } } }, required: ["id", "prompt", "options"], additionalProperties: false } as const;
+const reconstructionWorkflowSchema = { type: "object", properties: { mode: { type: "string", enum: ["floorplan", "photo_simple", "photo_complex"] }, title: { type: "string" }, summary: { type: "string" }, assumptions: { type: "array", items: { type: "string" } }, source_attachment_ids: { type: "array", items: { type: "string" } }, questions: { type: "array", items: reconstructionQuestionSchema }, assets: { type: "array", minItems: 1, items: reconstructionAssetSchema } }, required: ["mode", "title", "summary", "assets"], additionalProperties: false } as const;
+const designPreviewSchema = { type: "object", properties: { name: { type: "string" }, prompt: { type: "string", description: "中文效果图提示词，必须明确已知事实与假设。" } }, required: ["name", "prompt"], additionalProperties: false } as const;
+const componentLibrarySearchSchema = { type: "object", properties: { query: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 20 } }, required: ["query"], additionalProperties: false } as const;
+const spatialReferenceSchema = { type: "object", properties: { path: { type: "string" }, task: { type: "string" } }, required: ["path"], additionalProperties: false } as const;
+const objectExtractionSchema = { type: "object", properties: { path: { type: "string" }, name: { type: "string" }, instruction: { type: "string" } }, required: ["path", "name", "instruction"], additionalProperties: false } as const;
+const cropReferenceSchema = { type: "object", properties: { path: { type: "string" }, regions: { type: "array", minItems: 1, items: { type: "object", properties: { id: { type: "string" }, name: { type: "string" }, box: { type: "array", items: { type: "number" }, minItems: 4, maxItems: 4 } }, required: ["id", "name", "box"], additionalProperties: false } } }, required: ["path", "regions"], additionalProperties: false } as const;
 const generate3dAssetSchema = { type: "object", properties: { name: { type: "string" }, prompt: { type: "string" }, image_path: { type: "string" }, detail_level: { type: "string", enum: ["draft", "standard", "high"], description: "draft 约 20,000 面，用于快速布局；standard 约 50,000 面，默认；high 约 120,000 面，仅用于单件近景展示。" } }, required: ["name"], additionalProperties: false } as const;
 const importComponentAssetSchema = { type: "object", properties: { path: { type: "string" }, name: { type: "string" }, description: { type: "string" }, category: { type: "string" }, tags: { type: "array", items: { type: "string" } }, placement_rule: { type: "string" } }, required: ["path"], additionalProperties: false } as const;
 const deleteNodeSchema = {

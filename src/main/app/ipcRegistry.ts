@@ -4,12 +4,15 @@ import type { BrowserWindow as BrowserWindowType } from "electron";
 import { resolve } from "node:path";
 import type {
   AppMetadata,
+  AnswerWorkflowQuestionInput,
   AppSettings,
   ArtifactListInput,
   ArtifactSummary,
   AttachmentRef,
   ChatPromptInput,
   ChatSession,
+  ConfirmWorkflowInput,
+  ReconstructionWorkflow,
   ClipboardAttachmentInput,
   CreateDirectoryInput,
   CreateFileInput,
@@ -47,6 +50,9 @@ export function registerIpcHandlers(options: {
   deleteSession: (sessionId: string) => ChatSession[];
   handlePrompt: (input: ChatPromptInput) => Promise<{ accepted: true }>;
   abortPrompt: (sessionId: string) => void;
+  answerReconstructionWorkflow: (input: AnswerWorkflowQuestionInput) => ReconstructionWorkflow;
+  confirmReconstructionWorkflow: (input: ConfirmWorkflowInput) => ReconstructionWorkflow;
+  cancelReconstructionWorkflow: (input: Pick<ConfirmWorkflowInput, "sessionId" | "workflowId">) => ReconstructionWorkflow;
   pickAttachments: (input: PickAttachmentInput) => Promise<AttachmentRef[]>;
   importClipboardAttachments: (input: ClipboardAttachmentInput) => AttachmentRef[];
   pasteAttachmentsFromClipboard: (input: PasteAttachmentInput) => AttachmentRef[];
@@ -100,6 +106,9 @@ export function registerIpcHandlers(options: {
   ipcMain.handle("session:delete", (_event, sessionId: string) => options.deleteSession(sessionId));
   ipcMain.handle("chat:prompt", (_event, input: ChatPromptInput) => options.handlePrompt(input));
   ipcMain.handle("chat:abort", (_event, sessionId: string) => options.abortPrompt(sessionId));
+  ipcMain.handle("workflow:answer", (_event, input: AnswerWorkflowQuestionInput) => options.answerReconstructionWorkflow(input));
+  ipcMain.handle("workflow:confirm", (_event, input: ConfirmWorkflowInput) => options.confirmReconstructionWorkflow(input));
+  ipcMain.handle("workflow:cancel", (_event, input: Pick<ConfirmWorkflowInput, "sessionId" | "workflowId">) => options.cancelReconstructionWorkflow(input));
   ipcMain.handle("attachment:pick", (_event, input: PickAttachmentInput) => options.pickAttachments(input));
   ipcMain.handle("attachment:import-clipboard", (_event, input: ClipboardAttachmentInput) =>
     options.importClipboardAttachments(input)
