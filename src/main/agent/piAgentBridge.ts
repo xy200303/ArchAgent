@@ -265,6 +265,10 @@ async function runPiPrompt(
       source: "interactive"
     });
 
+    if (!hasFinalAssistantText(assistantCompletion, assistantItem, state, sealedAssistantTexts) && hasOnlySuccessfulTools(toolItems)) {
+      await requestModelFinalResponse(state);
+    }
+
     const finalText = resolveAssistantDisplayTextOrThrow({
       finalText:
         assistantCompletion.finalText ??
@@ -288,6 +292,37 @@ async function runPiPrompt(
     state.unsubscribe?.();
     state.unsubscribe = undefined;
     state.activeSignal = undefined;
+  }
+}
+
+function hasFinalAssistantText(
+  completion: { finalText?: string },
+  assistantItem: MessageStreamItem | undefined,
+  state: PiSessionState,
+  sealedAssistantTexts: string[]
+): boolean {
+  return Boolean(
+    completion.finalText?.trim() ||
+    assistantItem?.content.trim() ||
+    stripSealedAssistantText(state.session.getLastAssistantText(), sealedAssistantTexts)
+  );
+}
+
+function hasOnlySuccessfulTools(toolItems: Map<string, StreamItem>): boolean {
+  const tools = Array.from(toolItems.values())
+    .filter((item): item is Extract<StreamItem, { kind: "tool" }> => item.kind === "tool");
+  return tools.length > 0 && tools.every((item) => item.status === "success");
+}
+
+async function requestModelFinalResponse(state: PiSessionState): Promise<void> {
+  state.session.setActiveToolsByName([]);
+  try {
+    await state.session.prompt(
+      "刚才的工具已执行完毕。请基于工具真实结果，直接给用户一条最终中文回复，简要说明完成情况、可见结果和下一步；不要调用任何工具，也不要重复过程推理。",
+      { expandPromptTemplates: false, source: "interactive" }
+    );
+  } finally {
+    state.session.setActiveToolsByName(state.toolNames);
   }
 }
 
@@ -341,6 +376,7 @@ function handlePiSessionEvent(
     }
     case "tool_execution_start": {
       sealCurrentAssistantAsProcessNote(context);
+      context.assistantCompletion.finalText = undefined;
       const item = context.host.startToolCall(
         context.input.sessionId,
         event.toolName,

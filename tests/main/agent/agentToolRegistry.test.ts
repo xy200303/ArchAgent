@@ -48,12 +48,11 @@ describe("agentToolRegistry", () => {
     expect(names).not.toContain("generate_report");
     expect(names).not.toContain("exec_external_script");
 
-    const versionedToolNames = ["place_library_assets", "update_scene_object", "create_architecture_elements", "update_architecture_elements"];
-    for (const versionedToolName of versionedToolNames) {
-      const versionedTool = tools.find((tool) => tool.function.name === versionedToolName);
-      const versionedToolParameters = versionedTool?.function.parameters as { required?: string[] };
-      expect(versionedToolParameters.required ?? []).not.toContain("expected_revision");
-    }
+    expect(JSON.stringify(tools)).not.toContain("expected_revision");
+    const architectureTool = tools.find((tool) => tool.function.name === "create_architecture_elements");
+    const architectureParameters = architectureTool?.function.parameters as { properties: { elements: { items: { oneOf: unknown[] } } } };
+    expect(architectureParameters.properties.elements.items.oneOf).toHaveLength(9);
+    expect(JSON.stringify(architectureParameters)).toContain("wall_reference");
   });
 
   it("prioritizes reusing library furniture before generating a new asset", () => {
@@ -160,7 +159,7 @@ describe("agentToolRegistry", () => {
     );
 
     expect(result.summary).toBe("已读取当前建筑场景");
-    expect(result.content).toContain("场景版本：3");
+    expect(result.content).not.toContain("场景版本");
     expect(result.content).toContain("wall_north");
   });
 
@@ -563,7 +562,6 @@ describe("agentToolRegistry", () => {
     sceneService.execute({ type: "asset.create", id: "asset_internal", parentId: "level_default", name: "现代沙发_1", format: "glb", sourcePath: "assets/modern-sofa.glb" });
     const result = await executeAgentToolCall(
       createToolCall("adjust_scene_object", {
-        expected_revision: sceneService.getSnapshot().revision,
         reference: "现代沙发_1",
         position: [2, 0, 1]
       }),
@@ -640,17 +638,6 @@ describe("agentToolRegistry", () => {
     expect(result.content).toContain("未发现墙体穿模");
   });
 
-  it("returns the current revision when a precise placement is stale", async () => {
-    const sceneService = createSceneService({ createId: () => "agent", broadcast: vi.fn() });
-    const result = await executeAgentToolCall(
-      createToolCall("place_library_assets", { expected_revision: 99, items: [{ library_asset_id: "lib_missing", position: [2, 0, 2] }] }),
-      createContext({ getSceneSnapshot: sceneService.getSnapshot })
-    );
-
-    expect(result.summary).toContain("最新版本为 0");
-    expect(result.content).toContain("current_revision: 0");
-  });
-
   it("blocks placement when two declared furniture footprints overlap", async () => {
     const sandbox = mkdtempSync(join(tmpdir(), "arch-agent-collision-"));
     const libraryDir = join(sandbox, "data", "component-library", "assets");
@@ -710,7 +697,7 @@ describe("agentToolRegistry", () => {
     expect(result.content).toContain("家具碰撞：与“预览资产 2”占地重叠");
   });
 
-  it("lets a one-item placement batch use the latest revision unless one is supplied", async () => {
+  it("places a one-item batch without a version parameter", async () => {
     const sandbox = mkdtempSync(join(tmpdir(), "arch-agent-latest-placement-"));
     const libraryDir = join(sandbox, "data", "component-library", "assets");
     const componentFile = join(libraryDir, "cube.glb");
@@ -787,25 +774,31 @@ describe("agentToolRegistry", () => {
     const sceneService = createSceneService({ createId: () => "agent", broadcast: vi.fn() });
     const result = await executeAgentToolCall(
       createToolCall("create_architecture_elements", {
-        expected_revision: sceneService.getSnapshot().revision,
-        elements: [{ kind: "wall", reference: "客厅北墙", properties: { start: [0, 0], end: [4, 0], height: 2.8 } }]
+        elements: [
+          { kind: "wall", reference: "客厅北墙", properties: { start: [0, 0], end: [4, 0], height: 2.8 } },
+          { kind: "wall", reference: "客厅东墙", properties: { start: [4, 0], end: [4, 3], height: 2.8 } },
+          { kind: "wall", reference: "客厅南墙", properties: { start: [4, 3], end: [0, 3], height: 2.8 } }
+        ]
       }),
       createContext({ getSceneSnapshot: sceneService.getSnapshot, executeSceneCommand: sceneService.execute, executeSceneBatch: sceneService.executeBatch })
     );
 
     expect(result.toolName).toBe("create_architecture_elements");
-    expect(result.summary).toContain("1 个建筑元素");
+    expect(result.summary).toContain("3 个建筑元素");
+    expect(result.content).not.toContain("场景版本");
+    expect(result.content).toContain("当前场景状态");
+    expect(result.content).toContain("客厅东墙");
+    expect(sceneService.getSnapshot().revision).toBe(1);
     expect(Object.values(sceneService.getSnapshot().nodes)).toContainEqual(expect.objectContaining({ type: "wall", name: "客厅北墙" }));
   });
 
-  it("deletes multiple architecture elements atomically without stale revisions", async () => {
+  it("deletes multiple architecture elements atomically", async () => {
     const sceneService = createSceneService({ createId: (prefix) => `${prefix}_${Date.now()}`, broadcast: vi.fn() });
     sceneService.execute({ type: "wall.create", id: "wall_batch_north", parentId: "level_default", start: [0, 0], end: [4, 0] });
     sceneService.execute({ type: "wall.create", id: "wall_batch_east", parentId: "level_default", start: [4, 0], end: [4, 4] });
     const revision = sceneService.getSnapshot().revision;
     const result = await executeAgentToolCall(
       createToolCall("update_architecture_elements", {
-        expected_revision: revision,
         items: [
           { element_id: "wall_batch_north", action: "delete" },
           { element_id: "wall_batch_east", action: "delete" }
@@ -815,6 +808,7 @@ describe("agentToolRegistry", () => {
     );
 
     expect(result.summary).toContain("2 个建筑元素");
+    expect(result.content).toContain("当前场景状态");
     expect(sceneService.getSnapshot().revision).toBe(revision + 1);
     expect(sceneService.getSnapshot().nodes.wall_batch_north).toBeUndefined();
     expect(sceneService.getSnapshot().nodes.wall_batch_east).toBeUndefined();

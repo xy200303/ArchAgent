@@ -285,10 +285,10 @@ function buildRefactoredAgentChatTools(options: { includeExecBash: boolean }): C
     { type: "function", function: { name: "search_library_assets", description: "按名称、类别、标签或描述搜索全局资产库，返回可直接用于实例化的 library_asset_id、名称、参数与预览状态。", parameters: componentLibrarySearchSchema } },
     { type: "function", function: { name: "preview_library_asset_placement", description: "预览一个或多个资产的落点与几何校验，不修改场景。anchor.side=room_interior（inside 兼容别名）会按房间/楼板边界自动判定室内侧，不依赖墙体绘制方向。", parameters: previewLibraryAssetPlacementSchema } },
     { type: "function", function: { name: "place_library_assets", description: "将 search_library_assets 返回的 library_asset_id 实例化到当前场景。position 为世界米制坐标，或使用 anchor 锚定墙体；可选 array.mode=line 或 grid 规则阵列（仅支持 position）。朝向优先使用 look_at 或 facing，rotation_degrees 仅作精确兜底。返回 scene_object_id、显示名和几何校验结果。", parameters: placeLibraryAssetsSchema } },
-    { type: "function", function: { name: "inspect_scene", description: "读取当前场景的建筑元素和已放置物件，返回可用于后续操作的公开 ID、显示名、参数与版本。", parameters: emptyObjectSchema } },
+    { type: "function", function: { name: "inspect_scene", description: "读取当前场景的建筑元素和已放置物件，返回可用于后续操作的公开 ID、显示名与参数。", parameters: emptyObjectSchema } },
     { type: "function", function: { name: "view_scene_preview", description: "获取当前 3D 工作台的 WebGL 预览图并直接返回给 Agent。可选 view 指定 current、perspective、top、front、right、left、back 或 bottom，以核对不同方向的摆放和明显穿模；只读，不修改场景数据。若要把截图展示给用户，必须再用本工具结果中的 resource_id 调用 send_file。", parameters: scenePreviewSchema } },
     { type: "function", function: { name: "update_scene_object", description: "按 scene_object_id 或唯一显示名调整或删除一个已放置物件。可用世界 position，或 anchor 锚定墙体加 local 偏移；朝向优先 look_at 或 facing，rotation_degrees 仅作精确兜底。", parameters: updateSceneObjectsSchema } },
-    { type: "function", function: { name: "create_architecture_elements", description: "原子创建多个明确建筑元素；全部预检成功后一次提交，失败不会创建任何元素。", parameters: buildArchitectureSchema } },
+    { type: "function", function: { name: "create_architecture_elements", description: "原子创建多个明确建筑元素；每项 kind 决定 properties 的必填参数，全部预检成功后一次提交，失败不会创建任何元素。", parameters: buildArchitectureSchema } },
     { type: "function", function: { name: "update_architecture_elements", description: "原子批量更新或删除建筑元素。items 全部预检成功后一次提交，失败不会修改任何元素。", parameters: updateArchitectureSchema } },
     { type: "function", function: { name: "create_reconstruction_plan", description: "创建待用户确认的重建计划，记录假设、必答问题、可复用与待生成物件及其语义摆放；不会生成 3D。", parameters: reconstructionWorkflowSchema } },
     { type: "function", function: { name: "generate_design_preview", description: "根据已知事实和明确假设生成二维效果预览，供用户确认布局与风格。", parameters: designPreviewSchema } },
@@ -378,11 +378,20 @@ function executeGetScene(context: AgentToolExecutionContext): AgentToolExecution
 function executeInspectScene(context: AgentToolExecutionContext): AgentToolExecutionResult {
   if (!context.getSceneSnapshot) return { toolName: "inspect_scene", summary: "当前应用未连接场景服务。", content: "inspect_scene failed: scene service unavailable" };
   const snapshot = context.getSceneSnapshot();
+  return { toolName: "inspect_scene", summary: "已读取当前场景", content: formatSceneInspection(snapshot) };
+}
+
+function formatSceneInspection(snapshot: SceneSnapshot): string {
   const objects = Object.values(snapshot.nodes).filter((node) => node.type === "asset");
   const publicObjects = objects.length
     ? objects.map((object) => formatSemanticAssetPlacement(snapshot, object)).join("\n")
     : "- 无";
-  return { toolName: "inspect_scene", summary: `已读取场景版本 ${snapshot.revision}`, content: `${summarizeSceneForAgent(snapshot)}\n\n可操作场景物件：\n${publicObjects}` };
+  return `${summarizeSceneForAgent(snapshot)}\n\n可操作场景物件：\n${publicObjects}`;
+}
+
+function appendUpdatedSceneInspection(result: AgentToolExecutionResult, snapshot: SceneSnapshot | undefined): AgentToolExecutionResult {
+  if (!snapshot) return result;
+  return { ...result, content: `${result.content}\n\n当前场景状态（无需额外调用 inspect_scene）：\n${formatSceneInspection(snapshot)}` };
 }
 
 async function executeViewScenePreview(args: Record<string, unknown>, context: AgentToolExecutionContext): Promise<AgentToolExecutionResult> {
@@ -397,7 +406,7 @@ async function executeViewScenePreview(args: Record<string, unknown>, context: A
     return {
       toolName: "view_scene_preview",
       summary: `已获取 WebGL 场景预览图（${view}）`,
-      content: `WebGL 场景预览图（${view}）已返回。请以图中可见结果核对物件位置、朝向与明显穿模；精确坐标和版本仍以 inspect_scene 为准。`,
+      content: `WebGL 场景预览图（${view}）已返回。请以图中可见结果核对物件位置、朝向与明显穿模；精确坐标以 inspect_scene 为准。`,
       artifactPath: filePath
     };
   } catch (error) {
@@ -752,8 +761,6 @@ function executePlaceLibraryAssets(args: Record<string, unknown>, context: Agent
   const getSceneSnapshot = context.getSceneSnapshot;
   const snapshot = getSceneSnapshot?.();
   if (!getSceneSnapshot || !snapshot) return { toolName: "place_library_assets", summary: "当前应用未连接场景服务。", content: "place_library_assets failed: scene unavailable" };
-  const expectedRevision = readOptionalNumberArg(args, "expected_revision");
-  if (expectedRevision !== undefined && snapshot.revision !== expectedRevision) return staleSceneRevisionFailure("place_library_assets", snapshot);
   if (!context.placeComponentLibraryItem) return { toolName: "place_library_assets", summary: "当前应用未连接场景资产服务。", content: "place_library_assets failed: scene asset placement unavailable" };
   const library = new Map(listGlobalComponents(context.componentLibraryRootDir ?? context.rootDir).map((item) => [item.id, item]));
   const preflightFailure = preflightLibraryAssetPlacements(items, library, snapshot);
@@ -781,11 +788,11 @@ function executePlaceLibraryAssets(args: Record<string, unknown>, context: Agent
       const result = context.placeComponentLibraryItems(batchInputs);
       if (!result.accepted) return { toolName: "place_library_assets", summary: `批量实例化失败：${result.message ?? "场景事务未提交"}`, content: `place_library_assets failed: ${result.message ?? "scene batch rejected"}` };
       const commands = result.commands ?? [];
-      return {
+      return appendUpdatedSceneInspection({
         toolName: "place_library_assets",
         summary: `已原子实例化 ${batchInputs.length} 个场景物件`,
-        content: batchInputs.map((input, index) => `- scene_object_id: ${commands[index]?.id ?? "（已创建）"}；显示名：${input.name}`).join("\n") + `\n场景版本：${result.snapshot.revision}`
-      };
+        content: batchInputs.map((input, index) => `- scene_object_id: ${commands[index]?.id ?? "（已创建）"}；显示名：${input.name}`).join("\n")
+      }, result.snapshot);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return { toolName: "place_library_assets", summary: `批量实例化失败：${message}`, content: `place_library_assets failed: ${message}` };
@@ -827,7 +834,10 @@ function executePlaceLibraryAssets(args: Record<string, unknown>, context: Agent
       return rollback(`实例化“${component.name}”失败：${message}`, `place_library_assets failed: ${message}`);
     }
   }
-  return { toolName: "place_library_assets", summary: `已实例化 ${created.length} 个场景物件`, content: created.map((item) => `- scene_object_id: ${item.id}；显示名：${item.reference}\n${item.diagnostics}`).join("\n") };
+  return appendUpdatedSceneInspection(
+    { toolName: "place_library_assets", summary: `已实例化 ${created.length} 个场景物件`, content: created.map((item) => `- scene_object_id: ${item.id}；显示名：${item.reference}\n${item.diagnostics}`).join("\n") },
+    getSceneSnapshot()
+  );
 }
 
 function expandLibraryAssetPlacementItems(
@@ -933,7 +943,7 @@ function executePreviewLibraryAssetPlacement(args: Record<string, unknown>, cont
     previews.push(`- 预览落点：[${placement.position.map(formatCoordinate).join(", ")}]\n${formatPlacementDiagnostics(snapshot, placement.position, placement.rotation ?? [0, 0, 0], footprint, scale)}${furnitureCollision ? `\n  家具碰撞：与“${furnitureCollision.name}”占地重叠` : ""}${architectureCollision ? `\n  建筑穿模：与${architectureCollision.wall.name}重叠 ${formatMeters(architectureCollision.overlap)}` : ""}`);
     validationSnapshot = appendPlannedAsset(validationSnapshot, `preview_asset_${previews.length}`, `预览资产 ${previews.length}`, placement.position, placement.rotation ?? [0, 0, 0], scale, footprint);
   }
-  return { toolName: "preview_library_asset_placement", summary: `已预览 ${previews.length} 个落点（场景版本 ${snapshot.revision}），未修改场景。`, content: previews.join("\n") };
+  return { toolName: "preview_library_asset_placement", summary: `已预览 ${previews.length} 个落点，未修改场景。`, content: previews.join("\n") };
 }
 
 function executePlaceSceneObjects(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
@@ -971,7 +981,7 @@ function executePlaceSceneObjects(args: Record<string, unknown>, context: AgentT
       return {
         toolName: "place_scene_objects",
         summary: `已原子放置 ${placements.length} 个场景物件`,
-        content: `已放置场景物件：\n${placements.map((placement, index) => `- ${placement.reference}：asset_id ${result.commands?.[index]?.id ?? "（已创建）"}`).join("\n")}\n场景版本：${result.snapshot.revision}`
+        content: `已放置场景物件：\n${placements.map((placement, index) => `- ${placement.reference}：asset_id ${result.commands?.[index]?.id ?? "（已创建）"}`).join("\n")}`
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -1003,7 +1013,7 @@ function executePlaceSceneObjects(args: Record<string, unknown>, context: AgentT
   return {
     toolName: "place_scene_objects",
     summary: `已放置 ${created.length} 个场景物件`,
-    content: `已放置场景物件：\n${created.map(({ reference }) => `- ${reference}`).join("\n")}\n后续仅使用上述场景引用调用 adjust_scene_object，不要使用构件库 ID、GLB 路径或内部节点 ID。${revision === undefined ? "" : `\n场景版本：${revision}`}`
+    content: `已放置场景物件：\n${created.map(({ reference }) => `- ${reference}`).join("\n")}\n后续仅使用上述场景引用调用 adjust_scene_object，不要使用构件库 ID、GLB 路径或内部节点 ID。`
   };
 }
 
@@ -1057,7 +1067,7 @@ function executePlaceComponentAsset(args: Record<string, unknown>, context: Agen
     return {
       toolName: "place_component_asset",
       summary: `已放置构件：${result.command.name}`,
-      content: `已将构件“${result.command.name}”实例化到场景。\nasset_id（后续 update_asset / asset.update 只能使用此 ID）：${result.command.id}\n场景版本：${result.snapshot.revision}\n下一步如需修改，先读取场景，再使用此 asset_id。`
+      content: `已将构件“${result.command.name}”实例化到场景。\nasset_id（后续 update_asset / asset.update 只能使用此 ID）：${result.command.id}\n下一步如需修改，先读取场景，再使用此 asset_id。`
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -1485,10 +1495,8 @@ function executeSearchResources(args: Record<string, unknown>, context: AgentToo
 }
 
 async function executeApplyScenePlan(args: Record<string, unknown>, context: AgentToolExecutionContext): Promise<AgentToolExecutionResult> {
-  const expectedRevision = readOptionalNumberArg(args, "expected_revision");
   const snapshot = context.getSceneSnapshot?.();
   if (!snapshot) return { toolName: "apply_scene_plan", summary: "当前应用未连接场景服务。", content: "apply_scene_plan failed: scene unavailable" };
-  if (expectedRevision !== undefined && snapshot.revision !== expectedRevision) return staleSceneRevisionFailure("apply_scene_plan", snapshot);
   const commands = Array.isArray(args.commands) ? args.commands : [];
   if (!commands.length) return { toolName: "apply_scene_plan", summary: "场景计划不能为空。", content: "apply_scene_plan failed: missing commands" };
   const transaction = executeSceneTransaction(
@@ -1510,12 +1518,12 @@ async function executeApplyScenePlan(args: Record<string, unknown>, context: Age
     (result) => result.content.includes(" failed:")
   );
   if (transaction.commitError) return { toolName: "apply_scene_plan", summary: "场景计划未提交。", content: `apply_scene_plan failed: ${transaction.commitError}` };
-  if (transaction.snapshot) return { ...transaction.result, content: `${transaction.result.content}\n场景版本：${transaction.snapshot.revision}` };
+  if (transaction.snapshot) return transaction.result;
   return transaction.result;
 }
 
 function executeUpdateScene(args: Record<string, unknown>, context: AgentToolExecutionContext): Promise<AgentToolExecutionResult> {
-  return executeApplyScenePlan({ expected_revision: args.expected_revision, commands: [{ operation: args.operation, input: args.input }] }, context).then((result) => {
+  return executeApplyScenePlan({ commands: [{ operation: args.operation, input: args.input }] }, context).then((result) => {
     if (args.operation === "asset.update" && result.content.includes(" failed:")) {
       const id = readStringArg(readRecord(args.input) ?? {}, "id");
       return sceneAssetNodeNotFoundFailure("update_scene", id);
@@ -1527,10 +1535,8 @@ function executeUpdateScene(args: Record<string, unknown>, context: AgentToolExe
 function executeAdjustSceneObject(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
   const reference = readStringArg(args, "reference");
   if (!reference) return { toolName: "adjust_scene_object", summary: "缺少场景物件引用。", content: "adjust_scene_object failed: missing reference" };
-  const expectedRevision = readOptionalNumberArg(args, "expected_revision");
   const snapshot = context.getSceneSnapshot?.();
   if (!snapshot) return { toolName: "adjust_scene_object", summary: "当前应用未连接场景服务。", content: "adjust_scene_object failed: scene unavailable" };
-  if (expectedRevision !== undefined && snapshot.revision !== expectedRevision) return { toolName: "adjust_scene_object", summary: "场景版本已变化，请重新读取场景后再调整物件。", content: "adjust_scene_object failed: stale scene revision" };
   const matches = Object.values(snapshot.nodes).filter((node) => node.type === "asset" && node.name === reference);
   if (!matches.length) return { toolName: "adjust_scene_object", summary: `未找到场景物件“${reference}”。`, content: `adjust_scene_object failed: unknown scene reference\n请先调用 get_scene，使用其中列出的唯一显示名。` };
   if (matches.length > 1) return { toolName: "adjust_scene_object", summary: `场景引用“${reference}”不唯一。`, content: `adjust_scene_object failed: ambiguous scene reference\n请先调用 get_scene 并使用唯一显示名。` };
@@ -1542,7 +1548,7 @@ function executeAdjustSceneObject(args: Record<string, unknown>, context: AgentT
   }
   const result = executeSceneTool("update_asset", { type: "asset.update", id: matches[0].id, ...(position ? { position } : {}), ...(rotation ? { rotation } : {}), ...(scale ? { scale } : {}) }, context);
   if (result.content.includes(" failed:")) return { ...result, toolName: "adjust_scene_object", content: result.content.replace("update_asset", "adjust_scene_object") };
-  return { toolName: "adjust_scene_object", summary: `已调整场景物件：${reference}`, content: `已调整场景物件：${reference}\n场景版本：${context.getSceneSnapshot?.().revision}` };
+  return { toolName: "adjust_scene_object", summary: `已调整场景物件：${reference}`, content: `已调整场景物件：${reference}` };
 }
 
 function executeUpdateSceneObjects(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
@@ -1550,14 +1556,16 @@ function executeUpdateSceneObjects(args: Record<string, unknown>, context: Agent
   if (!target) return { toolName: "update_scene_object", summary: "需要 scene_object_id 或 reference。", content: "update_scene_object failed: missing target" };
   const snapshot = context.getSceneSnapshot?.();
   if (!snapshot) return { toolName: "update_scene_object", summary: "当前应用未连接场景服务。", content: "update_scene_object failed: scene unavailable" };
-  const expectedRevision = readOptionalNumberArg(args, "expected_revision");
-  if (expectedRevision !== undefined && snapshot.revision !== expectedRevision) return staleSceneRevisionFailure("update_scene_object", snapshot);
   const object = Object.values(snapshot.nodes).find((node) => node.type === "asset" && (node.id === target || node.name === target));
   if (!object || object.type !== "asset") return { toolName: "update_scene_object", summary: `未找到场景物件：${target}`, content: "update_scene_object failed: unknown scene object" };
   const action = readStringArg(args, "action") || "update";
   if (action === "delete") {
     const result = executeSceneTool("delete_node", { type: "node.delete", id: object.id }, context);
-    return result.content.includes(" failed:") ? { ...result, toolName: "update_scene_object" } : { toolName: "update_scene_object", summary: `已删除场景物件：${object.name}`, content: `已删除场景物件：${object.name}` };
+    if (result.content.includes(" failed:")) return { ...result, toolName: "update_scene_object" };
+    return appendUpdatedSceneInspection(
+      { toolName: "update_scene_object", summary: `已删除场景物件：${object.name}`, content: `已删除场景物件：${object.name}` },
+      context.getSceneSnapshot?.()
+    );
   }
   const placement = resolveAssetPlacement(args, snapshot, object.position, object.rotation);
   if ("error" in placement) return { toolName: "update_scene_object", summary: placement.error, content: `update_scene_object failed: ${placement.error}` };
@@ -1582,15 +1590,10 @@ function executeUpdateSceneObjects(args: Record<string, unknown>, context: Agent
   }, context);
   if (result.content.includes(" failed:")) return { ...result, toolName: "update_scene_object", content: result.content.replace("update_asset", "update_scene_object") };
   const currentSnapshot = context.getSceneSnapshot?.() ?? snapshot;
-  return { toolName: "update_scene_object", summary: `已调整场景物件：${object.name}`, content: `已调整场景物件：${object.name}\n${formatPlacementDiagnostics(currentSnapshot, placement.position ?? object.position, placement.rotation ?? object.rotation, footprint, scale ?? object.scale)}\n场景版本：${currentSnapshot.revision}` };
-}
-
-function staleSceneRevisionFailure(toolName: BuiltinToolName, snapshot: SceneSnapshot): AgentToolExecutionResult {
-  return {
-    toolName,
-    summary: `场景版本已变化；可重试的最新版本为 ${snapshot.revision}。`,
-    content: `${toolName} failed: stale scene revision\nexpected_revision 已过期；current_revision: ${snapshot.revision}\n如确认原操作仍适用，可直接携带 expected_revision=${snapshot.revision} 重试；若操作依赖已有物件或建筑关系，请先 inspect_scene。`
-  };
+  return appendUpdatedSceneInspection(
+    { toolName: "update_scene_object", summary: `已调整场景物件：${object.name}`, content: `已调整场景物件：${object.name}\n${formatPlacementDiagnostics(currentSnapshot, placement.position ?? object.position, placement.rotation ?? object.rotation, footprint, scale ?? object.scale)}` },
+    currentSnapshot
+  );
 }
 
 type AssetPlacementResolution = {
@@ -1946,20 +1949,15 @@ function formatMeters(value: number): string {
 }
 
 async function executeBuildArchitecture(args: Record<string, unknown>, context: AgentToolExecutionContext): Promise<AgentToolExecutionResult> {
-  const expectedRevision = readOptionalNumberArg(args, "expected_revision");
   const snapshot = context.getSceneSnapshot?.();
   if (!snapshot) return { toolName: "create_architecture_elements", summary: "当前应用未连接场景服务。", content: "create_architecture_elements failed: scene unavailable" };
-  if (expectedRevision !== undefined && snapshot.revision !== expectedRevision) return staleSceneRevisionFailure("create_architecture_elements", snapshot);
   const transaction = executeSceneTransaction(
     context,
     (transactionContext) => executeBuildArchitectureInSnapshot(args, transactionContext),
     (result) => result.content.includes(" failed:")
   );
   if (transaction.commitError) return { toolName: "create_architecture_elements", summary: "批量创建未提交。", content: `create_architecture_elements failed: ${transaction.commitError}` };
-  if (transaction.snapshot) {
-    return { ...transaction.result, content: `${transaction.result.content}\n场景版本：${transaction.snapshot.revision}` };
-  }
-  return transaction.result;
+  return appendUpdatedSceneInspection(transaction.result, transaction.snapshot ?? context.getSceneSnapshot?.());
 }
 
 function executeBuildArchitectureInSnapshot(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
@@ -2005,10 +2003,8 @@ function executeArchitectureCreateCommand(toolName: BuiltinToolName, args: Recor
 }
 
 function executeUpdateArchitecture(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
-  const expectedRevision = readOptionalNumberArg(args, "expected_revision");
   const snapshot = context.getSceneSnapshot?.();
   if (!snapshot) return { toolName: "update_architecture_elements", summary: "当前应用未连接场景服务。", content: "update_architecture_elements failed: scene unavailable" };
-  if (expectedRevision !== undefined && snapshot.revision !== expectedRevision) return staleSceneRevisionFailure("update_architecture_elements", snapshot);
   const items = Array.isArray(args.items) ? args.items : [];
   if (!items.length) return { toolName: "update_architecture_elements", summary: "请至少提供一个建筑元素变更。", content: "update_architecture_elements failed: missing items" };
   const transaction = executeSceneTransaction(
@@ -2025,8 +2021,7 @@ function executeUpdateArchitecture(args: Record<string, unknown>, context: Agent
     (result) => result.content.includes(" failed:")
   );
   if (transaction.commitError) return { toolName: "update_architecture_elements", summary: "批量更新未提交。", content: `update_architecture_elements failed: ${transaction.commitError}` };
-  if (transaction.snapshot) return { ...transaction.result, content: `${transaction.result.content}\n场景版本：${transaction.snapshot.revision}` };
-  return transaction.result;
+  return appendUpdatedSceneInspection(transaction.result, transaction.snapshot ?? context.getSceneSnapshot?.());
 }
 
 function executeUpdateArchitectureItem(args: Record<string, unknown> | undefined, context: AgentToolExecutionContext): AgentToolExecutionResult {
@@ -2125,7 +2120,7 @@ function executeSceneTool(
   return {
     toolName,
     summary: `${action}：${nodeId}`,
-    content: `${action}\n节点 ID：${nodeId}\n场景版本：${result.snapshot.revision}`
+    content: `${action}\n节点 ID：${nodeId}`
   };
 }
 
@@ -2908,25 +2903,45 @@ const assetPlacementProperties = { position: worldPositionSchema, anchor: wallAn
 const targetDimensionsMetersSchema = { type: "array", description: "目标可见尺寸 [宽(X),高(Y),深(Z)]，单位米。加载模型后会按实际包围盒自动校准；用于需要精确物理尺寸的资产。", items: { type: "number", exclusiveMinimum: 0 }, minItems: 3, maxItems: 3 } as const;
 const placementArraySchema = { type: "object", description: "规则阵列；仅可配合 position 使用。line 按 offset_meters 复制 quantity 次；grid 以 offset_meters 作为列 X 间距和行 Z 间距，复制 rows×columns 次。", properties: { mode: { type: "string", enum: ["line", "grid"] }, quantity: { type: "integer", minimum: 1, maximum: 100 }, rows: { type: "integer", minimum: 1, maximum: 100 }, columns: { type: "integer", minimum: 1, maximum: 100 }, offset_meters: { type: "array", description: "line 为每件 [X,Z] 偏移；grid 为 [列 X 间距, 行 Z 间距]。", items: { type: "number" }, minItems: 2, maxItems: 2 } }, required: ["mode", "offset_meters"], additionalProperties: false } as const;
 const placeLibraryAssetItemSchema = { type: "object", properties: { library_asset_id: { type: "string" }, reference: { type: "string" }, ...assetPlacementProperties, scale: point3Schema, target_dimensions_meters: targetDimensionsMetersSchema, footprint_meters: footprintMetersSchema, ignore_collision: { type: "boolean", description: "显式允许与已知家具占地或墙体重叠；仅在用户确认需要相交摆放时使用。" }, array: placementArraySchema }, required: ["library_asset_id"], anyOf: [{ required: ["position"] }, { required: ["anchor"] }], additionalProperties: false } as const;
-const placeLibraryAssetsSchema = { type: "object", properties: { expected_revision: { type: "integer", minimum: 0, description: "可选。携带时校验场景版本；省略时直接基于最新场景放置。" }, items: { type: "array", minItems: 1, items: placeLibraryAssetItemSchema } }, required: ["items"], additionalProperties: false } as const;
+const placeLibraryAssetsSchema = { type: "object", properties: { items: { type: "array", minItems: 1, items: placeLibraryAssetItemSchema } }, required: ["items"], additionalProperties: false } as const;
 const previewLibraryAssetPlacementSchema = { type: "object", properties: { items: { type: "array", minItems: 1, items: placeLibraryAssetItemSchema } }, required: ["items"], additionalProperties: false } as const;
-const updateSceneObjectsSchema = { type: "object", properties: { expected_revision: { type: "integer", minimum: 0, description: "可选。携带时校验场景版本；省略时直接基于最新场景修改。" }, scene_object_id: { type: "string" }, reference: { type: "string" }, action: { type: "string", enum: ["update", "delete"] }, ...assetPlacementProperties, scale: point3Schema, target_dimensions_meters: targetDimensionsMetersSchema, footprint_meters: footprintMetersSchema }, additionalProperties: false } as const;
-const architectureElementSchema = { type: "object", properties: { kind: { type: "string", enum: ["wall", "slab", "ceiling", "column", "zone", "stair", "fence", "door", "window"] }, reference: { type: "string" }, properties: { type: "object", additionalProperties: true } }, required: ["kind", "properties"], additionalProperties: false } as const;
-const buildArchitectureSchema = { type: "object", properties: { expected_revision: { type: "integer", minimum: 0, description: "可选。携带时校验场景版本；整批操作只校验一次。" }, elements: { type: "array", minItems: 1, items: architectureElementSchema } }, required: ["elements"], additionalProperties: false } as const;
+const updateSceneObjectsSchema = { type: "object", properties: { scene_object_id: { type: "string" }, reference: { type: "string" }, action: { type: "string", enum: ["update", "delete"] }, ...assetPlacementProperties, scale: point3Schema, target_dimensions_meters: targetDimensionsMetersSchema, footprint_meters: footprintMetersSchema }, additionalProperties: false } as const;
+const architectureWallPropertiesSchema = { type: "object", properties: { start: pointSchema, end: pointSchema, height: { type: "number" }, thickness: { type: "number" }, material_preset: materialPresetSchema }, required: ["start", "end"], additionalProperties: false } as const;
+const architectureSlabPropertiesSchema = { type: "object", properties: { polygon: polygonSchema, elevation: { type: "number" }, material_preset: materialPresetSchema }, required: ["polygon"], additionalProperties: false } as const;
+const architectureCeilingPropertiesSchema = { type: "object", properties: { polygon: polygonSchema, height: { type: "number" }, material_preset: materialPresetSchema }, required: ["polygon"], additionalProperties: false } as const;
+const architectureColumnPropertiesSchema = { type: "object", properties: { position: point3Schema, cross_section: { type: "string", enum: ["round", "square", "rectangular"] }, height: { type: "number" }, width: { type: "number" }, depth: { type: "number" }, material_preset: materialPresetSchema }, required: ["position"], additionalProperties: false } as const;
+const architectureZonePropertiesSchema = { type: "object", properties: { polygon: polygonSchema, color: { type: "string" } }, required: ["polygon"], additionalProperties: false } as const;
+const architectureStairPropertiesSchema = { type: "object", properties: { position: point3Schema, rotation: { type: "number" }, width: { type: "number" }, total_rise: { type: "number" }, step_count: { type: "integer", minimum: 2 }, thickness: { type: "number" }, railing_mode: stairRailingModeSchema, material_preset: materialPresetSchema }, required: ["position"], additionalProperties: false } as const;
+const architectureFencePropertiesSchema = { type: "object", properties: { start: pointSchema, end: pointSchema, height: { type: "number" }, thickness: { type: "number" }, style: fenceStyleSchema, material_preset: materialPresetSchema }, required: ["start", "end"], additionalProperties: false } as const;
+const architectureOpeningPropertiesSchema = { type: "object", properties: { wall_reference: { type: "string", description: "本批次或当前场景中墙体的 reference 或 element_id。" }, offset: { type: "number" }, width: { type: "number" }, height: { type: "number" }, sill_height: { type: "number" }, material_preset: materialPresetSchema }, required: ["wall_reference", "offset"], additionalProperties: false } as const;
+const architectureElementSchema = {
+  oneOf: [
+    { type: "object", properties: { kind: { type: "string", enum: ["wall"] }, reference: { type: "string" }, properties: architectureWallPropertiesSchema }, required: ["kind", "properties"], additionalProperties: false },
+    { type: "object", properties: { kind: { type: "string", enum: ["slab"] }, reference: { type: "string" }, properties: architectureSlabPropertiesSchema }, required: ["kind", "properties"], additionalProperties: false },
+    { type: "object", properties: { kind: { type: "string", enum: ["ceiling"] }, reference: { type: "string" }, properties: architectureCeilingPropertiesSchema }, required: ["kind", "properties"], additionalProperties: false },
+    { type: "object", properties: { kind: { type: "string", enum: ["column"] }, reference: { type: "string" }, properties: architectureColumnPropertiesSchema }, required: ["kind", "properties"], additionalProperties: false },
+    { type: "object", properties: { kind: { type: "string", enum: ["zone"] }, reference: { type: "string" }, properties: architectureZonePropertiesSchema }, required: ["kind", "properties"], additionalProperties: false },
+    { type: "object", properties: { kind: { type: "string", enum: ["stair"] }, reference: { type: "string" }, properties: architectureStairPropertiesSchema }, required: ["kind", "properties"], additionalProperties: false },
+    { type: "object", properties: { kind: { type: "string", enum: ["fence"] }, reference: { type: "string" }, properties: architectureFencePropertiesSchema }, required: ["kind", "properties"], additionalProperties: false },
+    { type: "object", properties: { kind: { type: "string", enum: ["door"] }, reference: { type: "string" }, properties: architectureOpeningPropertiesSchema }, required: ["kind", "properties"], additionalProperties: false },
+    { type: "object", properties: { kind: { type: "string", enum: ["window"] }, reference: { type: "string" }, properties: architectureOpeningPropertiesSchema }, required: ["kind", "properties"], additionalProperties: false }
+  ]
+} as const;
+const buildArchitectureSchema = { type: "object", properties: { elements: { type: "array", minItems: 1, items: architectureElementSchema } }, required: ["elements"], additionalProperties: false } as const;
 const updateArchitectureItemSchema = { type: "object", properties: { element_id: { type: "string" }, reference: { type: "string" }, action: { type: "string", enum: ["update", "delete"] }, changes: { type: "object", additionalProperties: true } }, required: ["action"], anyOf: [{ required: ["element_id"] }, { required: ["reference"] }], additionalProperties: false } as const;
-const updateArchitectureSchema = { type: "object", properties: { expected_revision: { type: "integer", minimum: 0, description: "可选。携带时校验场景版本；整批操作只校验一次。" }, items: { type: "array", minItems: 1, items: updateArchitectureItemSchema } }, required: ["items"], additionalProperties: false } as const;
+const updateArchitectureSchema = { type: "object", properties: { items: { type: "array", minItems: 1, items: updateArchitectureItemSchema } }, required: ["items"], additionalProperties: false } as const;
 const sceneObjectPlacementSchema = { type: "object", properties: { query: { type: "string", description: "待放置物件的中文名称或检索词。" }, reference: { type: "string", description: "可选的唯一场景显示名；未提供时自动编号，例如现代沙发_2。" }, position: point3Schema, rotation: point3Schema, scale: point3Schema }, required: ["query"], additionalProperties: false } as const;
 const placeSceneObjectsSchema = { type: "object", properties: { items: { type: "array", minItems: 1, items: sceneObjectPlacementSchema } }, required: ["items"], additionalProperties: false } as const;
-const adjustSceneObjectSchema = { type: "object", properties: { expected_revision: { type: "integer", minimum: 0, description: "可选。携带时校验场景版本；省略时直接基于最新场景修改。" }, reference: { type: "string" }, position: point3Schema, rotation: point3Schema, scale: point3Schema }, required: ["reference"], additionalProperties: false } as const;
+const adjustSceneObjectSchema = { type: "object", properties: { reference: { type: "string" }, position: point3Schema, rotation: point3Schema, scale: point3Schema }, required: ["reference"], additionalProperties: false } as const;
 const componentLibrarySearchSchema = { type: "object", properties: { query: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 20 } }, required: ["query"], additionalProperties: false } as const;
 const analyzeReferenceSchema = { type: "object", properties: { path: { type: "string" }, profile: { type: "string", enum: ["document", "image", "spatial"] } }, required: ["path", "profile"], additionalProperties: false } as const;
 const scenePlanCommandSchema = { type: "object", properties: { operation: { type: "string", enum: ["wall.create", "wall.update", "slab.create", "slab.update", "ceiling.create", "ceiling.update", "column.create", "column.update", "zone.create", "zone.update", "stair.create", "stair.update", "fence.create", "fence.update", "door.create", "door.update", "window.create", "window.update", "asset.update", "node.delete"] }, input: { type: "object", additionalProperties: true } }, required: ["operation", "input"], additionalProperties: false } as const;
-const scenePlanSchema = { type: "object", properties: { expected_revision: { type: "integer", minimum: 0, description: "可选。携带时校验场景版本；省略时直接基于最新场景执行。" }, commands: { type: "array", minItems: 1, items: scenePlanCommandSchema } }, required: ["commands"], additionalProperties: false } as const;
-const sceneUpdateSchema = { type: "object", properties: { expected_revision: { type: "integer", minimum: 0, description: "可选。携带时校验场景版本；省略时直接基于最新场景执行。" }, operation: scenePlanCommandSchema.properties.operation, input: { type: "object", additionalProperties: true } }, required: ["operation", "input"], additionalProperties: false } as const;
+const scenePlanSchema = { type: "object", properties: { commands: { type: "array", minItems: 1, items: scenePlanCommandSchema } }, required: ["commands"], additionalProperties: false } as const;
+const sceneUpdateSchema = { type: "object", properties: { operation: scenePlanCommandSchema.properties.operation, input: { type: "object", additionalProperties: true } }, required: ["operation", "input"], additionalProperties: false } as const;
 const agentSceneOperationSchema = { type: "string", enum: ["wall.create", "wall.update", "slab.create", "slab.update", "ceiling.create", "ceiling.update", "column.create", "column.update", "zone.create", "zone.update", "stair.create", "stair.update", "fence.create", "fence.update", "door.create", "door.update", "window.create", "window.update", "node.delete"] } as const;
 const agentScenePlanCommandSchema = { type: "object", properties: { operation: agentSceneOperationSchema, input: { type: "object", additionalProperties: true } }, required: ["operation", "input"], additionalProperties: false } as const;
-const agentScenePlanSchema = { type: "object", properties: { expected_revision: { type: "integer", minimum: 0, description: "可选。携带时校验场景版本；省略时直接基于最新场景执行。" }, commands: { type: "array", minItems: 1, items: agentScenePlanCommandSchema } }, required: ["commands"], additionalProperties: false } as const;
-const agentSceneUpdateSchema = { type: "object", properties: { expected_revision: { type: "integer", minimum: 0, description: "可选。携带时校验场景版本；省略时直接基于最新场景执行。" }, operation: agentSceneOperationSchema, input: { type: "object", additionalProperties: true } }, required: ["operation", "input"], additionalProperties: false } as const;
+const agentScenePlanSchema = { type: "object", properties: { commands: { type: "array", minItems: 1, items: agentScenePlanCommandSchema } }, required: ["commands"], additionalProperties: false } as const;
+const agentSceneUpdateSchema = { type: "object", properties: { operation: agentSceneOperationSchema, input: { type: "object", additionalProperties: true } }, required: ["operation", "input"], additionalProperties: false } as const;
 const spatialReferenceSchema = { type: "object", properties: { path: { type: "string" }, task: { type: "string" } }, required: ["path"], additionalProperties: false } as const;
 const objectExtractionSchema = { type: "object", properties: { path: { type: "string" }, name: { type: "string" }, instruction: { type: "string" } }, required: ["path", "name", "instruction"], additionalProperties: false } as const;
 const cropReferenceSchema = { type: "object", properties: { path: { type: "string" }, regions: { type: "array", minItems: 1, items: { type: "object", properties: { id: { type: "string" }, name: { type: "string" }, box: { type: "array", items: { type: "number" }, minItems: 4, maxItems: 4 } }, required: ["id", "name", "box"], additionalProperties: false } } }, required: ["path", "regions"], additionalProperties: false } as const;

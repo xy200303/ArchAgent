@@ -32,7 +32,6 @@ export function summarizeSceneForAgent(snapshot: SceneSnapshot): string {
   const levels = Object.values(snapshot.nodes).filter((node) => node.type === "level");
 
   return [
-    `场景版本：${snapshot.revision}`,
     formatSceneCoordinateContext(getSceneCoordinateContext(snapshot)),
     `楼层：${levels.map((level) => `${level.name}（${level.id}）`).join("；") || "无"}`,
     `墙体数量：${walls.length}`,
