@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChatCompletionMessageToolCall } from "openai/resources/chat/completions";
@@ -24,6 +24,7 @@ describe("agentToolRegistry", () => {
     expect(names).toContain("search_library_assets");
     expect(names).toContain("place_library_asset");
     expect(names).toContain("place_library_assets");
+    expect(names).toContain("preview_library_asset_placement");
     expect(names).toContain("inspect_scene");
     expect(names).toContain("update_scene_object");
     expect(names).toContain("create_architecture_element");
@@ -53,6 +54,7 @@ describe("agentToolRegistry", () => {
 
     expect(prompt).toContain("search_library_assets");
     expect(prompt).toContain("place_library_assets");
+    expect(prompt).toContain("preview_library_asset_placement");
     expect(prompt).toContain("library_asset_id");
     expect(prompt).toContain("严禁复用失败参数");
     expect(prompt).toContain("create_reconstruction_plan");
@@ -361,6 +363,61 @@ describe("agentToolRegistry", () => {
     expect(names).toContain("generate_3d_asset");
   });
 
+  it("returns the current WebGL preview as an Agent-visible image resource", async () => {
+    const outputDir = mkdtempSync(join(tmpdir(), "arch-agent-scene-preview-"));
+    const captureScenePreview = vi.fn(async () => Buffer.from("preview-png").toString("base64"));
+    try {
+      const result = await executeAgentToolCall(
+        createToolCall("view_scene_preview", { view: "top" }),
+        createContext({ outputDir, captureScenePreview })
+      );
+
+      expect(result.toolName).toBe("view_scene_preview");
+      expect(captureScenePreview).toHaveBeenCalledWith("top");
+      expect(result.summary).toContain("top");
+      expect(result.artifactPath).toMatch(/scene-preview-\d+\.png$/);
+      expect(readFileSync(result.artifactPath!).toString()).toBe("preview-png");
+    } finally {
+      rmSync(outputDir, { recursive: true, force: true });
+    }
+  });
+
+  it("prepares an existing session resource for explicit user delivery", async () => {
+    const outputDir = mkdtempSync(join(tmpdir(), "arch-agent-send-file-"));
+    const previewPath = join(outputDir, "scene-preview.png");
+    writeFileSync(previewPath, "preview-png");
+    try {
+      const result = await executeAgentToolCall(
+        createToolCall("send_file", { resource_id: "resource_preview" }),
+        createContext({
+          resources: [{
+            id: "resource_preview",
+            sessionId: "session_1",
+            name: "scene-preview.png",
+            kind: "image",
+            mimeType: "image/png",
+            size: 11,
+            path: previewPath,
+            source: "generated",
+            parentResourceIds: [],
+            metadata: {},
+            status: "ready",
+            confirmed: false,
+            pinned: false,
+            createdAt: "2026-07-19T00:00:00.000Z"
+          }]
+        })
+      );
+
+      expect(result.toolName).toBe("send_file");
+      expect(result.sendResourceId).toBe("resource_preview");
+      expect(result.artifactPath).toBeUndefined();
+      expect(result.content).toContain("send_file prepared");
+    } finally {
+      rmSync(outputDir, { recursive: true, force: true });
+    }
+  });
+
   it.skip("places a library component before updating its generated scene asset ID", async () => {
     const placeComponentLibraryItem = vi.fn(() => ({
       accepted: true as const,
@@ -487,7 +544,8 @@ describe("agentToolRegistry", () => {
     expect(result.toolName).toBe("inspect_scene");
     expect(result.content).toContain("scene_object_id: asset_sofa");
     expect(result.content).toContain("显示名：现代沙发_1");
-    expect(result.content).toContain("距墙：北墙 0.55m（inside）");
+    expect(result.content).toContain("距墙：北墙 0.45m（室内侧）");
+    expect(result.content).toContain("位于房间/楼板范围内：是");
     expect(result.content).toContain("离地：0m（落地）");
     expect(result.content).toContain("面朝：north");
     expect(result.content).toContain("rotation_degrees");

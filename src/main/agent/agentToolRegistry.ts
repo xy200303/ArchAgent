@@ -1,6 +1,6 @@
 /** Registers Agent-callable tools and routes validated calls to focused executors. */
 import { exec, type ExecOptions } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { TextDecoder, promisify } from "node:util";
 import { basename, extname, isAbsolute, join, relative, resolve } from "node:path";
 import OpenAI from "openai";
@@ -60,6 +60,7 @@ export interface AgentToolExecutionContext {
   execBashEnabled: boolean;
   bundledPythonRuntime?: BundledPythonRuntime;
   getSceneSnapshot?: () => SceneSnapshot;
+  captureScenePreview?: (view?: import("./agentRuntime").ScenePreviewView) => Promise<string>;
   executeSceneCommand?: (command: SceneCommandInput) => SceneCommandResult;
   placeComponentLibraryItem?: (input: {
     componentId: string;
@@ -78,6 +79,8 @@ export interface AgentToolExecutionResult {
   summary: string;
   content: string;
   artifactPath?: string;
+  /** A registered session resource that must be explicitly delivered to the user. */
+  sendResourceId?: string;
   imagePaths?: string[];
   parentResourceIds?: string[];
 }
@@ -267,8 +270,10 @@ function buildRefactoredAgentChatTools(options: { includeExecBash: boolean }): C
     { type: "function", function: { name: "view_resources", description: "按 resource_id 查看项目资源，或按 search_library_assets 返回的 library_asset_id 查看资产库模型。图片和可用 3D 预览直接回传给模型；文档返回相关文字。不得传本机路径。", parameters: viewResourcesSchema } },
     { type: "function", function: { name: "search_library_assets", description: "按名称、类别、标签或描述搜索全局资产库，返回可直接用于实例化的 library_asset_id、名称、参数与预览状态。", parameters: componentLibrarySearchSchema } },
     { type: "function", function: { name: "place_library_asset", description: "将一个 library_asset_id 实例化到当前场景。用于单件精确摆放；参数与 place_library_assets.items 的单项一致，必须携带 expected_revision。", parameters: placeLibraryAssetSchema } },
-    { type: "function", function: { name: "place_library_assets", description: "将 search_library_assets 返回的 library_asset_id 实例化到当前场景。position 为世界米制坐标，或使用 anchor 锚定墙体（element_id 可传墙体 ID 或唯一显示名）+ local 局部偏移；朝向优先使用 look_at 或 facing，rotation_degrees 仅作精确兜底。返回 scene_object_id 与唯一显示名。", parameters: placeLibraryAssetsSchema } },
+    { type: "function", function: { name: "preview_library_asset_placement", description: "预览一个或多个资产的落点与几何校验，不修改场景。anchor.side=room_interior（inside 兼容别名）会按房间/楼板边界自动判定室内侧，不依赖墙体绘制方向。", parameters: previewLibraryAssetPlacementSchema } },
+    { type: "function", function: { name: "place_library_assets", description: "将 search_library_assets 返回的 library_asset_id 实例化到当前场景。position 为世界米制坐标，或使用 anchor 锚定墙体；anchor.side=room_interior（inside 兼容别名）自动落在室内侧，不依赖墙体绘制方向。朝向优先使用 look_at 或 facing，rotation_degrees 仅作精确兜底。返回 scene_object_id、显示名和几何校验结果。", parameters: placeLibraryAssetsSchema } },
     { type: "function", function: { name: "inspect_scene", description: "读取当前场景的建筑元素和已放置物件，返回可用于后续操作的公开 ID、显示名、参数与版本。", parameters: emptyObjectSchema } },
+    { type: "function", function: { name: "view_scene_preview", description: "获取当前 3D 工作台的 WebGL 预览图并直接返回给 Agent。可选 view 指定 current、perspective、top、front、right、left、back 或 bottom，以核对不同方向的摆放和明显穿模；只读，不修改场景数据。若要把截图展示给用户，必须再用本工具结果中的 resource_id 调用 send_file。", parameters: scenePreviewSchema } },
     { type: "function", function: { name: "update_scene_object", description: "按 scene_object_id 或唯一显示名调整或删除一个已放置物件。可用世界 position，或 anchor 锚定墙体加 local 偏移；朝向优先 look_at 或 facing，rotation_degrees 仅作精确兜底。", parameters: updateSceneObjectsSchema } },
     { type: "function", function: { name: "create_architecture_element", description: "创建一个建筑元素（墙、门、窗、楼板、房间等）。用于单元素精确创建；必须携带 kind、properties 和 expected_revision。", parameters: createArchitectureElementSchema } },
     { type: "function", function: { name: "create_architecture_elements", description: "批量创建多个明确的建筑元素；元素可使用 reference 作为唯一显示名，工具返回公开元素 ID。", parameters: buildArchitectureSchema } },
@@ -322,8 +327,12 @@ export async function executeAgentToolCall(
       return executePlaceLibraryAsset(args, context);
     case "place_library_assets":
       return executePlaceLibraryAssets(args, context);
+    case "preview_library_asset_placement":
+      return executePreviewLibraryAssetPlacement(args, context);
     case "inspect_scene":
       return executeInspectScene(context);
+    case "view_scene_preview":
+      return executeViewScenePreview(args, context);
     case "update_scene_object":
       return executeUpdateSceneObjects(args, context);
     case "create_architecture_element":
@@ -367,6 +376,27 @@ function executeInspectScene(context: AgentToolExecutionContext): AgentToolExecu
     ? objects.map((object) => formatSemanticAssetPlacement(snapshot, object)).join("\n")
     : "- 无";
   return { toolName: "inspect_scene", summary: `已读取场景版本 ${snapshot.revision}`, content: `${summarizeSceneForAgent(snapshot)}\n\n可操作场景物件：\n${publicObjects}` };
+}
+
+async function executeViewScenePreview(args: Record<string, unknown>, context: AgentToolExecutionContext): Promise<AgentToolExecutionResult> {
+  if (!context.captureScenePreview) return { toolName: "view_scene_preview", summary: "当前应用未连接 WebGL 预览服务。", content: "view_scene_preview failed: viewport capture unavailable" };
+  try {
+    const view = readStringArg(args, "view") || "current";
+    if (!SCENE_PREVIEW_VIEWS.includes(view as typeof SCENE_PREVIEW_VIEWS[number])) throw new Error("view 必须为 current、perspective、top、front、right、left、back 或 bottom。");
+    const dataBase64 = await context.captureScenePreview(view as import("./agentRuntime").ScenePreviewView);
+    if (!dataBase64) throw new Error("WebGL 预览图为空。");
+    const filePath = join(context.outputDir, `scene-preview-${Date.now()}.png`);
+    writeFileSync(filePath, Buffer.from(dataBase64, "base64"));
+    return {
+      toolName: "view_scene_preview",
+      summary: `已获取 WebGL 场景预览图（${view}）`,
+      content: `WebGL 场景预览图（${view}）已返回。请以图中可见结果核对物件位置、朝向与明显穿模；精确坐标和版本仍以 inspect_scene 为准。`,
+      artifactPath: filePath
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { toolName: "view_scene_preview", summary: `获取 WebGL 预览图失败：${message}`, content: `view_scene_preview failed: ${message}` };
+  }
 }
 
 function executeCreateWall(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
@@ -713,7 +743,7 @@ function executePlaceLibraryAssets(args: Record<string, unknown>, context: Agent
   if (!items.length) return { toolName: "place_library_assets", summary: "请至少提供一个资产。", content: "place_library_assets failed: missing items" };
   const library = new Map(listGlobalComponents(context.componentLibraryRootDir ?? context.rootDir).map((item) => [item.id, item]));
   const references = new Set(Object.values(context.getSceneSnapshot?.().nodes ?? {}).filter((node) => node.type === "asset").map((node) => node.name));
-  const created: Array<{ id: string; reference: string }> = [];
+  const created: Array<{ id: string; reference: string; diagnostics: string }> = [];
   for (const rawItem of items) {
     const item = readRecord(rawItem);
     const libraryAssetId = item ? readStringArg(item, "library_asset_id") : "";
@@ -729,26 +759,54 @@ function executePlaceLibraryAssets(args: Record<string, unknown>, context: Agent
     if (item && "footprint_meters" in item && (!footprint || footprint.some((value) => value <= 0))) return { toolName: "place_library_assets", summary: `资产“${component.name}”的占地尺寸无效。`, content: "place_library_assets failed: invalid footprint" };
     const collision = footprint && position ? findAssetPlacementCollision(context.getSceneSnapshot(), position, rotation ?? [0, 0, 0], footprint, scale ?? [1, 1, 1]) : undefined;
     if (collision) return { toolName: "place_library_assets", summary: `“${component.name}”会与“${collision.name}”占地碰撞。`, content: `place_library_assets failed: footprint collision with ${collision.name} (${collision.id})` };
+    const architectureCollision = footprint && position ? findArchitecturePlacementCollision(context.getSceneSnapshot(), position, rotation ?? [0, 0, 0], footprint, scale ?? [1, 1, 1]) : undefined;
+    if (architectureCollision) return { toolName: "place_library_assets", summary: `“${component.name}”会与${architectureCollision.wall.name}穿模 ${formatMeters(architectureCollision.overlap)}。`, content: `place_library_assets failed: wall collision with ${architectureCollision.wall.id}` };
     const reference = uniqueSceneReference(item ? readStringArg(item, "reference") || component.name : component.name, references);
     references.add(reference);
     try {
       const result = context.placeComponentLibraryItem({ componentId: component.id, name: reference, ...(position ? { position } : {}), ...(rotation ? { rotation } : {}), ...(scale ? { scale } : {}), ...(footprint ? { footprint } : {}) });
       if (!result.accepted) return { toolName: "place_library_assets", summary: `实例化“${component.name}”失败：${result.message}`, content: `place_library_assets failed: ${result.message}` };
       if (result.command.type !== "asset.create") return { toolName: "place_library_assets", summary: "实例化未返回场景物件。", content: "place_library_assets failed: unexpected scene command" };
-      created.push({ id: result.command.id, reference });
+      created.push({ id: result.command.id, reference, diagnostics: formatPlacementDiagnostics(context.getSceneSnapshot() ?? result.snapshot, position!, rotation ?? [0, 0, 0], footprint, scale ?? [1, 1, 1]) });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return { toolName: "place_library_assets", summary: `实例化“${component.name}”失败：${message}`, content: `place_library_assets failed: ${message}` };
     }
   }
-  return { toolName: "place_library_assets", summary: `已实例化 ${created.length} 个场景物件`, content: created.map((item) => `- scene_object_id: ${item.id}；显示名：${item.reference}`).join("\n") };
+  return { toolName: "place_library_assets", summary: `已实例化 ${created.length} 个场景物件`, content: created.map((item) => `- scene_object_id: ${item.id}；显示名：${item.reference}\n${item.diagnostics}`).join("\n") };
+}
+
+function executePreviewLibraryAssetPlacement(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
+  const snapshot = context.getSceneSnapshot?.();
+  const items = Array.isArray(args.items) ? args.items : [];
+  if (!snapshot) return { toolName: "preview_library_asset_placement", summary: "当前应用未连接场景服务。", content: "preview_library_asset_placement failed: scene unavailable" };
+  if (!items.length) return { toolName: "preview_library_asset_placement", summary: "请至少提供一个资产。", content: "preview_library_asset_placement failed: missing items" };
+
+  const previews: string[] = [];
+  for (const rawItem of items) {
+    const item = readRecord(rawItem) ?? {};
+    const placement = resolveAssetPlacement(item, snapshot);
+    if ("error" in placement || !placement.position) {
+      const message = "error" in placement ? placement.error : "无法解析落点。";
+      return { toolName: "preview_library_asset_placement", summary: message, content: `preview_library_asset_placement failed: ${message}` };
+    }
+    const scale = "scale" in item ? readPoint3Arg(item, "scale") : [1, 1, 1] as [number, number, number];
+    const footprint = "footprint_meters" in item ? readPoint2Arg(item, "footprint_meters") : undefined;
+    if (!scale || scale.some((value) => value <= 0) || ("footprint_meters" in item && (!footprint || footprint.some((value) => value <= 0)))) {
+      return { toolName: "preview_library_asset_placement", summary: "缩放或占地尺寸无效。", content: "preview_library_asset_placement failed: invalid placement dimensions" };
+    }
+    const furnitureCollision = footprint ? findAssetPlacementCollision(snapshot, placement.position, placement.rotation ?? [0, 0, 0], footprint, scale) : undefined;
+    const architectureCollision = footprint ? findArchitecturePlacementCollision(snapshot, placement.position, placement.rotation ?? [0, 0, 0], footprint, scale) : undefined;
+    previews.push(`- 预览落点：[${placement.position.map(formatCoordinate).join(", ")}]\n${formatPlacementDiagnostics(snapshot, placement.position, placement.rotation ?? [0, 0, 0], footprint, scale)}${furnitureCollision ? `\n  家具碰撞：与“${furnitureCollision.name}”占地重叠` : ""}${architectureCollision ? `\n  建筑穿模：与${architectureCollision.wall.name}重叠 ${formatMeters(architectureCollision.overlap)}` : ""}`);
+  }
+  return { toolName: "preview_library_asset_placement", summary: `已预览 ${previews.length} 个落点（场景版本 ${snapshot.revision}），未修改场景。`, content: previews.join("\n") };
 }
 
 function executePlaceLibraryAsset(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
   const expectedRevision = readOptionalNumberArg(args, "expected_revision");
   const snapshot = context.getSceneSnapshot?.();
   if (expectedRevision === undefined || !snapshot) return { toolName: "place_library_asset", summary: "需要场景版本。", content: "place_library_asset failed: missing expected_revision" };
-  if (snapshot.revision !== expectedRevision) return { toolName: "place_library_asset", summary: "场景版本已变化，请重新读取场景。", content: "place_library_asset failed: stale scene revision" };
+  if (snapshot.revision !== expectedRevision) return staleSceneRevisionFailure("place_library_asset", snapshot);
   const { expected_revision: _expectedRevision, ...item } = args;
   return renameToolResult(executePlaceLibraryAssets({ items: [item] }, context), "place_library_asset");
 }
@@ -1248,7 +1306,7 @@ function executeUpdateSceneObjects(args: Record<string, unknown>, context: Agent
   const snapshot = context.getSceneSnapshot?.();
   if (!snapshot) return { toolName: "update_scene_object", summary: "当前应用未连接场景服务。", content: "update_scene_object failed: scene unavailable" };
   const expectedRevision = readOptionalNumberArg(args, "expected_revision");
-  if (expectedRevision !== undefined && snapshot.revision !== expectedRevision) return { toolName: "update_scene_object", summary: "场景版本已变化，请重新读取场景。", content: "update_scene_object failed: stale scene revision" };
+  if (expectedRevision !== undefined && snapshot.revision !== expectedRevision) return staleSceneRevisionFailure("update_scene_object", snapshot);
   const object = Object.values(snapshot.nodes).find((node) => node.type === "asset" && (node.id === target || node.name === target));
   if (!object || object.type !== "asset") return { toolName: "update_scene_object", summary: `未找到场景物件：${target}`, content: "update_scene_object failed: unknown scene object" };
   const action = readStringArg(args, "action") || "update";
@@ -1265,6 +1323,8 @@ function executeUpdateSceneObjects(args: Record<string, unknown>, context: Agent
   }
   const collision = footprint && scale && placement.position ? findAssetPlacementCollision(snapshot, placement.position, placement.rotation ?? object.rotation, footprint, scale, object.id) : undefined;
   if (collision) return { toolName: "update_scene_object", summary: `“${object.name}”会与“${collision.name}”占地碰撞。`, content: `update_scene_object failed: footprint collision with ${collision.name} (${collision.id})` };
+  const architectureCollision = footprint && scale && placement.position ? findArchitecturePlacementCollision(snapshot, placement.position, placement.rotation ?? object.rotation, footprint, scale) : undefined;
+  if (architectureCollision) return { toolName: "update_scene_object", summary: `“${object.name}”会与${architectureCollision.wall.name}穿模 ${formatMeters(architectureCollision.overlap)}。`, content: `update_scene_object failed: wall collision with ${architectureCollision.wall.id}` };
   const result = executeSceneTool("update_asset", {
     type: "asset.update",
     id: object.id,
@@ -1274,7 +1334,16 @@ function executeUpdateSceneObjects(args: Record<string, unknown>, context: Agent
     ...(footprint ? { footprint } : {})
   }, context);
   if (result.content.includes(" failed:")) return { ...result, toolName: "update_scene_object", content: result.content.replace("update_asset", "update_scene_object") };
-  return { toolName: "update_scene_object", summary: `已调整场景物件：${object.name}`, content: `已调整场景物件：${object.name}\n场景版本：${context.getSceneSnapshot?.().revision}` };
+  const currentSnapshot = context.getSceneSnapshot?.() ?? snapshot;
+  return { toolName: "update_scene_object", summary: `已调整场景物件：${object.name}`, content: `已调整场景物件：${object.name}\n${formatPlacementDiagnostics(currentSnapshot, placement.position ?? object.position, placement.rotation ?? object.rotation, footprint, scale ?? object.scale)}\n场景版本：${currentSnapshot.revision}` };
+}
+
+function staleSceneRevisionFailure(toolName: BuiltinToolName, snapshot: SceneSnapshot): AgentToolExecutionResult {
+  return {
+    toolName,
+    summary: `场景版本已变化；可重试的最新版本为 ${snapshot.revision}。`,
+    content: `${toolName} failed: stale scene revision\nexpected_revision 已过期；current_revision: ${snapshot.revision}\n如确认原操作仍适用，可直接携带 expected_revision=${snapshot.revision} 重试；若操作依赖已有物件或建筑关系，请先 inspect_scene。`
+  };
 }
 
 type AssetPlacementResolution = {
@@ -1307,7 +1376,7 @@ function resolveAssetPlacement(
     const distance = anchor ? readOptionalNumberArg(anchor, "distance") : undefined;
     const local = "local" in args ? readPoint3Arg(args, "local") : [0, 0, 0] as [number, number, number];
     if (!wallReference) return { error: "anchor.element_id 必须是墙体 ID 或唯一显示名。" };
-    if (side !== "inside" && side !== "outside") return { error: "anchor.side 必须为 inside 或 outside。" };
+    if (!isAnchorSide(side)) return { error: "anchor.side 必须为 room_interior、outside 或兼容值 inside。" };
     if (distance === undefined || distance < 0) return { error: "anchor.distance 必须是大于等于 0 的米制距离。" };
     if (!local) return { error: "local 必须是 [沿墙偏移, 高度偏移, 额外离墙偏移]（米）。" };
     const matches = Object.values(snapshot.nodes).filter((node): node is SceneWallNode => node.type === "wall" && (node.id === wallReference || node.name === wallReference));
@@ -1320,10 +1389,12 @@ function resolveAssetPlacement(
     if (length < 0.01) return { error: `锚定墙体“${anchorWall.name}”长度无效。` };
     const tangent: [number, number] = [deltaX / length, deltaZ / length];
     const leftNormal: [number, number] = [-tangent[1], tangent[0]];
-    anchorNormal = side === "inside" ? leftNormal : [-leftNormal[0], -leftNormal[1]];
+    const interiorNormal = findRoomInteriorNormal(snapshot, anchorWall, leftNormal);
+    if (!interiorNormal) return { error: `无法从房间、楼板或封闭墙体推断“${anchorWall.name}”的室内侧；请补充房间/楼板轮廓或改用世界 position。` };
+    anchorNormal = side === "outside" ? [-interiorNormal[0], -interiorNormal[1]] : interiorNormal;
     const midX = (anchorWall.start[0] + anchorWall.end[0]) / 2;
     const midZ = (anchorWall.start[1] + anchorWall.end[1]) / 2;
-    const normalDistance = distance + local[2];
+    const normalDistance = anchorWall.thickness / 2 + distance + local[2];
     position = [
       midX + tangent[0] * local[0] + anchorNormal[0] * normalDistance,
       local[1],
@@ -1349,6 +1420,42 @@ function resolveAssetPlacement(
     rotation = explicitRotation;
   }
   return { position, ...(rotation ? { rotation } : {}) };
+}
+
+function isAnchorSide(side: string): side is "inside" | "outside" | "room_interior" | "against_wall" {
+  return side === "inside" || side === "outside" || side === "room_interior" || side === "against_wall";
+}
+
+/** Resolves the semantic interior side from room geometry, never wall drawing order. */
+function findRoomInteriorNormal(snapshot: SceneSnapshot, wall: SceneWallNode, leftNormal: [number, number]): [number, number] | undefined {
+  const midpoint: [number, number] = [(wall.start[0] + wall.end[0]) / 2, (wall.start[1] + wall.end[1]) / 2];
+  const probeDistance = wall.thickness / 2 + 0.01;
+  const polygons = Object.values(snapshot.nodes)
+    .filter((node): node is Extract<typeof node, { polygon: ScenePoint[] }> => (node.type === "zone" || node.type === "slab") && node.polygon.length >= 3)
+    .map((node) => node.polygon);
+  const isInside = (normal: [number, number]) => polygons.some((polygon) => isPointInsidePolygon([midpoint[0] + normal[0] * probeDistance, midpoint[1] + normal[1] * probeDistance], polygon));
+  const leftInside = isInside(leftNormal);
+  const rightNormal: [number, number] = [-leftNormal[0], -leftNormal[1]];
+  const rightInside = isInside(rightNormal);
+  if (leftInside !== rightInside) return leftInside ? leftNormal : rightNormal;
+
+  const wallPoints = Object.values(snapshot.nodes).filter((node): node is SceneWallNode => node.type === "wall").flatMap((node) => [node.start, node.end]);
+  if (wallPoints.length < 4) return undefined;
+  const center: [number, number] = [wallPoints.reduce((total, point) => total + point[0], 0) / wallPoints.length, wallPoints.reduce((total, point) => total + point[1], 0) / wallPoints.length];
+  const towardCenter: [number, number] = [center[0] - midpoint[0], center[1] - midpoint[1]];
+  const side = towardCenter[0] * leftNormal[0] + towardCenter[1] * leftNormal[1];
+  return Math.abs(side) < 0.01 ? undefined : side > 0 ? leftNormal : rightNormal;
+}
+
+function isPointInsidePolygon(point: [number, number], polygon: ScenePoint[]): boolean {
+  let inside = false;
+  for (let current = 0, previous = polygon.length - 1; current < polygon.length; previous = current++) {
+    const [currentX, currentZ] = polygon[current];
+    const [previousX, previousZ] = polygon[previous];
+    const crosses = (currentZ > point[1]) !== (previousZ > point[1]) && point[0] < (previousX - currentX) * (point[1] - currentZ) / (previousZ - currentZ) + currentX;
+    if (crosses) inside = !inside;
+  }
+  return inside;
 }
 
 function withSemanticYaw(fallbackRotation: [number, number, number] | undefined, yaw: number): [number, number, number] {
@@ -1385,9 +1492,74 @@ function findAssetPlacementCollision(
   return undefined;
 }
 
-function getFootprintCorners(position: [number, number, number], yaw: number, footprint: [number, number], scale: [number, number, number]): Array<[number, number]> {
-  const halfWidth = Math.max(0, footprint[0] * scale[0] / 2) + 0.02;
-  const halfDepth = Math.max(0, footprint[1] * scale[2] / 2) + 0.02;
+function findArchitecturePlacementCollision(
+  snapshot: SceneSnapshot | undefined,
+  position: [number, number, number],
+  rotation: [number, number, number],
+  footprint: [number, number],
+  scale: [number, number, number]
+): { wall: SceneWallNode; overlap: number } | undefined {
+  if (!snapshot) return undefined;
+  const candidate = getFootprintCorners(position, rotation[1], footprint, scale, 0);
+  for (const node of Object.values(snapshot.nodes)) {
+    if (node.type !== "wall") continue;
+    const deltaX = node.end[0] - node.start[0];
+    const deltaZ = node.end[1] - node.start[1];
+    const length = Math.hypot(deltaX, deltaZ);
+    if (length < 0.01) continue;
+    const yaw = Math.atan2(-deltaZ, deltaX);
+    const wallCorners = getFootprintCorners([(node.start[0] + node.end[0]) / 2, 0, (node.start[1] + node.end[1]) / 2], yaw, [length, node.thickness], [1, 1, 1], 0);
+    if (!orientedRectanglesOverlap(candidate, wallCorners)) continue;
+    const wallDistance = distanceToWallCenterline(position, node);
+    const extent = projectedFootprintExtent(rotation[1], footprint, scale, [-deltaZ / length, deltaX / length]);
+    return { wall: node, overlap: Math.max(0, node.thickness / 2 + extent - wallDistance) };
+  }
+  return undefined;
+}
+
+function formatPlacementDiagnostics(
+  snapshot: SceneSnapshot,
+  position: [number, number, number],
+  rotation: [number, number, number],
+  footprint?: [number, number],
+  scale: [number, number, number] = [1, 1, 1]
+): string {
+  const nearestWall = findNearestWall(snapshot, position);
+  const roomState = isPointInRoom(snapshot, [position[0], position[2]]) ? "是" : "否或未定义房间边界";
+  const wallDistance = nearestWall ? Math.max(0, nearestWall.distance - nearestWall.wall.thickness / 2) : undefined;
+  const architectureCollision = footprint ? findArchitecturePlacementCollision(snapshot, position, rotation, footprint, scale) : undefined;
+  return [
+    `  最近墙体：${nearestWall ? `${nearestWall.wall.name}，距墙面 ${formatMeters(wallDistance ?? 0)}` : "无"}`,
+    `  位于房间/楼板范围内：${roomState}`,
+    footprint ? `  建筑穿模校验：${architectureCollision ? `与${architectureCollision.wall.name}重叠 ${formatMeters(architectureCollision.overlap)}` : "未发现墙体穿模"}` : "  建筑穿模校验：未提供 footprint_meters，无法校验模型边界"
+  ].join("\n");
+}
+
+function isPointInRoom(snapshot: SceneSnapshot, point: [number, number]): boolean {
+  const zones = Object.values(snapshot.nodes).filter((node) => node.type === "zone");
+  const polygons = zones.length ? zones.map((node) => node.polygon) : Object.values(snapshot.nodes).filter((node) => node.type === "slab").map((node) => node.polygon);
+  return polygons.some((polygon) => isPointInsidePolygon(point, polygon));
+}
+
+function distanceToWallCenterline(position: [number, number, number], wall: SceneWallNode): number {
+  const deltaX = wall.end[0] - wall.start[0];
+  const deltaZ = wall.end[1] - wall.start[1];
+  const lengthSquared = deltaX * deltaX + deltaZ * deltaZ;
+  if (lengthSquared < 0.0001) return Infinity;
+  const project = Math.max(0, Math.min(1, ((position[0] - wall.start[0]) * deltaX + (position[2] - wall.start[1]) * deltaZ) / lengthSquared));
+  return Math.hypot(position[0] - (wall.start[0] + deltaX * project), position[2] - (wall.start[1] + deltaZ * project));
+}
+
+function projectedFootprintExtent(yaw: number, footprint: [number, number], scale: [number, number, number], normal: [number, number]): number {
+  const widthVector: [number, number] = [Math.cos(yaw), -Math.sin(yaw)];
+  const depthVector: [number, number] = [Math.sin(yaw), Math.cos(yaw)];
+  return Math.abs(widthVector[0] * normal[0] + widthVector[1] * normal[1]) * footprint[0] * scale[0] / 2
+    + Math.abs(depthVector[0] * normal[0] + depthVector[1] * normal[1]) * footprint[1] * scale[2] / 2;
+}
+
+function getFootprintCorners(position: [number, number, number], yaw: number, footprint: [number, number], scale: [number, number, number], padding = 0.02): Array<[number, number]> {
+  const halfWidth = Math.max(0, footprint[0] * scale[0] / 2) + padding;
+  const halfDepth = Math.max(0, footprint[1] * scale[2] / 2) + padding;
   const cosine = Math.cos(yaw);
   const sine = Math.sin(yaw);
   return [[-halfWidth, -halfDepth], [halfWidth, -halfDepth], [halfWidth, halfDepth], [-halfWidth, halfDepth]].map(([x, z]) => [position[0] + x * cosine + z * sine, position[2] - x * sine + z * cosine] as [number, number]);
@@ -1420,7 +1592,7 @@ function projectCorners(corners: Array<[number, number]>, axis: [number, number]
 
 function formatSemanticAssetPlacement(snapshot: SceneSnapshot, asset: SceneAssetNode): string {
   const nearestWall = findNearestWall(snapshot, asset.position);
-  const distance = nearestWall ? `${nearestWall.wall.name} ${formatMeters(nearestWall.distance)}（${nearestWall.side}）` : "无墙体可参照";
+  const distance = nearestWall ? `${nearestWall.wall.name} ${formatMeters(Math.max(0, nearestWall.distance - nearestWall.wall.thickness / 2))}（${nearestWall.side === "room_interior" ? "室内侧" : "室外侧"}）` : "无墙体可参照";
   const elevation = Math.abs(asset.position[1]) < 0.005 ? "0m（落地）" : `${formatMeters(asset.position[1])}`;
   return [
     `- scene_object_id: ${asset.id}`,
@@ -1430,12 +1602,13 @@ function formatSemanticAssetPlacement(snapshot: SceneSnapshot, asset: SceneAsset
     `  面朝：${formatYawAsFacing(asset.rotation[1])}`,
     `  世界位置：[${asset.position.map(formatCoordinate).join(", ")}]`,
     `  rotation_degrees：[${asset.rotation.map((value) => radiansToDegrees(value)).join(", ")}]`,
-    `  scale：[${asset.scale.join(", ")}]`
+    `  scale：[${asset.scale.join(", ")}]`,
+    formatPlacementDiagnostics(snapshot, asset.position, asset.rotation, asset.footprint, asset.scale)
   ].join("\n");
 }
 
-function findNearestWall(snapshot: SceneSnapshot, position: [number, number, number]): { wall: SceneWallNode; distance: number; side: "inside" | "outside" } | undefined {
-  let nearest: { wall: SceneWallNode; distance: number; side: "inside" | "outside" } | undefined;
+function findNearestWall(snapshot: SceneSnapshot, position: [number, number, number]): { wall: SceneWallNode; distance: number; side: "room_interior" | "outside" } | undefined {
+  let nearest: { wall: SceneWallNode; distance: number; side: "room_interior" | "outside" } | undefined;
   for (const wall of Object.values(snapshot.nodes)) {
     if (wall.type !== "wall") continue;
     const deltaX = wall.end[0] - wall.start[0];
@@ -2170,9 +2343,17 @@ function resolveVisionApiKey(settings: AppSettings): string | undefined {
 
 async function executeSendArtifact(args: Record<string, unknown>, context: AgentToolExecutionContext): Promise<AgentToolExecutionResult> {
   const resourceId = readStringArg(args, "resource_id");
-  const path = resourceId ? context.resources?.find((resource) => resource.id === resourceId)?.path : undefined;
-  if (!path) return { toolName: "send_file", summary: "未找到待发送资源。", content: "send_file failed: unknown resource_id" };
-  return executeSendFile({ path }, context);
+  const resource = resourceId ? context.resources?.find((item) => item.id === resourceId) : undefined;
+  if (!resource) return { toolName: "send_file", summary: "未找到待发送资源。", content: "send_file failed: unknown resource_id" };
+  if (!existsSync(resource.path)) {
+    return { toolName: "send_file", summary: `待发送文件不存在：${resource.name}`, content: "send_file failed: resource file missing" };
+  }
+  return {
+    toolName: "send_file",
+    summary: `正在发送 ${resource.name}`,
+    content: `send_file prepared: resource_id: ${resource.id}`,
+    sendResourceId: resource.id
+  };
 }
 
 function resolveVisionBaseUrl(settings: AppSettings): string {
@@ -2206,6 +2387,8 @@ function looksDestructiveCommand(command: string): boolean {
 }
 
 const emptyObjectSchema = { type: "object", properties: {}, additionalProperties: false } as const;
+const SCENE_PREVIEW_VIEWS = ["current", "perspective", "top", "front", "right", "left", "back", "bottom"] as const;
+const scenePreviewSchema = { type: "object", properties: { view: { type: "string", enum: SCENE_PREVIEW_VIEWS, description: "视角：current 保持当前视角；perspective 为自由透视；其余为正交方向预设。" } }, additionalProperties: false } as const;
 const readFileSchema = {
   type: "object",
   properties: { path: { type: "string" } },

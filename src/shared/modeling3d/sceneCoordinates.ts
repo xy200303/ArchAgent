@@ -21,7 +21,7 @@ export function getSceneCoordinateContext(snapshot: SceneSnapshot): SceneCoordin
     origin: [0, 0, 0],
     axes: { x: "向右/东", y: "向上（高度）", z: "向前/南" },
     rotation: "家具语义朝向优先使用 facing 或 look_at；需要精确姿态时才使用 rotation_degrees=[pitch,yaw,roll]。",
-    assetAnchor: "家具可用世界 position=[x,y,z]，或锚定墙体：anchor={element_id,side,distance}+local=[沿墙,高度,额外离墙]。inside 是墙段 start→end 的左侧；需使用 inside 时，房间墙体应沿室内边界顺时针创建。资产位置指向归一化模型底部中心。",
+    assetAnchor: "家具可用世界 position=[x,y,z]，或锚定墙体：anchor={element_id,side,distance}+local=[沿墙,高度,额外离墙]。side=room_interior（inside 兼容别名）会按房间/楼板边界自动判定室内侧，不依赖墙体绘制方向；distance 从墙面起算。资产位置指向归一化模型底部中心。",
     ...(points.length ? { floorBounds: getFloorBounds(points) } : {})
   };
 }
