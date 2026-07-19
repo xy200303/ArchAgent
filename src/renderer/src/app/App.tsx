@@ -292,6 +292,12 @@ export function App(): JSX.Element {
   const handlePreviewArtifact = useCallback((artifactId: string): void => {
     void previewArtifact(artifactId);
   }, [previewArtifact]);
+  const handleWorkspacePreviewFile = useCallback((file: WorkspaceFileItem): void => {
+    void previewWorkspaceFile(file);
+  }, [previewWorkspaceFile]);
+  const handleWorkspaceFilesChanged = useCallback((): void => {
+    void refreshWorkspaceFiles();
+  }, [refreshWorkspaceFiles]);
   const toggleMarkdownMode = useCallback((): void => setMdEditMode((value) => !value), []);
 
   if (!api) {
@@ -356,8 +362,8 @@ export function App(): JSX.Element {
             project={currentProject}
             files={workspaceFiles}
             selectedFilePath={preview?.path}
-            onPreviewFile={(file) => void previewWorkspaceFile(file)}
-            onFilesChanged={() => void refreshWorkspaceFiles()}
+            onPreviewFile={handleWorkspacePreviewFile}
+            onFilesChanged={handleWorkspaceFilesChanged}
           />
         ) : null}
         {activeSidePanel === "resources" ? (

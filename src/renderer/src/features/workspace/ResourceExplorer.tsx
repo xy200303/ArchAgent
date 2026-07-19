@@ -1,5 +1,5 @@
 /** VS Code-style project tree and contextual file operations. */
-import { useEffect, useRef, useState, type FormEvent, type JSX, type MouseEvent } from "react";
+import { memo, useCallback, useEffect, useRef, useState, type JSX, type MouseEvent } from "react";
 import * as Collapsible from "@radix-ui/react-collapsible";
 import * as ScrollArea from "@radix-ui/react-scroll-area";
 import {
@@ -55,7 +55,7 @@ export function ResourceExplorer(props: {
     };
   }, [contextMenu]);
 
-  function openContextMenu(event: MouseEvent<HTMLElement>, target: ContextTarget): void {
+  const openContextMenu = useCallback((event: MouseEvent<HTMLElement>, target: ContextTarget): void => {
     event.preventDefault();
     event.stopPropagation();
     setContextMenu({
@@ -63,37 +63,39 @@ export function ResourceExplorer(props: {
       y: Math.min(event.clientY, window.innerHeight - 240),
       target
     });
-  }
+  }, []);
 
-  async function createEntry(name: string): Promise<void> {
+  const createEntry = useCallback(async (name: string): Promise<void> => {
     if (!entryRequest) return;
     const targetPath = joinWorkspacePath(entryRequest.parentPath, name);
     if (entryRequest.kind === "file") await props.api.file.create({ path: targetPath });
     else await props.api.file.createDirectory({ path: targetPath });
     setEntryRequest(undefined);
     props.onFilesChanged();
-  }
+  }, [entryRequest, props.api, props.onFilesChanged]);
 
-  async function renameEntry(name: string): Promise<void> {
+  const renameEntry = useCallback(async (name: string): Promise<void> => {
     if (!renameTarget) return;
     await props.api.file.rename({ path: renameTarget.path, name });
     setRenameTarget(undefined);
     props.onFilesChanged();
-  }
+  }, [props.api, props.onFilesChanged, renameTarget]);
 
-  async function deleteEntry(target: ContextTarget): Promise<void> {
+  const deleteEntry = useCallback(async (target: ContextTarget): Promise<void> => {
     await props.api.file.delete({ path: target.path });
     props.onFilesChanged();
-  }
+  }, [props.api, props.onFilesChanged]);
 
-  async function runOperation(operation: () => Promise<void>): Promise<void> {
+  const runOperation = useCallback(async (operation: () => Promise<void>): Promise<void> => {
     setOperationError("");
     try {
       await operation();
     } catch (error) {
       setOperationError(getErrorMessage(error));
     }
-  }
+  }, []);
+  const cancelEntry = useCallback((): void => setEntryRequest(undefined), []);
+  const cancelRename = useCallback((): void => setRenameTarget(undefined), []);
 
   return (
     <aside
@@ -133,9 +135,9 @@ export function ResourceExplorer(props: {
                     selectedFilePath={props.selectedFilePath}
                     entryRequest={entryRequest}
                     renameTarget={renameTarget}
-                    onCancelEntry={() => setEntryRequest(undefined)}
+                    onCancelEntry={cancelEntry}
                     onCreateEntry={createEntry}
-                    onCancelRename={() => setRenameTarget(undefined)}
+                    onCancelRename={cancelRename}
                     onRename={renameEntry}
                     onContextMenu={openContextMenu}
                     onPreviewFile={props.onPreviewFile}
@@ -148,7 +150,7 @@ export function ResourceExplorer(props: {
                 <InlineWorkspaceEntry
                   kind={entryRequest.kind}
                   paddingLeft={30}
-                  onCancel={() => setEntryRequest(undefined)}
+                  onCancel={cancelEntry}
                   onCreate={createEntry}
                 />
               ) : null}
@@ -179,7 +181,7 @@ export function ResourceExplorer(props: {
   );
 }
 
-function WorkspaceTreeItem({
+const WorkspaceTreeItem = memo(function WorkspaceTreeItem({
   collapseRevision,
   file,
   depth,
@@ -291,7 +293,7 @@ function WorkspaceTreeItem({
       </Collapsible.Content>
     </Collapsible.Root>
   );
-}
+});
 
 function InlineWorkspaceEntry({
   kind,
