@@ -202,7 +202,7 @@ npm run icon:generate # 生成应用图标
 
 ## 持续集成与发布
 
-GitHub Actions 会在 PR 和推送到 `main` 时执行类型检查，并分别在 Windows 和 macOS Runner 上构建 NSIS 与 DMG 安装包；安装包可从对应的工作流构建产物下载。
+GitHub Actions 会在 PR 和推送到 `main` 时仅执行类型检查。推送形如 `v0.2.2` 的 Git 标签，或手动运行工作流时，才会在 Windows 和 macOS Runner 上构建 NSIS 与 DMG 安装包；安装包可从对应的工作流构建产物下载。
 
 推送形如 `v0.2.2` 的 Git 标签时，工作流会自动创建 GitHub Release，并附上 Windows 安装程序与 macOS DMG。当前流水线不进行代码签名；发布前如需签名，请在 GitHub Secrets 配置对应的平台证书并扩展工作流。
 

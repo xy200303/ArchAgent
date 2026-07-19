@@ -22,7 +22,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20.19.0
           cache: npm
       - name: Install dependencies
         run: npm ci
@@ -31,6 +31,7 @@ jobs:
 
   package:
     name: Package ${{ matrix.label }}
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     needs: verify
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -43,7 +44,7 @@ jobs:
             artifact_name: ArchAgent-windows
             artifact_path: release/*.exe
           - label: macOS
-            runner: macos-latest
+            runner: macos-15-intel
             command: npm run dist:mac
             artifact_name: ArchAgent-macos
             artifact_path: release/*.dmg
@@ -53,7 +54,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20.19.0
           cache: npm
       - name: Install dependencies
         run: npm ci
