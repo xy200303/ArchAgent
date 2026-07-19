@@ -1,7 +1,12 @@
 import { Compile } from "typebox/compile";
 import { describe, expect, it } from "vitest";
+import { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { buildAgentChatTools } from "../../../src/main/agent/agentToolRegistry";
-import { buildArchAgentPiToolSchemaSignature, convertJsonSchemaToTypeBoxSchema } from "../../../src/main/agent/piAgentBridge";
+import {
+  buildArchAgentPiToolSchemaSignature,
+  convertJsonSchemaToTypeBoxSchema,
+  registerArchAgentOpenAiModel
+} from "../../../src/main/agent/piAgentBridge";
 import type { AppSettings } from "../../../src/shared/types";
 
 describe("piAgentBridge tool schemas", () => {
@@ -70,6 +75,25 @@ describe("piAgentBridge tool schemas", () => {
     expect(bashSignature).toContain("exec_bash");
     expect(bashSignature).not.toBe(safeSignature);
     expect(largerContextSignature).toBe(safeSignature);
+  });
+
+  it("resolves the TokenHub key from the environment and sends it as Bearer auth", async () => {
+    const originalApiKey = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = "tokenhub-test-key";
+
+    try {
+      const registry = new ModelRegistry(await ModelRuntime.create({ modelsPath: null, allowModelNetwork: false }));
+      const model = registerArchAgentOpenAiModel(registry, createSettings());
+
+      await expect(registry.getApiKeyAndHeaders(model)).resolves.toMatchObject({
+        ok: true,
+        apiKey: "tokenhub-test-key",
+        headers: { Authorization: "Bearer tokenhub-test-key" }
+      });
+    } finally {
+      if (originalApiKey === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = originalApiKey;
+    }
   });
 });
 

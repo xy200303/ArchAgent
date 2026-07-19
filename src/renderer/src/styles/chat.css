@@ -619,6 +619,10 @@
   color: var(--fluent-color-neutral-foreground2);
 }
 
+.agent-failure-action {
+  margin-top: var(--fluent-spacing-m);
+}
+
 .agent-failure-details {
   margin-top: var(--fluent-spacing-m);
   color: var(--fluent-color-neutral-foreground2);

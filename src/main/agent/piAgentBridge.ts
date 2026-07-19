@@ -607,7 +607,7 @@ function resolveArchAgentToolExecutionMode(toolName: string): "parallel" | "sequ
   return "sequential";
 }
 
-function registerArchAgentOpenAiModel(modelRegistry: ModelRegistry, settings: AppSettings): Model<Api> {
+export function registerArchAgentOpenAiModel(modelRegistry: ModelRegistry, settings: AppSettings): Model<Api> {
   const modelId = settings.openai.chatModel.trim() || "gpt-5.5";
   const baseUrl = settings.openai.baseUrl.trim() || "https://api.openai.com/v1";
   const maxTokens = Number.isFinite(settings.openai.maxOutputTokens) ? settings.openai.maxOutputTokens : 16000;
@@ -617,9 +617,9 @@ function registerArchAgentOpenAiModel(modelRegistry: ModelRegistry, settings: Ap
   modelRegistry.registerProvider(ARCH_AGENT_PROVIDER, {
     name: "ArchAgent Hy3 Chat",
     baseUrl,
-    apiKey: "OPENAI_API_KEY",
+    apiKey: "$OPENAI_API_KEY",
     api: "openai-completions",
-    authHeader: false,
+    authHeader: true,
     models: [
       {
         id: modelId,

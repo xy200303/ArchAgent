@@ -12,6 +12,7 @@ import {
   ChevronDown,
   Database,
   Eye,
+  ExternalLink,
   File,
   FolderOpen,
   Image,
@@ -409,7 +410,7 @@ const StreamRow = memo(function StreamRow({
             <>
               {item.thinking?.trim() ? <ThinkingCard content={item.thinking} isFinished={item.isFinished} /> : null}
               {failure ? (
-                <AgentFailureCard failure={failure} />
+                <AgentFailureCard api={api} failure={failure} onError={onError} />
               ) : item.content.trim() ? (
                 <StreamingMarkdown content={item.content} isFinished={item.isFinished} />
               ) : item.isFinished || item.thinking?.trim() ? (
@@ -454,18 +455,29 @@ const StreamRow = memo(function StreamRow({
   );
 });
 
-function describeAgentFailure(content: string): { summary: string; details: string } | undefined {
+function describeAgentFailure(content: string): { summary: string; details: string; apiKeyRejected?: boolean } | undefined {
   const normalized = content.replace(/\s+/g, " ").trim();
   if (!/生成中断|模型返回错误|\b(?:4\d\d|5\d\d)\b|does not exist|access to it/i.test(normalized)) return undefined;
 
   const model = normalized.match(/(?:the\s+model|模型)\s*[“"']?([\w.-]+)/i)?.[1];
+  const apiKeyRejected = /\b401002\b|api\s*key\s+does\s+not\s+exist|signature\s+verification\s+failed/i.test(normalized);
   const summary = model && /does not exist|access to it|\b404\b/i.test(normalized)
     ? `模型“${model}”不可用，或当前密钥没有访问权限。请在设置中更换可用模型，或确认服务商权限。`
+    : apiKeyRejected
+      ? "TokenHub API Key 无效、已撤销或不属于当前服务。请在 TokenHub 控制台创建/确认密钥后，在运行设置中替换。"
     : "本次生成未完成。请检查模型配置、网络连接或服务商权限后重试。";
-  return { summary, details: content.trim() };
+  return { summary, details: content.trim(), apiKeyRejected };
 }
 
-function AgentFailureCard({ failure }: { failure: { summary: string; details: string } }): JSX.Element {
+function AgentFailureCard({
+  api,
+  failure,
+  onError
+}: {
+  api: ArchAgentApi;
+  failure: { summary: string; details: string; apiKeyRejected?: boolean };
+  onError: (message: string) => void;
+}): JSX.Element {
   return (
     <section className="agent-failure-card" role="alert">
       <div className="agent-failure-heading">
@@ -475,6 +487,16 @@ function AgentFailureCard({ failure }: { failure: { summary: string; details: st
           <p>{failure.summary}</p>
         </div>
       </div>
+      {failure.apiKeyRejected ? (
+        <button
+          type="button"
+          className="secondary-action agent-failure-action"
+          onClick={() => void api.app.openTokenHubApiKeys().catch((error: unknown) => onError(`打开 TokenHub API Key 页面失败：${getErrorMessage(error)}`))}
+        >
+          <ExternalLink size={14} />
+          管理 TokenHub API Key
+        </button>
+      ) : null}
       <details className="agent-failure-details">
         <summary>查看技术详情</summary>
         <pre>{failure.details}</pre>
