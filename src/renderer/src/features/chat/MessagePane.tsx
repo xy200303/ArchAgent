@@ -1,5 +1,5 @@
 /** Chat transcript rendering, process grouping, tool details, and artifact actions. */
-import { memo, useEffect, useMemo, useRef, useState, type JSX } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX, type UIEvent } from "react";
 import * as Collapsible from "@radix-ui/react-collapsible";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
@@ -40,21 +40,34 @@ export const MessagePane = memo(function MessagePane({
   onError: (message: string) => void;
 }): JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const sessionIdRef = useRef<string | undefined>(undefined);
+  const shouldFollowOutputRef = useRef(true);
   const displayBlocks = useMemo(() => (session ? groupStreamItemsForDisplay(session.items) : []), [session?.items]);
   const shouldShowPendingThinking = Boolean(
     session?.status === "running" && !session.items.some(isUnfinishedAssistantMessage)
   );
 
-  useEffect(() => {
-    scrollRef.current?.scrollTo({
-      top: scrollRef.current.scrollHeight,
+  const trackScrollPosition = useCallback((event: UIEvent<HTMLDivElement>): void => {
+    const viewport = event.currentTarget;
+    shouldFollowOutputRef.current = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 48;
+  }, []);
+
+  useLayoutEffect(() => {
+    if (sessionIdRef.current !== session?.id) {
+      sessionIdRef.current = session?.id;
+      shouldFollowOutputRef.current = true;
+    }
+    const viewport = scrollRef.current;
+    if (!viewport || !shouldFollowOutputRef.current) return;
+    viewport.scrollTo({
+      top: viewport.scrollHeight,
       behavior: session?.status === "running" ? "auto" : "smooth"
     });
-  }, [session?.items.length, session?.items.at(-1), session?.status]);
+  }, [session?.id, session?.items.length, session?.items.at(-1), session?.status]);
 
   return (
     <ScrollArea.Root className="message-scroll">
-      <ScrollArea.Viewport ref={scrollRef} className="message-pane">
+      <ScrollArea.Viewport ref={scrollRef} className="message-pane" onScroll={trackScrollPosition}>
         {!session || session.items.length === 0 ? (
           <div className="empty-state">
             <div className="empty-hero-icon">

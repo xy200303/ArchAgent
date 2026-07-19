@@ -55,43 +55,30 @@ export function orderStreamItemsForDisplay(items: StreamItem[]): StreamItem[] {
 
 export function groupStreamItemsForDisplay(items: StreamItem[]): StreamDisplayBlock[] {
   const blocks: StreamDisplayBlock[] = [];
-  let turnItems: StreamItem[] = [];
+  let processItems: ProcessStreamItem[] = [];
 
-  const flushProcessItems = (processItems: ProcessStreamItem[]): void => {
+  const flushProcessItems = (): void => {
     if (!processItems.length) return;
     blocks.push({
       id: `process_${processItems[0].id}`,
       kind: "process",
       items: processItems
     });
+    processItems = [];
   };
 
   const flushTurn = (): void => {
-    if (!turnItems.length) return;
-
-    const userMessages = turnItems.filter(
-      (item): item is MessageStreamItem => item.kind === "message" && item.role === "user"
-    );
-    const nonUserItems = turnItems.filter((item) => !(item.kind === "message" && item.role === "user"));
-    const assistantMessages = nonUserItems.filter(
-      (item): item is MessageStreamItem => item.kind === "message" && item.role === "assistant"
-    );
-    const finalAssistant = assistantMessages.at(-1);
-    const processItems = nonUserItems.filter((item): item is ProcessStreamItem => {
-      if (finalAssistant && item.id === finalAssistant.id) return false;
-      return item.kind === "tool" || item.kind === "file" || item.kind === "stage" || item.kind === "message";
-    });
-
-    for (const item of userMessages) {
-      blocks.push({
-        id: item.id,
-        kind: "message",
-        item
-      });
+    let finalAssistantIndex = -1;
+    for (let index = processItems.length - 1; index >= 0; index -= 1) {
+      const item = processItems[index];
+      if (item.kind === "message" && item.role === "assistant") {
+        finalAssistantIndex = index;
+        break;
+      }
     }
-
-    flushProcessItems(processItems);
-
+    const finalAssistant = finalAssistantIndex >= 0 ? processItems[finalAssistantIndex] as MessageStreamItem : undefined;
+    if (finalAssistantIndex >= 0) processItems.splice(finalAssistantIndex, 1);
+    flushProcessItems();
     if (finalAssistant) {
       blocks.push({
         id: finalAssistant.id,
@@ -99,15 +86,16 @@ export function groupStreamItemsForDisplay(items: StreamItem[]): StreamDisplayBl
         item: finalAssistant
       });
     }
-
-    turnItems = [];
   };
 
-  for (const item of items.filter(shouldDisplayStreamItem)) {
-    if (item.kind === "message" && item.role === "user" && turnItems.length) {
+  for (const item of items) {
+    if (!shouldDisplayStreamItem(item)) continue;
+    if (item.kind === "message" && item.role === "user") {
       flushTurn();
+      blocks.push({ id: item.id, kind: "message", item });
+      continue;
     }
-    turnItems.push(item);
+    processItems.push(item);
   }
 
   flushTurn();
