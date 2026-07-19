@@ -1,6 +1,6 @@
 /** Renders semantic architecture nodes with native Three.js geometry. */
 import { Edges } from "@react-three/drei";
-import { useMemo, type JSX } from "react";
+import { memo, useMemo, type JSX } from "react";
 import * as THREE from "three";
 import type { SceneCeilingNode, SceneColumnNode, SceneDoorNode, SceneFenceNode, SceneSlabNode, SceneSnapshot, SceneStairNode, SceneWallNode, SceneWindowNode, SceneZoneNode, WallMaterialPreset } from "../../../../../shared/modeling3d/sceneContracts";
 import { getWallViewportTransform } from "../viewport/sceneViewportMath";
@@ -12,20 +12,28 @@ const MATERIAL_COLORS: Record<WallMaterialPreset, string> = {
 
 type OpeningNode = SceneDoorNode | SceneWindowNode;
 type WallBlock = { centerX: number; baseY: number; width: number; height: number };
+const EMPTY_OPENINGS: OpeningNode[] = [];
 
 export function ArchitectureSceneLayer({ snapshot, dragPreview, selectedNodeId, onSelectNode }: { snapshot: SceneSnapshot; dragPreview?: SceneDragPreview; selectedNodeId?: string; onSelectNode: (id: string) => void }): JSX.Element {
-  const nodes = Object.values(snapshot.nodes);
-  const openingsByWall = new Map<string, OpeningNode[]>();
-  for (const node of nodes) {
-    if (node.type !== "door" && node.type !== "window") continue;
-    openingsByWall.set(node.wallId, [...(openingsByWall.get(node.wallId) ?? []), node]);
-  }
+  const { nodes, openingsByWall } = useMemo(() => {
+    const sceneNodes = Object.values(snapshot.nodes);
+    const openings = new Map<string, OpeningNode[]>();
+    for (const node of sceneNodes) {
+      if (node.type !== "door" && node.type !== "window") continue;
+      openings.set(node.wallId, [...(openings.get(node.wallId) ?? []), node]);
+    }
+    return { nodes: sceneNodes, openingsByWall: openings };
+  }, [snapshot.nodes]);
 
   return (
     <group>
       {nodes.map((sourceNode) => {
         const node = dragPreview?.nodeId === sourceNode.id ? getRelocatedSceneNode(sourceNode, dragPreview.point) : sourceNode;
-        if (node.type === "wall") return <WallMesh key={node.id} wall={node} openings={openingsByWall.get(node.id) ?? []} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} />;
+        if (node.type === "wall") {
+          const openings = openingsByWall.get(node.id) ?? EMPTY_OPENINGS;
+          const selectedOpeningId = openings.some((opening) => opening.id === selectedNodeId) ? selectedNodeId : undefined;
+          return <WallMesh key={node.id} wall={node} openings={openings} selected={selectedNodeId === node.id} selectedOpeningId={selectedOpeningId} onSelectNode={onSelectNode} />;
+        }
         if (node.type === "slab") return <PolygonSurface key={node.id} node={node} selected={selectedNodeId === node.id} onSelectNode={onSelectNode} />;
         if (node.type === "ceiling") return <CeilingMesh key={node.id} node={node} selected={selectedNodeId === node.id} onSelectNode={onSelectNode} />;
         if (node.type === "column") return <ColumnMesh key={node.id} node={node} selected={selectedNodeId === node.id} onSelectNode={onSelectNode} />;
@@ -42,28 +50,27 @@ function SurfaceMaterial({ preset, selected, transparent = false }: { preset: Wa
   return <meshStandardMaterial color={MATERIAL_COLORS[preset]} emissive={selected ? "#1677c8" : "#000"} emissiveIntensity={selected ? 0.25 : 0} roughness={preset === "glass" ? 0.18 : 0.75} metalness={preset === "metal" ? 0.55 : 0} transparent={transparent || preset === "glass"} opacity={transparent ? 0.5 : preset === "glass" ? 0.62 : 1} side={THREE.DoubleSide} />;
 }
 
-function PolygonSurface({ node, selected, onSelectNode }: { node: SceneSlabNode; selected: boolean; onSelectNode: (id: string) => void }): JSX.Element {
+const PolygonSurface = memo(function PolygonSurface({ node, selected, onSelectNode }: { node: SceneSlabNode; selected: boolean; onSelectNode: (id: string) => void }): JSX.Element {
   const shape = useMemo(() => toShape(node.polygon), [node.polygon]);
   return <mesh receiveShadow position={[0, node.elevation, 0]} rotation={[Math.PI / 2, 0, 0]} onClick={(event) => { event.stopPropagation(); onSelectNode(node.id); }}><shapeGeometry args={[shape]} /><SurfaceMaterial preset={node.materialPreset} selected={selected} />{selected ? <Edges color="#1677c8" userData={{ archAgentExportable: false }} /> : null}</mesh>;
-}
+});
 
-function CeilingMesh({ node, selected, onSelectNode }: { node: SceneCeilingNode; selected: boolean; onSelectNode: (id: string) => void }): JSX.Element {
+const CeilingMesh = memo(function CeilingMesh({ node, selected, onSelectNode }: { node: SceneCeilingNode; selected: boolean; onSelectNode: (id: string) => void }): JSX.Element {
   const shape = useMemo(() => toShape(node.polygon), [node.polygon]);
   return <mesh receiveShadow position={[0, node.height, 0]} rotation={[Math.PI / 2, 0, 0]} onClick={(event) => { event.stopPropagation(); onSelectNode(node.id); }}><shapeGeometry args={[shape]} /><SurfaceMaterial preset={node.materialPreset} selected={selected} />{selected ? <Edges color="#1677c8" userData={{ archAgentExportable: false }} /> : null}</mesh>;
-}
+});
 
 /** Splits wall faces around door and window extents so openings are real gaps, not decals. */
-function WallMesh({ wall, openings, selectedNodeId, onSelectNode }: { wall: SceneWallNode; openings: OpeningNode[]; selectedNodeId?: string; onSelectNode: (id: string) => void }): JSX.Element {
+const WallMesh = memo(function WallMesh({ wall, openings, selected, selectedOpeningId, onSelectNode }: { wall: SceneWallNode; openings: OpeningNode[]; selected: boolean; selectedOpeningId?: string; onSelectNode: (id: string) => void }): JSX.Element {
   const transform = getWallViewportTransform(wall.start, wall.end, wall.height);
   const blocks = useMemo(() => buildWallBlocks(transform.length, wall.height, openings), [openings, transform.length, wall.height]);
-  const selected = selectedNodeId === wall.id;
   return (
     <group position={transform.position} rotation={[0, transform.rotationY, 0]}>
       {blocks.map((block, index) => <mesh key={`${wall.id}-${index}`} castShadow receiveShadow position={[block.centerX, block.baseY + block.height / 2 - wall.height / 2, 0]} onClick={(event) => { event.stopPropagation(); onSelectNode(wall.id); }}><boxGeometry args={[block.width, block.height, wall.thickness]} /><SurfaceMaterial preset={wall.materialPreset} selected={selected} />{selected ? <Edges color="#1677c8" threshold={12} userData={{ archAgentExportable: false }} /> : null}</mesh>)}
-      {openings.map((opening) => <OpeningFrame key={opening.id} opening={opening} wallLength={transform.length} wallHeight={wall.height} wallThickness={wall.thickness} selected={selectedNodeId === opening.id} onSelectNode={onSelectNode} />)}
+      {openings.map((opening) => <OpeningFrame key={opening.id} opening={opening} wallLength={transform.length} wallHeight={wall.height} wallThickness={wall.thickness} selected={selectedOpeningId === opening.id} onSelectNode={onSelectNode} />)}
     </group>
   );
-}
+});
 
 function OpeningFrame({ opening, wallLength, wallHeight, wallThickness, selected, onSelectNode }: { opening: OpeningNode; wallLength: number; wallHeight: number; wallThickness: number; selected: boolean; onSelectNode: (id: string) => void }): JSX.Element {
   const centerX = -wallLength / 2 + opening.offset + opening.width / 2;
@@ -81,34 +88,34 @@ function OpeningFrame({ opening, wallLength, wallHeight, wallThickness, selected
   );
 }
 
-function ColumnMesh({ node, selected, onSelectNode }: { node: SceneColumnNode; selected: boolean; onSelectNode: (id: string) => void }): JSX.Element {
+const ColumnMesh = memo(function ColumnMesh({ node, selected, onSelectNode }: { node: SceneColumnNode; selected: boolean; onSelectNode: (id: string) => void }): JSX.Element {
   const material = <SurfaceMaterial preset={node.materialPreset} selected={selected} />;
   const click = (event: { stopPropagation(): void }): void => { event.stopPropagation(); onSelectNode(node.id); };
   if (node.crossSection === "round") return <mesh castShadow receiveShadow position={[node.position[0], node.position[1] + node.height / 2, node.position[2]]} onClick={click}><cylinderGeometry args={[Math.max(node.width, node.depth) / 2, Math.max(node.width, node.depth) / 2, node.height, 32]} />{material}{selected ? <Edges color="#1677c8" userData={{ archAgentExportable: false }} /> : null}</mesh>;
   return <mesh castShadow receiveShadow position={[node.position[0], node.position[1] + node.height / 2, node.position[2]]} onClick={click}><boxGeometry args={[node.width, node.height, node.depth]} />{material}{selected ? <Edges color="#1677c8" userData={{ archAgentExportable: false }} /> : null}</mesh>;
-}
+});
 
-function ZoneMesh({ node, selected, onSelectNode }: { node: SceneZoneNode; selected: boolean; onSelectNode: (id: string) => void }): JSX.Element {
+const ZoneMesh = memo(function ZoneMesh({ node, selected, onSelectNode }: { node: SceneZoneNode; selected: boolean; onSelectNode: (id: string) => void }): JSX.Element {
   const shape = useMemo(() => toShape(node.polygon), [node.polygon]);
   return <mesh position={[0, 0.008, 0]} rotation={[Math.PI / 2, 0, 0]} onClick={(event) => { event.stopPropagation(); onSelectNode(node.id); }}><shapeGeometry args={[shape]} /><meshBasicMaterial color={node.color} transparent opacity={selected ? 0.34 : 0.18} side={THREE.DoubleSide} />{selected ? <Edges color="#1677c8" userData={{ archAgentExportable: false }} /> : null}</mesh>;
-}
+});
 
-function StairMesh({ node, selected, onSelectNode }: { node: SceneStairNode; selected: boolean; onSelectNode: (id: string) => void }): JSX.Element {
+const StairMesh = memo(function StairMesh({ node, selected, onSelectNode }: { node: SceneStairNode; selected: boolean; onSelectNode: (id: string) => void }): JSX.Element {
   const stepDepth = node.width / node.stepCount;
   const click = (event: { stopPropagation(): void }): void => { event.stopPropagation(); onSelectNode(node.id); };
   return <group position={node.position} rotation={[0, node.rotation, 0]}>{Array.from({ length: node.stepCount }, (_, index) => { const height = ((index + 1) / node.stepCount) * node.totalRise; return <mesh key={index} castShadow receiveShadow position={[0, height / 2, -node.width / 2 + stepDepth * (index + 0.5)]} onClick={click}><boxGeometry args={[node.width, height, stepDepth]} /><SurfaceMaterial preset={node.materialPreset} selected={selected} />{selected ? <Edges color="#1677c8" userData={{ archAgentExportable: false }} /> : null}</mesh>; })}{node.railingMode !== "none" ? <StairRail side={node.railingMode === "right" ? 1 : -1} width={node.width} rise={node.totalRise} /> : null}{node.railingMode === "both" ? <StairRail side={1} width={node.width} rise={node.totalRise} /> : null}</group>;
-}
+});
 
 function StairRail({ side, width, rise }: { side: number; width: number; rise: number }): JSX.Element {
   return <mesh position={[side * width / 2, rise + 0.45, 0]} rotation={[0, 0, -side * Math.atan2(rise, width)]}><boxGeometry args={[0.035, 0.035, Math.hypot(width, rise)]} /><meshStandardMaterial color="#64748b" metalness={0.65} roughness={0.28} /></mesh>;
 }
 
-function FenceMesh({ node, selected, onSelectNode }: { node: SceneFenceNode; selected: boolean; onSelectNode: (id: string) => void }): JSX.Element {
+const FenceMesh = memo(function FenceMesh({ node, selected, onSelectNode }: { node: SceneFenceNode; selected: boolean; onSelectNode: (id: string) => void }): JSX.Element {
   const transform = getWallViewportTransform(node.start, node.end, node.height);
   const postCount = Math.max(2, Math.ceil(transform.length / 1.25) + 1);
   const click = (event: { stopPropagation(): void }): void => { event.stopPropagation(); onSelectNode(node.id); };
   return <group position={transform.position} rotation={[0, transform.rotationY, 0]}>{Array.from({ length: postCount }, (_, index) => <mesh key={index} position={[-transform.length / 2 + (transform.length * index) / (postCount - 1), 0, 0]} onClick={click}><boxGeometry args={[node.thickness * 1.5, node.height, node.thickness * 1.5]} /><SurfaceMaterial preset={node.materialPreset} selected={selected} /></mesh>)}{node.style === "privacy" ? <mesh onClick={click}><boxGeometry args={[transform.length, node.height, node.thickness]} /><SurfaceMaterial preset={node.materialPreset} selected={selected} /></mesh> : <>{[0.25, 0.75].map((ratio) => <mesh key={ratio} position={[0, node.height * (ratio - 0.5), 0]} onClick={click}><boxGeometry args={[transform.length, node.thickness, node.thickness]} /><SurfaceMaterial preset={node.materialPreset} selected={selected} /></mesh>)}</>}{selected ? <Edges color="#1677c8" userData={{ archAgentExportable: false }} /> : null}</group>;
-}
+});
 
 function buildWallBlocks(length: number, wallHeight: number, openings: OpeningNode[]): WallBlock[] {
   const levels = Array.from(new Set([0, wallHeight, ...openings.flatMap((opening) => [opening.sillHeight, opening.sillHeight + opening.height])].filter((value) => value >= 0 && value <= wallHeight))).sort((first, second) => first - second);
