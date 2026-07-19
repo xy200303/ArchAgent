@@ -3,9 +3,9 @@ import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { ChatCompletionMessageParam, ChatCompletionMessageToolCall } from "openai/resources/chat/completions";
 import {
-  AuthStorage,
   DefaultResourceLoader,
   ModelRegistry,
+  ModelRuntime,
   SessionManager,
   SettingsManager,
   createAgentSession,
@@ -13,8 +13,8 @@ import {
   type AgentSession,
   type AgentSessionEvent,
   type ToolDefinition
-} from "@mariozechner/pi-coding-agent";
-import type { Api, AssistantMessage, ImageContent, Model, TextContent, ThinkingContent } from "@mariozechner/pi-ai";
+} from "@earendil-works/pi-coding-agent";
+import type { Api, AssistantMessage, ImageContent, Model, TextContent, ThinkingContent } from "@earendil-works/pi-ai";
 import { compactText, isSupportedImageFile, MAX_VISION_IMAGE_BYTES, readImageDataUrl } from "./agentTools";
 import { buildAgentChatTools, executeAgentToolCall, type AgentToolExecutionResult, type AgentToolLayer } from "./agentToolRegistry";
 import {
@@ -137,8 +137,8 @@ async function createPiSessionState(
   mkdirSync(agentDir, { recursive: true });
   const sessionRootDir = host.getSessionRootDir(input.sessionId);
 
-  const authStorage = AuthStorage.inMemory();
-  const modelRegistry = ModelRegistry.inMemory(authStorage);
+  const modelRuntime = await ModelRuntime.create({ modelsPath: null });
+  const modelRegistry = new ModelRegistry(modelRuntime);
   const model = registerArchAgentOpenAiModel(modelRegistry, settings);
   const toolDefinitions = createArchAgentPiTools(host, input.sessionId, settings);
   const toolNames = toolDefinitions.map((tool) => tool.name);
@@ -177,8 +177,7 @@ async function createPiSessionState(
   const { session } = await createAgentSession({
     cwd: sessionRootDir,
     agentDir,
-    authStorage,
-    modelRegistry,
+    modelRuntime,
     model,
     thinkingLevel: resolveThinkingLevel(settings),
     customTools: toolDefinitions,

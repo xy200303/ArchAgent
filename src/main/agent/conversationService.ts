@@ -1,7 +1,7 @@
 /** Owns chat sessions, Agent turns, stream events, memory, and generated artifact registration. */
 import { existsSync, mkdirSync, statSync } from "node:fs";
 import { basename, extname, join, resolve } from "node:path";
-import type { ImageContent } from "@mariozechner/pi-ai";
+import type { ImageContent } from "@earendil-works/pi-ai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import type {
   AppSettings,

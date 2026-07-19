@@ -1,6 +1,6 @@
 /** Defines the framework-neutral Agent runtime contract used by the Electron host. */
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
-import type { ImageContent } from "@mariozechner/pi-ai";
+import type { ImageContent } from "@earendil-works/pi-ai";
 import type { AppSettings, ArtifactSummary, AttachmentRef, ChatSession, SessionResource, StreamItem } from "../../shared/types";
 import type { SceneCommandInput, SceneCommandResult, SceneSnapshot } from "../../shared/modeling3d/sceneContracts";
 import type { BundledPythonRuntime } from "../runtime/bundledRuntime";
