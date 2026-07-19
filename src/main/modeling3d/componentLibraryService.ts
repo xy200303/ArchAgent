@@ -98,7 +98,7 @@ export function loadGlobalComponentAsset(rootDir: string, id: string): SceneAsse
   const component = findGlobalComponent(rootDir, id);
   if (!component || !existsSync(component.file)) throw new Error("未找到构建库模型文件。");
   const format = getComponentFormat(component.file);
-  return { id: component.id, format, dataBase64: readFileSync(component.file).toString("base64") };
+  return { id: component.id, format, data: readFileAsArrayBuffer(component.file) };
 }
 
 /** Reads a cached preview only for a component registered in the personal library. */
@@ -130,6 +130,13 @@ export function listGlobalComponents(rootDir: string, legacyProjectPath?: string
 
 function getComponentLibraryDirectory(rootDir: string): string {
   return join(rootDir, "data", "component-library", "assets");
+}
+
+function readFileAsArrayBuffer(path: string): ArrayBuffer {
+  const source = readFileSync(path);
+  const bytes = new Uint8Array(source.byteLength);
+  bytes.set(source);
+  return bytes.buffer;
 }
 
 function isWithinDirectory(filePath: string, directory: string): boolean {

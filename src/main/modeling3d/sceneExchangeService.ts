@@ -80,7 +80,7 @@ export function createSceneExchangeService(options: {
     const assetsPath = resolve(projectPath, ".agent", "assets");
     if (!filePath.startsWith(`${assetsPath}\\`) && filePath !== assetsPath) throw new Error("参考模型路径无效。");
     if (!existsSync(filePath) || !statSync(filePath).isFile()) throw new Error("参考模型文件不存在。");
-    return { id: asset.id, format: asset.format, dataBase64: readFileSync(filePath).toString("base64") };
+    return { id: asset.id, format: asset.format, data: readFileAsArrayBuffer(filePath) };
   }
   /** Copies one library asset into the active project and creates its scene node atomically. */
   function placeGlobalComponent(
@@ -131,6 +131,13 @@ function findDefaultLevelId(snapshot: SceneSnapshot): string {
   const level = Object.values(snapshot.nodes).find((node) => node.type === "level");
   if (!level) throw new Error("当前场景没有可用于放置参考模型的楼层。");
   return level.id;
+}
+
+function readFileAsArrayBuffer(path: string): ArrayBuffer {
+  const source = readFileSync(path);
+  const bytes = new Uint8Array(source.byteLength);
+  bytes.set(source);
+  return bytes.buffer;
 }
 
 function readSceneSnapshot(path: string): SceneSnapshot {

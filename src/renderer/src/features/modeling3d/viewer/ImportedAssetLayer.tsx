@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useState, type JSX } from "react";
 import { Box3, Box3Helper, type Object3D } from "three";
 import type { ArchAgentApi } from "../../../../../shared/types";
 import type { SceneAssetNode } from "../../../../../shared/modeling3d/sceneContracts";
-import { loadMeshObject, normalizeMeshObjectForScene } from "../scene/loadMeshObject";
+import { loadMeshObjectForScene } from "../scene/loadMeshObject";
 import type { SceneDragPreview } from "./relocationCommand";
 
 export function ImportedAssetLayer({
@@ -49,8 +49,7 @@ function ImportedAsset({
   useEffect(() => {
     let disposed = false;
     void api.scene.loadAsset(asset.id)
-      .then((payload) => loadMeshObject(payload.format, payload.dataBase64))
-      .then(normalizeMeshObjectForScene)
+      .then((payload) => loadMeshObjectForScene(payload.format, payload.data))
       .then((nextObject) => { if (!disposed) setObject(nextObject); })
       .catch((error: unknown) => {
         if (!disposed) onError(`参考模型“${asset.name}”加载失败：${error instanceof Error ? error.message : String(error)}`);

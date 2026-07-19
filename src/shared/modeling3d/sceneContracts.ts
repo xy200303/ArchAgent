@@ -420,5 +420,6 @@ export interface SceneHistoryResult extends SceneHistoryState {
 export type SceneExchangeFormat = "scene-json" | "glb" | "gltf" | "obj" | "stl";
 
 export interface SceneExportTarget { format: SceneExchangeFormat; path: string; }
-export interface SceneAssetPayload { id: string; format: SceneAssetNode["format"]; dataBase64: string; }
+/** Transfers model bytes over IPC without Base64 expansion or renderer-side decoding. */
+export interface SceneAssetPayload { id: string; format: SceneAssetNode["format"]; data: ArrayBuffer; }
 export interface SceneImportResult { kind: "scene" | "asset"; name: string; snapshot: SceneSnapshot; }

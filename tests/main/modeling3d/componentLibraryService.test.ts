@@ -74,7 +74,7 @@ describe("componentLibraryService", () => {
     const payload = loadGlobalComponentAsset(join(sandbox, "application"), component.id);
 
     expect(payload).toMatchObject({ id: component.id, format: "glb" });
-    expect(Buffer.from(payload.dataBase64, "base64").toString()).toBe("mesh-preview");
+    expect(Buffer.from(payload.data).toString()).toBe("mesh-preview");
   });
 
   it("persists a generated PNG thumbnail beside the global component", () => {

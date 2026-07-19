@@ -56,7 +56,7 @@ function queuePreviewGeneration(task: () => Promise<void>): Promise<void> {
 /** Renders one offscreen model image, persists it, then immediately releases all GPU resources. */
 async function generateAndCachePreview(api: ArchAgentApi, assetId: string): Promise<void> {
   const payload = await api.componentLibrary.loadAsset(assetId);
-  const source = await loadMeshObject(payload.format, payload.dataBase64);
+  const source = await loadMeshObject(payload.format, payload.data);
   const canvas = document.createElement("canvas");
   canvas.width = 288;
   canvas.height = 216;

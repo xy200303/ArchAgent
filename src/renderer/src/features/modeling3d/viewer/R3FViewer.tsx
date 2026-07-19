@@ -1,12 +1,11 @@
 /** Mounts the main WebGL editor while preserving the shared scene contract. */
 import { Grid, type CameraControls as CameraControlsHandle } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
-import { memo, useCallback, useRef, type JSX } from "react";
+import { lazy, memo, Suspense, useCallback, useRef, type JSX } from "react";
 import type { Quaternion } from "three";
 import type { ArchAgentApi } from "../../../../../shared/types";
 import type { SceneExchangeFormat, SceneSnapshot } from "../../../../../shared/modeling3d/sceneContracts";
 import { ArchitectureSceneLayer } from "./ArchitectureSceneLayer";
-import { ImportedAssetLayer } from "./ImportedAssetLayer";
 import { R3FCameraControls, type EditorCameraPreset } from "./R3FCameraControls";
 import { SceneExportBridge } from "./SceneExportBridge";
 import { SelectedNodeDragController } from "./SelectedNodeDragController";
@@ -16,6 +15,10 @@ import { ViewportNavigationGizmo, type ViewportNavigationGizmoHandle } from "./V
 import type { SceneDragPreview } from "./relocationCommand";
 
 export type { EditorCameraPreset } from "./R3FCameraControls";
+
+const ImportedAssetLayer = lazy(() =>
+  import("./ImportedAssetLayer").then((module) => ({ default: module.ImportedAssetLayer }))
+);
 
 function R3FViewer({
   onError,
@@ -86,7 +89,11 @@ function R3FViewer({
           <Grid args={[30, 30]} cellColor="#cbd5e1" sectionColor="#94a3b8" cellSize={1} sectionSize={5} fadeDistance={40} fadeStrength={1} infiniteGrid />
         </group>
         <ArchitectureSceneLayer snapshot={snapshot} dragPreview={dragPreview} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} />
-        <ImportedAssetLayer api={api} assets={assets} dragPreview={dragPreview} selectedNodeId={selectedNodeId} onError={onError} onSelectNode={onSelectNode} />
+        {assets.length ? (
+          <Suspense fallback={null}>
+            <ImportedAssetLayer api={api} assets={assets} dragPreview={dragPreview} selectedNodeId={selectedNodeId} onError={onError} onSelectNode={onSelectNode} />
+          </Suspense>
+        ) : null}
         <R3FCameraControls preset={cameraPreset} revision={cameraRevision} enabled={!wallDrawingActive && !manualDragActive} focusTarget={focusTarget} focusRevision={focusRevision} controlsRef={cameraControls} onOrientationChange={syncNavigationOrientation} />
         <SelectedNodeDragController nodeId={selectedNodeId} enabled={manualDragEnabled} onDragState={onManualDragState} onPreview={onManualDragPreview} onDrop={onManualDragDrop} />
         {wallDrawingActive ? <WallDrawingOverlay draft={wallDrawingDraft} onPoint={onWallDrawingPoint} onPreview={onWallDrawingPreview} /> : null}
