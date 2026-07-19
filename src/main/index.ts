@@ -82,7 +82,9 @@ const rendererEvents = createRendererEventBus({
   broadcast: (event) => windowManager.sendEvent(event)
 });
 const sendEvent = rendererEvents.sendEvent;
-const sendStreamItemUpdatedEvent = rendererEvents.sendStreamItemUpdated;
+const sendResponseItemCreatedEvent = rendererEvents.sendResponseItemCreated;
+const sendResponseItemUpdatedEvent = rendererEvents.sendResponseItemUpdated;
+const sendTurnStatusEvent = rendererEvents.sendTurnStatus;
 const clearPendingStreamItemUpdatesForSession = rendererEvents.clearPendingSessionUpdates;
 const sceneService = createSceneService({
   createId,
@@ -216,7 +218,9 @@ const conversationService = createConversationService({
   getSessionOutputDir,
   schedulePersistState,
   sendEvent,
-  sendStreamItemUpdatedEvent,
+  sendResponseItemCreatedEvent,
+  sendResponseItemUpdatedEvent,
+  sendTurnStatusEvent,
   clearPendingStreamItemUpdatesForSession,
   createId,
   now,
@@ -254,6 +258,7 @@ const conversationService = createConversationService({
       ...(input.position ? { position: input.position } : {}),
       ...(input.rotation ? { rotation: input.rotation } : {}),
       ...(input.scale ? { scale: input.scale } : {}),
+      ...(input.targetDimensions ? { targetDimensions: input.targetDimensions } : {}),
       ...(input.footprint ? { footprint: input.footprint } : {})
     });
   },

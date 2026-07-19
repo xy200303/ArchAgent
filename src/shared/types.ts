@@ -47,6 +47,20 @@ export interface AppMetadata {
   title: string;
 }
 
+export interface AgentFailure {
+  code?: string;
+  message: string;
+}
+
+export type AgentResponseEvent =
+  | { id: string; type: "agent.message.created" | "agent.message.delta" | "agent.message.completed"; sessionId: string; payload: Extract<StreamItem, { kind: "message" }> }
+  | { id: string; type: "agent.message.failed"; sessionId: string; payload: Extract<StreamItem, { kind: "message" }>; error: AgentFailure }
+  | { id: string; type: "agent.tool.started" | "agent.tool.progress" | "agent.tool.completed"; sessionId: string; payload: Extract<StreamItem, { kind: "tool" }> }
+  | { id: string; type: "agent.tool.failed"; sessionId: string; payload: Extract<StreamItem, { kind: "tool" }> }
+  | { id: string; type: "agent.stage.updated"; sessionId: string; payload: Extract<StreamItem, { kind: "stage" }> }
+  | { id: string; type: "agent.file.created"; sessionId: string; payload: Extract<StreamItem, { kind: "file" }> }
+  | { id: string; type: "agent.turn.started" | "agent.turn.completed" | "agent.turn.failed"; sessionId: string };
+
 export type StreamItem =
   | {
       id: string;
@@ -54,6 +68,7 @@ export type StreamItem =
       role: MessageRole;
       content: string;
       thinking?: string;
+      failure?: AgentFailure;
       isFinished: boolean;
       createdAt: string;
       attachmentIds?: string[];
@@ -209,7 +224,7 @@ export interface ArtifactSummary {
   size: number;
   createdAt: string;
 }
-export interface GlobalComponentSummary { id: string; name: string; source: "hunyuan-3d" | "external"; model: string; prompt?: string; description?: string; category?: string; tags: string[]; placementRule?: string; previewAvailable: boolean; createdAt: string; }
+export interface GlobalComponentSummary { id: string; name: string; source: "hunyuan-3d" | "external"; model: string; prompt?: string; description?: string; category?: string; tags: string[]; placementRule?: string; targetDimensions?: [number, number, number]; previewAvailable: boolean; createdAt: string; }
 
 export interface ArtifactListInput {
   sessionId?: string;
@@ -455,18 +470,7 @@ export type RendererEvent =
       type: "session.deleted";
       sessionId: string;
     }
-  | {
-      id: string;
-      type: "stream.item.added";
-      sessionId: string;
-      payload: StreamItem;
-    }
-  | {
-      id: string;
-      type: "stream.item.updated";
-      sessionId: string;
-      payload: StreamItem;
-    }
+  | AgentResponseEvent
   | {
       id: string;
       type: "artifact.created";
@@ -484,12 +488,17 @@ export type RendererEvent =
       payload: SceneSnapshot;
     };
 
+export function isAgentResponseEvent(event: RendererEvent): event is AgentResponseEvent {
+  return event.type.startsWith("agent.");
+}
+
 export interface ArchAgentApi {
   app: {
     getMetadata(): Promise<AppMetadata>;
     recentProjects(): Promise<ProjectInfo[]>;
     newWindow(projectPath?: string): Promise<void>;
     openArchAgentGitHub(): Promise<void>;
+    openTokenHubApiKeys(): Promise<void>;
   };
   project: {
     open(): Promise<ProjectInfo | undefined>;

@@ -1,5 +1,5 @@
 /** Chat transcript rendering, process grouping, tool details, and artifact actions. */
-import { memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX, type UIEvent } from "react";
+import { memo, useCallback, useDeferredValue, useLayoutEffect, useRef, useState, type JSX, type UIEvent } from "react";
 import * as Collapsible from "@radix-ui/react-collapsible";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
@@ -21,7 +21,7 @@ import {
   MoreHorizontal,
   XCircle
 } from "lucide-react";
-import type { ArchAgentApi, ChatSession, ReconstructionWorkflow, StreamItem } from "../../../../shared/types";
+import type { AgentFailure, ArchAgentApi, ChatSession, ReconstructionWorkflow, StreamItem } from "../../../../shared/types";
 import { getErrorMessage } from "../../platform/bridge";
 import {
   groupStreamItemsForDisplay,
@@ -43,7 +43,7 @@ export const MessagePane = memo(function MessagePane({
   const scrollRef = useRef<HTMLDivElement>(null);
   const sessionIdRef = useRef<string | undefined>(undefined);
   const shouldFollowOutputRef = useRef(true);
-  const displayBlocks = useMemo(() => (session ? groupStreamItemsForDisplay(session.items) : []), [session?.items]);
+  const displayBlocks = session ? groupStreamItemsForDisplay(session.items) : [];
   const shouldShowPendingThinking = Boolean(
     session?.status === "running" && !session.items.some(isUnfinishedAssistantMessage)
   );
@@ -64,7 +64,7 @@ export const MessagePane = memo(function MessagePane({
       top: viewport.scrollHeight,
       behavior: session?.status === "running" ? "auto" : "smooth"
     });
-  }, [session?.id, session?.items.length, session?.items.at(-1), session?.status]);
+  }, [session]);
 
   return (
     <ScrollArea.Root className="message-scroll">
@@ -112,7 +112,7 @@ export const MessagePane = memo(function MessagePane({
                 />
               )
             ))}
-            {session.workflow && session.workflow.status !== "confirmed" ? <ReconstructionWorkflowCard api={api} sessionId={session.id} workflow={session.workflow} onError={onError} /> : null}
+            {session.workflow && session.workflow.status !== "confirmed" ? <ReconstructionWorkflowCard key={session.workflow.id} api={api} sessionId={session.id} workflow={session.workflow} onError={onError} /> : null}
             {shouldShowPendingThinking ? <PendingAssistantRow /> : null}
           </>
         )}
@@ -135,11 +135,11 @@ function ReconstructionWorkflowCard({
   workflow: ReconstructionWorkflow;
   onError: (message: string) => void;
 }): JSX.Element {
-  const [pendingAction, setPendingAction] = useState<string>();
-  const [dialogOpen, setDialogOpen] = useState(false);
   const unansweredQuestions = workflow.questions.filter((question) => question.required && !question.selectedOptionId);
   const activeQuestion = unansweredQuestions[0];
   const answeredQuestionCount = workflow.questions.length - unansweredQuestions.length;
+  const [pendingAction, setPendingAction] = useState<string>();
+  const [dialogOpen, setDialogOpen] = useState(() => workflow.status === "needs_clarification" && Boolean(activeQuestion));
   const statusLabel = {
     needs_clarification: "等待你的选择",
     ready_for_confirmation: "等待生成确认",
@@ -149,10 +149,6 @@ function ReconstructionWorkflowCard({
     needs_attention: "需要处理失败项",
     cancelled: "已取消"
   }[workflow.status];
-
-  useEffect(() => {
-    if (workflow.status === "needs_clarification" && activeQuestion) setDialogOpen(true);
-  }, [workflow.id]);
 
   async function answer(questionId: string, optionId: string): Promise<void> {
     setPendingAction(`${questionId}:${optionId}`);
@@ -306,11 +302,11 @@ const ProcessCard = memo(function ProcessCard({
   const status = resolveProcessCardStatus(items);
 
   return (
-    <Collapsible.Root className={`process-card ${status}`} defaultOpen>
+    <Collapsible.Root className={`process-card ${status}`} defaultOpen={status === "running"}>
       <div className="process-card-toolbar">
         <ProcessCardStatusIcon status={status} />
         <div className="process-card-heading">
-          <span className="process-card-title">执行过程</span>
+          <span className="process-card-title">工具执行过程</span>
           <span className="process-card-count">{formatProcessCardCounts(items)}</span>
         </div>
         <Collapsible.Trigger asChild>
@@ -402,22 +398,16 @@ const StreamRow = memo(function StreamRow({
     }
 
     const isUser = item.role === "user";
-    const failure = item.role === "assistant" && item.isFinished ? describeAgentFailure(item.content) : undefined;
+    const failure = item.role === "assistant" && item.isFinished ? item.failure : undefined;
     return (
       <article className={`message-row ${item.role}`}>
         <div className="message-body">
           {item.role === "assistant" ? (
             <>
               {item.thinking?.trim() ? <ThinkingCard content={item.thinking} isFinished={item.isFinished} /> : null}
-              {failure ? (
-                <AgentFailureCard api={api} failure={failure} onError={onError} />
-              ) : item.content.trim() ? (
-                <StreamingMarkdown content={item.content} isFinished={item.isFinished} />
-              ) : item.isFinished || item.thinking?.trim() ? (
-                null
-              ) : (
-                <ThinkingIndicator />
-              )}
+              {item.content.trim() ? <StreamingMarkdown content={item.content} isFinished={item.isFinished} /> : null}
+              {failure ? <AgentFailureCard api={api} failure={failure} onError={onError} /> : null}
+              {!failure && !item.content.trim() && !item.isFinished && !item.thinking?.trim() ? <ThinkingIndicator /> : null}
             </>
           ) : (
             <p>{item.content}</p>
@@ -455,39 +445,31 @@ const StreamRow = memo(function StreamRow({
   );
 });
 
-function describeAgentFailure(content: string): { summary: string; details: string; apiKeyRejected?: boolean } | undefined {
-  const normalized = content.replace(/\s+/g, " ").trim();
-  if (!/生成中断|模型返回错误|\b(?:4\d\d|5\d\d)\b|does not exist|access to it/i.test(normalized)) return undefined;
-
-  const model = normalized.match(/(?:the\s+model|模型)\s*[“"']?([\w.-]+)/i)?.[1];
-  const apiKeyRejected = /\b401002\b|api\s*key\s+does\s+not\s+exist|signature\s+verification\s+failed/i.test(normalized);
-  const summary = model && /does not exist|access to it|\b404\b/i.test(normalized)
-    ? `模型“${model}”不可用，或当前密钥没有访问权限。请在设置中更换可用模型，或确认服务商权限。`
-    : apiKeyRejected
-      ? "TokenHub API Key 无效、已撤销或不属于当前服务。请在 TokenHub 控制台创建/确认密钥后，在运行设置中替换。"
-    : "本次生成未完成。请检查模型配置、网络连接或服务商权限后重试。";
-  return { summary, details: content.trim(), apiKeyRejected };
-}
-
 function AgentFailureCard({
   api,
   failure,
   onError
 }: {
   api: ArchAgentApi;
-  failure: { summary: string; details: string; apiKeyRejected?: boolean };
+  failure: AgentFailure;
   onError: (message: string) => void;
 }): JSX.Element {
+  const apiKeyRejected = failure.code === "401" || failure.code === "401002";
+  const summary = apiKeyRejected
+    ? "TokenHub API Key 无效、已撤销或不属于当前服务。请在 TokenHub 控制台创建/确认密钥后，在运行设置中替换。"
+    : failure.code === "404"
+      ? "当前模型不可用，或服务商未向该密钥授予访问权限。请在设置中确认模型和权限。"
+      : "本次生成未完成。请检查模型配置、网络连接或服务商权限后重试。";
   return (
     <section className="agent-failure-card" role="alert">
       <div className="agent-failure-heading">
         <CircleAlert size={17} />
         <div>
           <strong>模型调用失败</strong>
-          <p>{failure.summary}</p>
+          <p>{summary}</p>
         </div>
       </div>
-      {failure.apiKeyRejected ? (
+      {apiKeyRejected ? (
         <button
           type="button"
           className="secondary-action agent-failure-action"
@@ -499,7 +481,7 @@ function AgentFailureCard({
       ) : null}
       <details className="agent-failure-details">
         <summary>查看技术详情</summary>
-        <pre>{failure.details}</pre>
+        <pre>{failure.code ? `[${failure.code}] ` : ""}{failure.message}</pre>
       </details>
     </section>
   );

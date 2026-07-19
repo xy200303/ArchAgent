@@ -23,17 +23,23 @@ export async function loadMeshObject(format: SceneAssetNode["format"], data: Arr
 }
 
 /** Reuses parsed geometry for repeated library instances while preserving independent transforms. */
-export async function loadMeshObjectForScene(format: SceneAssetNode["format"], data: ArrayBuffer, stableCacheKey?: string): Promise<Object3D> {
+export async function loadMeshObjectForScene(
+  format: SceneAssetNode["format"],
+  data: ArrayBuffer,
+  stableCacheKey?: string,
+  targetDimensions?: [number, number, number]
+): Promise<Object3D> {
   let templates = sceneAssetTemplates.get(format);
   if (!templates) {
     templates = new Map();
     sceneAssetTemplates.set(format, templates);
   }
 
-  const cacheKey = stableCacheKey ?? await createAssetCacheKey(data);
+  const sourceCacheKey = stableCacheKey ?? await createAssetCacheKey(data);
+  const cacheKey = `${sourceCacheKey}:${targetDimensions?.join(",") ?? "native"}`;
   let template = templates.get(cacheKey);
   if (!template) {
-    template = loadMeshObject(format, data).then(normalizeMeshObjectForScene);
+    template = loadMeshObject(format, data).then((object) => normalizeMeshObjectForScene(object, targetDimensions));
     templates.set(cacheKey, template);
     void template.catch(() => templates?.delete(cacheKey));
     if (templates.size > MAX_CACHED_TEMPLATES_PER_FORMAT) {
@@ -45,10 +51,18 @@ export async function loadMeshObjectForScene(format: SceneAssetNode["format"], d
 }
 
 /** Makes the persisted asset position represent its visible bottom-center, regardless of GLB local origin. */
-export function normalizeMeshObjectForScene(source: Object3D): Object3D {
+export function normalizeMeshObjectForScene(source: Object3D, targetDimensions?: [number, number, number]): Object3D {
   source.updateMatrixWorld(true);
   const bounds = new Box3().setFromObject(source);
   if (bounds.isEmpty()) return source;
+  if (targetDimensions) {
+    const size = bounds.getSize(new Vector3());
+    if (size.x > 0 && size.y > 0 && size.z > 0) {
+      source.scale.multiply(new Vector3(targetDimensions[0] / size.x, targetDimensions[1] / size.y, targetDimensions[2] / size.z));
+      source.updateMatrixWorld(true);
+      bounds.setFromObject(source);
+    }
+  }
   const center = bounds.getCenter(new Vector3());
   source.position.sub(new Vector3(center.x, bounds.min.y, center.z));
   const container = new Group();

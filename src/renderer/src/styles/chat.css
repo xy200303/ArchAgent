@@ -579,6 +579,120 @@
   overflow-x: auto;
 }
 
+/* VS Code's built-in Light Modern / Dark Modern Markdown palette. */
+.message-body,
+.process-message-body {
+  --incremark-color-text-primary: #1f1f1f;
+  --incremark-color-text-secondary: #616161;
+  --incremark-color-text-tertiary: #717171;
+  --incremark-color-interactive-link: #006ab1;
+  --incremark-color-interactive-link-hover: #005f9e;
+  --incremark-color-interactive-link-visited: #7f3fbf;
+  --incremark-color-border-default: #c8c8c8;
+  --incremark-color-border-subtle: #e5e5e5;
+  --incremark-color-background-elevated: #f3f3f3;
+  --incremark-color-code-inline-background: #f3f3f3;
+  --incremark-color-code-inline-text: #a31515;
+  --incremark-color-code-block-background: #f6f6f6;
+  --incremark-color-code-block-text: #1f1f1f;
+  --incremark-color-code-header-background: #ececec;
+  --incremark-color-brand-primary: #0078d4;
+}
+
+html[data-theme="dark"] .message-body,
+html[data-theme="dark"] .process-message-body {
+  --incremark-color-text-primary: #d4d4d4;
+  --incremark-color-text-secondary: #a9a9a9;
+  --incremark-color-text-tertiary: #858585;
+  --incremark-color-interactive-link: #3794ff;
+  --incremark-color-interactive-link-hover: #4daaff;
+  --incremark-color-interactive-link-visited: #c586c0;
+  --incremark-color-border-default: #454545;
+  --incremark-color-border-subtle: #3c3c3c;
+  --incremark-color-background-elevated: #252526;
+  --incremark-color-code-inline-background: #2d2d2d;
+  --incremark-color-code-inline-text: #ce9178;
+  --incremark-color-code-block-background: #1e1e1e;
+  --incremark-color-code-block-text: #d4d4d4;
+  --incremark-color-code-header-background: #181818;
+  --incremark-color-brand-primary: #0078d4;
+}
+
+.message-body .incremark,
+.process-message-body .incremark {
+  color: var(--incremark-color-text-primary);
+  font-family: var(--fluent-font-family-base);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.message-body .incremark-heading,
+.process-message-body .incremark-heading {
+  margin: var(--fluent-spacing-l) 0 var(--fluent-spacing-s);
+  color: var(--incremark-color-text-primary);
+  font-weight: 650;
+}
+
+.message-body .incremark-heading--h1,
+.process-message-body .incremark-heading--h1 {
+  border-bottom-color: var(--incremark-color-border-subtle);
+  font-size: 17px;
+}
+
+.message-body .incremark-heading--h2,
+.process-message-body .incremark-heading--h2 {
+  font-size: 16px;
+}
+
+.message-body .incremark-heading--h3,
+.process-message-body .incremark-heading--h3 {
+  font-size: 15px;
+}
+
+.message-body .incremark-paragraph,
+.process-message-body .incremark-paragraph {
+  margin: var(--fluent-spacing-s) 0;
+}
+
+.message-body .incremark-inline-code,
+.process-message-body .incremark-inline-code {
+  border-radius: var(--fluent-radius-small);
+  font-family: var(--fluent-font-family-monospace);
+  font-size: 0.9em;
+}
+
+.message-body .incremark-blockquote,
+.process-message-body .incremark-blockquote {
+  margin: var(--fluent-spacing-m) 0;
+  border-radius: 0;
+  background: var(--incremark-color-background-elevated);
+  color: var(--incremark-color-text-secondary);
+}
+
+.message-body .incremark-table-wrapper,
+.process-message-body .incremark-table-wrapper {
+  margin: var(--fluent-spacing-m) 0;
+}
+
+.message-body .incremark-table,
+.process-message-body .incremark-table {
+  font-size: 12px;
+}
+
+.message-body .incremark-table th,
+.message-body .incremark-table td,
+.process-message-body .incremark-table th,
+.process-message-body .incremark-table td {
+  border-color: var(--incremark-color-border-default);
+  padding: 5px var(--fluent-spacing-m);
+}
+
+.message-body .incremark-code,
+.process-message-body .incremark-code {
+  margin: var(--fluent-spacing-m) 0;
+  border-radius: var(--fluent-radius-small);
+}
+
 .process-message-body :where(h1, h2, h3, h4, h5, h6, p, li, blockquote, td, th) {
   min-width: 0;
   max-width: 100%;

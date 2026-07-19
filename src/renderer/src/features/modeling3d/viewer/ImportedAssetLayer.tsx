@@ -56,14 +56,14 @@ function ImportedAsset({
     void api.scene.loadAsset(asset.id)
       .then(async (payload) => {
         await yieldToNextPaint();
-        return loadMeshObjectForScene(payload.format, payload.data, payload.cacheKey);
+        return loadMeshObjectForScene(payload.format, payload.data, payload.cacheKey, asset.targetDimensions);
       })
       .then((nextObject) => { if (!disposed) setObject(nextObject); })
       .catch((error: unknown) => {
         if (!disposed) onError(`参考模型“${assetName.current}”加载失败：${error instanceof Error ? error.message : String(error)}`);
       });
     return () => { disposed = true; };
-  }, [api, asset.id, onError]);
+  }, [api, asset.id, asset.targetDimensions, onError]);
 
   useEffect(() => {
     onObjectChange?.(asset.id, object);

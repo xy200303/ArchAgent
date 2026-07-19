@@ -54,13 +54,15 @@ describe("componentLibraryService", () => {
     const component = importGlobalComponent(applicationRoot, projectFile, {
       name: "Downloaded chair",
       category: "furniture",
-      tags: ["chair", "downloaded"]
+      tags: ["chair", "downloaded"],
+      targetDimensions: [0.6, 0.9, 0.6]
     });
 
-    expect(component).toMatchObject({ name: "Downloaded chair", source: "external", category: "furniture" });
+    expect(component).toMatchObject({ name: "Downloaded chair", source: "external", category: "furniture", targetDimensions: [0.6, 0.9, 0.6] });
     expect(component.file).not.toBe(projectFile);
     expect(existsSync(component.file)).toBe(true);
     expect(existsSync(projectFile)).toBe(true);
+    expect(listGlobalComponents(applicationRoot)[0]).toMatchObject({ targetDimensions: [0.6, 0.9, 0.6] });
   });
 
   it("loads model bytes only for a registered global component", () => {

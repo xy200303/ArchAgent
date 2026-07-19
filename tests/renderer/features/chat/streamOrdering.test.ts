@@ -88,6 +88,19 @@ describe("streamOrdering", () => {
     ]);
   });
 
+  it("does not promote an assistant note when a later tool has no final reply", () => {
+    const items: StreamItem[] = [
+      message("user_1", "user", "生成分析报告"),
+      message("assistant_note", "assistant", "我先读取数据。"),
+      tool("tool_1", "read_file")
+    ];
+
+    expect(groupStreamItemsForDisplay(items)).toMatchObject([
+      { kind: "message", id: "user_1" },
+      { kind: "process", id: "process_assistant_note", items: [{ id: "assistant_note" }, { id: "tool_1" }] }
+    ]);
+  });
+
   it("does not render hidden planning or empty assistant blocks", () => {
     const items: StreamItem[] = [
       message("user_1", "user", "继续"),

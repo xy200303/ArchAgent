@@ -123,7 +123,7 @@ describe("renderer store", () => {
     };
     const streamEvent: RendererEvent = {
       id: "event_3",
-      type: "stream.item.added",
+      type: "agent.file.created",
       sessionId: session.id,
       payload: {
         id: "file_1",
@@ -311,7 +311,7 @@ describe("renderer store", () => {
     const session = makeSession("session_a", "A");
     const event: RendererEvent = {
       id: "event_3",
-      type: "stream.item.added",
+      type: "agent.tool.completed",
       sessionId: session.id,
       payload: {
         id: "tool_1",
@@ -333,6 +333,34 @@ describe("renderer store", () => {
       kind: "tool",
       inputPreview: "{\"path\":\"data/input/sales.csv\"}",
       outputPreview: "数据字段摘要"
+    });
+  });
+
+  it("updates the session and message from structured agent failure events", () => {
+    const session = makeSession("session_a", "A");
+    const failureEvent: RendererEvent = {
+      id: "event_failure",
+      type: "agent.message.failed",
+      sessionId: session.id,
+      payload: {
+        id: "message_1",
+        kind: "message",
+        role: "assistant",
+        content: "已完成部分分析。",
+        failure: { code: "401002", message: "API key rejected" },
+        isFinished: true,
+        createdAt: "2026-05-23T00:01:00.000Z"
+      },
+      error: { code: "401002", message: "API key rejected" }
+    };
+
+    store.dispatch(setSessions([session]));
+    store.dispatch(applyRendererEvent(failureEvent));
+    store.dispatch(applyRendererEvent({ id: "event_turn", type: "agent.turn.failed", sessionId: session.id }));
+
+    expect(store.getState().chat.sessions[0]).toMatchObject({
+      status: "failed",
+      items: [{ id: "message_1", failure: { code: "401002" } }]
     });
   });
 });

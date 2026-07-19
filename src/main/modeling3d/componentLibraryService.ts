@@ -22,6 +22,7 @@ export interface ImportComponentInput {
   category?: string;
   tags?: string[];
   placementRule?: string;
+  targetDimensions?: [number, number, number];
 }
 
 export function findGlobalComponent(rootDir: string, id: string): GlobalComponentRecord | undefined {
@@ -86,6 +87,7 @@ export function importGlobalComponent(rootDir: string, sourcePath: string, input
     category: input.category?.trim() || sourceMetadata?.category || "未分类",
     tags: input.tags?.map((tag) => tag.trim()).filter(Boolean) ?? sourceMetadata?.tags ?? [],
     placementRule: input.placementRule?.trim() || sourceMetadata?.placementRule,
+    ...(readTargetDimensions(input.targetDimensions ?? sourceMetadata?.targetDimensions) ? { targetDimensions: readTargetDimensions(input.targetDimensions ?? sourceMetadata?.targetDimensions)! } : {}),
     previewAvailable: Boolean(previewFile),
     createdAt: new Date().toISOString()
   };
@@ -204,12 +206,19 @@ function readComponentRecord(path: string): GlobalComponentRecord[] {
       : existsSync(getDefaultPreviewFile(record.file)) ? getDefaultPreviewFile(record.file) : undefined;
     const id = typeof record.id === "string" && /^lib_[a-z0-9-]+$/i.test(record.id) ? record.id : createLibraryAssetId();
     if (record.id !== id) writeFileSync(path, JSON.stringify({ ...record, id, previewFile, previewAvailable: Boolean(previewFile) }, null, 2), "utf8");
-    return [{ id, name: record.name, file: record.file, source: record.source === "external" ? "external" : "hunyuan-3d", model: record.model, prompt: typeof record.prompt === "string" ? record.prompt : undefined, description: typeof record.description === "string" ? record.description : undefined, category: typeof record.category === "string" ? record.category : undefined, tags: Array.isArray(record.tags) ? record.tags.filter((tag): tag is string => typeof tag === "string") : [], placementRule: typeof record.placementRule === "string" ? record.placementRule : undefined, previewFile, previewAvailable: Boolean(previewFile), createdAt: record.createdAt }];
+    const targetDimensions = readTargetDimensions(record.targetDimensions);
+    return [{ id, name: record.name, file: record.file, source: record.source === "external" ? "external" : "hunyuan-3d", model: record.model, prompt: typeof record.prompt === "string" ? record.prompt : undefined, description: typeof record.description === "string" ? record.description : undefined, category: typeof record.category === "string" ? record.category : undefined, tags: Array.isArray(record.tags) ? record.tags.filter((tag): tag is string => typeof tag === "string") : [], placementRule: typeof record.placementRule === "string" ? record.placementRule : undefined, ...(targetDimensions ? { targetDimensions } : {}), previewFile, previewAvailable: Boolean(previewFile), createdAt: record.createdAt }];
   } catch { return []; }
 }
 
 function createLibraryAssetId(): string {
   return `lib_${randomUUID().replace(/-/g, "")}`;
+}
+
+function readTargetDimensions(value: unknown): [number, number, number] | undefined {
+  return Array.isArray(value) && value.length === 3 && value.every((item) => typeof item === "number" && Number.isFinite(item) && item > 0)
+    ? value as [number, number, number]
+    : undefined;
 }
 
 function getDefaultPreviewFile(componentFile: string): string {

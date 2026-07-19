@@ -68,6 +68,7 @@ describe("agentToolRegistry", () => {
     expect(tool?.function.description).toContain("最小单实体");
     expect(JSON.stringify(tool?.function.parameters)).toContain("入口标识");
     expect(JSON.stringify(tool?.function.parameters)).toContain("位置、朝向、用途");
+    expect(JSON.stringify(tool?.function.parameters)).toContain("target_dimensions_meters");
   });
 
   it("keeps exec_bash opt-in for local diagnostics", () => {

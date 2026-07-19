@@ -53,7 +53,7 @@ export const ComponentLibraryPanel = memo(function ComponentLibraryPanel({
       // Asset generation publishes an artifact event after its GLB reaches disk.
       if (event.type === "artifact.created") refreshAssets();
       if (
-        event.type === "stream.item.updated" &&
+        event.type === "agent.tool.completed" &&
         event.payload.kind === "tool" &&
         event.payload.toolName === "import_component_asset" &&
         event.payload.status === "success"

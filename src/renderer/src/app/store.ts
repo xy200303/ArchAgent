@@ -1,5 +1,6 @@
 /** Owns application-shell state; the 3D domain remains in shared scene services. */
 import { configureStore, createSlice, type PayloadAction } from "@reduxjs/toolkit";
+import { isAgentResponseEvent } from "../../../shared/types";
 import type {
   AppSettings,
   ArtifactSummary,
@@ -191,18 +192,18 @@ const chatSlice = createSlice({
         }
         return;
       }
-      if (event.type === "stream.item.added") {
+      if (isAgentResponseEvent(event)) {
         const session = state.sessions.find((existing) => existing.id === event.sessionId);
-        if (session && !hasMatchingStreamItem(session.items, event.payload)) {
-          session.items.push(event.payload);
+        if (event.type === "agent.turn.started" || event.type === "agent.turn.completed" || event.type === "agent.turn.failed") {
+          if (session) session.status = event.type === "agent.turn.started" ? "running" : event.type === "agent.turn.completed" ? "completed" : "failed";
+          return;
         }
-        return;
-      }
-      if (event.type === "stream.item.updated") {
-        const session = state.sessions.find((existing) => existing.id === event.sessionId);
-        const index = session?.items.findIndex((item) => item.id === event.payload.id) ?? -1;
-        if (session && index >= 0) {
+        if (!("payload" in event) || !session) return;
+        const index = findMatchingStreamItemIndex(session.items, event.payload);
+        if (index >= 0) {
           session.items[index] = event.payload;
+        } else {
+          session.items.push(event.payload);
         }
         return;
       }
@@ -274,11 +275,16 @@ function getSessionArtifactIds(session?: ChatSession): Set<string> {
 }
 
 function hasMatchingStreamItem(items: StreamItem[], item: StreamItem): boolean {
-  if (items.some((existing) => existing.id === item.id)) return true;
+  return findMatchingStreamItemIndex(items, item) >= 0;
+}
+
+function findMatchingStreamItemIndex(items: StreamItem[], item: StreamItem): number {
+  const idIndex = items.findIndex((existing) => existing.id === item.id);
+  if (idIndex >= 0) return idIndex;
   if (item.kind === "file") {
-    return items.some((existing) => existing.kind === "file" && existing.artifactId === item.artifactId);
+    return items.findIndex((existing) => existing.kind === "file" && existing.artifactId === item.artifactId);
   }
-  return false;
+  return -1;
 }
 
 function mergeSessionPreservingFileItems(existing: ChatSession | undefined, incoming: ChatSession): ChatSession {

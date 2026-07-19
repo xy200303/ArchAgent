@@ -39,6 +39,7 @@ import type { GlobalComponentSummary } from "../../shared/types";
 
 const { clipboard, ipcMain, shell } = electron;
 const ARCH_AGENT_GITHUB_URL = "https://github.com/xy200303/ArchAgent";
+const TOKENHUB_API_KEY_URL = "https://console.cloud.tencent.com/tokenhub/apikey";
 
 export function registerIpcHandlers(options: {
   getAppMetadata: () => AppMetadata;
@@ -102,6 +103,7 @@ export function registerIpcHandlers(options: {
   ipcMain.handle("app:recent-projects", options.listRecentProjects);
   ipcMain.handle("app:new-window", (_event, projectPath?: string) => options.createWindow(projectPath));
   ipcMain.handle("app:open-archagent-github", () => shell.openExternal(ARCH_AGENT_GITHUB_URL));
+  ipcMain.handle("app:open-tokenhub-api-keys", () => shell.openExternal(TOKENHUB_API_KEY_URL));
   ipcMain.handle("project:open", options.openProject);
   ipcMain.handle("project:create", options.createProject);
   ipcMain.handle("session:list", (_event, projectPath: string) =>

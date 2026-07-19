@@ -10,6 +10,7 @@ import {
   Bot,
   Box,
   Check,
+  ExternalLink,
   Image,
   Loader2,
   Moon,
@@ -107,7 +108,7 @@ export function SettingsPanel({
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [resetConfirmationOpen, setResetConfirmationOpen] = useState(false);
-  const [theme, setTheme] = useState<"light" | "dark">(settings?.theme || "light");
+  const [theme, setTheme] = useState<"light" | "dark">(settings?.theme || "dark");
 
   async function save(): Promise<void> {
     setSaving(true);
@@ -230,14 +231,24 @@ export function SettingsPanel({
             <ScrollArea.Root className="settings-scroll">
               <ScrollArea.Viewport className="settings-viewport">
                 <Tabs.Content className="settings-form settings-form-model" value="model">
-                  <label>
-                    API Key
-                    <input
-                      value={apiKey}
-                      onChange={(event) => setApiKey(event.target.value)}
-                      placeholder={settings?.openai.apiKeyConfigured ? "已配置，留空保持不变" : "TokenHub / Hy3 API Key"}
-                    />
-                  </label>
+                  <div className="settings-api-key-field">
+                    <label>
+                      API Key
+                      <input
+                        value={apiKey}
+                        onChange={(event) => setApiKey(event.target.value)}
+                        placeholder={settings?.openai.apiKeyConfigured ? "已配置，留空保持不变" : "TokenHub / Hy3 API Key"}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="settings-api-key-link"
+                      onClick={() => void api.app.openTokenHubApiKeys().catch((error: unknown) => onError(`打开 TokenHub API Key 页面失败：${getErrorMessage(error)}`))}
+                    >
+                      <ExternalLink size={14} />
+                      获取或管理 API Key
+                    </button>
+                  </div>
                   <label>
                     TokenHub 生图端点
                     <input

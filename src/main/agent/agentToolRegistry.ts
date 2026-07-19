@@ -69,6 +69,7 @@ export interface AgentToolExecutionContext {
     position?: [number, number, number];
     rotation?: [number, number, number];
     scale?: [number, number, number];
+    targetDimensions?: [number, number, number];
     footprint?: [number, number];
   }) => SceneCommandResult;
   createReconstructionWorkflow?: (input: CreateReconstructionWorkflowInput) => unknown;
@@ -751,8 +752,10 @@ function executePlaceLibraryAssets(args: Record<string, unknown>, context: Agent
     if ("error" in placement) return { toolName: "place_library_assets", summary: placement.error, content: `place_library_assets failed: ${placement.error}` };
     const { position, rotation } = placement;
     const scale = item && "scale" in item ? readPoint3Arg(item, "scale") : undefined;
+    const targetDimensions = item && "target_dimensions_meters" in item ? readPoint3Arg(item, "target_dimensions_meters") : undefined;
     const footprint = item && "footprint_meters" in item ? readPoint2Arg(item, "footprint_meters") : undefined;
     if (item && "scale" in item && (!scale || scale.some((value) => value <= 0))) return { toolName: "place_library_assets", summary: `资产“${component.name}”的缩放参数无效。`, content: "place_library_assets failed: invalid scale" };
+    if (item && "target_dimensions_meters" in item && (!targetDimensions || targetDimensions.some((value) => value <= 0))) return { toolName: "place_library_assets", summary: `资产“${component.name}”的目标尺寸无效。`, content: "place_library_assets failed: invalid target dimensions" };
     if (item && "footprint_meters" in item && (!footprint || footprint.some((value) => value <= 0))) return { toolName: "place_library_assets", summary: `资产“${component.name}”的占地尺寸无效。`, content: "place_library_assets failed: invalid footprint" };
     const collision = footprint && position ? findAssetPlacementCollision(context.getSceneSnapshot(), position, rotation ?? [0, 0, 0], footprint, scale ?? [1, 1, 1]) : undefined;
     if (collision) return { toolName: "place_library_assets", summary: `“${component.name}”会与“${collision.name}”占地碰撞。`, content: `place_library_assets failed: footprint collision with ${collision.name} (${collision.id})` };
@@ -761,7 +764,7 @@ function executePlaceLibraryAssets(args: Record<string, unknown>, context: Agent
     const reference = uniqueSceneReference(item ? readStringArg(item, "reference") || component.name : component.name, references);
     references.add(reference);
     try {
-      const result = context.placeComponentLibraryItem({ componentId: component.id, name: reference, ...(position ? { position } : {}), ...(rotation ? { rotation } : {}), ...(scale ? { scale } : {}), ...(footprint ? { footprint } : {}) });
+      const result = context.placeComponentLibraryItem({ componentId: component.id, name: reference, ...(position ? { position } : {}), ...(rotation ? { rotation } : {}), ...(scale ? { scale } : {}), ...(targetDimensions ? { targetDimensions } : {}), ...(footprint ? { footprint } : {}) });
       if (!result.accepted) return { toolName: "place_library_assets", summary: `实例化“${component.name}”失败：${result.message}`, content: `place_library_assets failed: ${result.message}` };
       if (result.command.type !== "asset.create") return { toolName: "place_library_assets", summary: "实例化未返回场景物件。", content: "place_library_assets failed: unexpected scene command" };
       created.push({ id: result.command.id, reference, diagnostics: formatPlacementDiagnostics(context.getSceneSnapshot() ?? result.snapshot, position!, rotation ?? [0, 0, 0], footprint, scale ?? [1, 1, 1]) });
@@ -1138,6 +1141,7 @@ async function executeGenerateSingleAsset(args: Record<string, unknown>, context
   const source = readStringArg(args, "source");
   const prompt = readStringArg(args, "prompt");
   const resourceId = readStringArg(args, "resource_id");
+  const targetDimensions = "target_dimensions_meters" in args ? readPoint3Arg(args, "target_dimensions_meters") : undefined;
   if (!name || (source !== "text" && source !== "image")) {
     return { toolName: "generate_3d_asset", summary: "需要名称和 source=text 或 image。", content: "generate_3d_asset failed: invalid arguments" };
   }
@@ -1147,6 +1151,9 @@ async function executeGenerateSingleAsset(args: Record<string, unknown>, context
   const resource = resourceId ? context.resources?.find((item) => item.id === resourceId) : undefined;
   if (source === "image" && (!resource || resource.kind !== "image" || prompt)) {
     return { toolName: "generate_3d_asset", summary: "图生 3D 需要单物件图片 resource_id，且不能传 prompt。", content: "generate_3d_asset failed: invalid image source" };
+  }
+  if ("target_dimensions_meters" in args && (!targetDimensions || targetDimensions.some((value) => value <= 0))) {
+    return { toolName: "generate_3d_asset", summary: "目标尺寸必须是三个大于 0 的米制数值。", content: "generate_3d_asset failed: invalid target dimensions" };
   }
   try {
     const generated = await generateHunyuanGlb({
@@ -1158,12 +1165,13 @@ async function executeGenerateSingleAsset(args: Record<string, unknown>, context
       name,
       description: source === "text" ? prompt : "由用户确认的单物件参考图生成的低模资产",
       category: readStringArg(args, "category") || "未分类",
-      tags: ["agent-generated", "low-poly", ...readStringListArg(args, "tags")]
+      tags: ["agent-generated", "low-poly", ...readStringListArg(args, "tags")],
+      ...(targetDimensions ? { targetDimensions } : {})
     });
     return {
       toolName: "generate_3d_asset",
       summary: `已生成并入库单实体“${component.name}”。`,
-      content: `已生成单实体 GLB 并自动入库。\nlibrary_asset_id: ${component.id}\n下一步可用 view_resources(library_asset_ids) 查看预览，或用 place_library_assets 实例化到场景。`,
+      content: `已生成单实体 GLB 并自动入库。\nlibrary_asset_id: ${component.id}${targetDimensions ? `\n目标尺寸：${targetDimensions.join("m × ")}m；实例化后会按模型包围盒自动校准。` : ""}\n下一步可用 view_resources(library_asset_ids) 查看预览，或用 place_library_assets 实例化到场景。`,
       artifactPath: generated.path,
       ...(resource ? { parentResourceIds: [resource.id] } : {})
     };
@@ -1315,9 +1323,10 @@ function executeUpdateSceneObjects(args: Record<string, unknown>, context: Agent
   const placement = resolveAssetPlacement(args, snapshot, object.position, object.rotation);
   if ("error" in placement) return { toolName: "update_scene_object", summary: placement.error, content: `update_scene_object failed: ${placement.error}` };
   const scale = "scale" in args ? readPoint3Arg(args, "scale") : object.scale;
+  const targetDimensions = "target_dimensions_meters" in args ? readPoint3Arg(args, "target_dimensions_meters") : object.targetDimensions;
   const footprint = "footprint_meters" in args ? readPoint2Arg(args, "footprint_meters") : object.footprint;
-  if (("scale" in args && (!scale || scale.some((value) => value <= 0))) || ("footprint_meters" in args && (!footprint || footprint.some((value) => value <= 0)))) {
-    return { toolName: "update_scene_object", summary: "缩放或占地尺寸无效。", content: "update_scene_object failed: invalid placement dimensions" };
+  if (("scale" in args && (!scale || scale.some((value) => value <= 0))) || ("target_dimensions_meters" in args && (!targetDimensions || targetDimensions.some((value) => value <= 0))) || ("footprint_meters" in args && (!footprint || footprint.some((value) => value <= 0)))) {
+    return { toolName: "update_scene_object", summary: "缩放、目标尺寸或占地尺寸无效。", content: "update_scene_object failed: invalid placement dimensions" };
   }
   const collision = footprint && scale && placement.position ? findAssetPlacementCollision(snapshot, placement.position, placement.rotation ?? object.rotation, footprint, scale, object.id) : undefined;
   if (collision) return { toolName: "update_scene_object", summary: `“${object.name}”会与“${collision.name}”占地碰撞。`, content: `update_scene_object failed: footprint collision with ${collision.name} (${collision.id})` };
@@ -1329,6 +1338,7 @@ function executeUpdateSceneObjects(args: Record<string, unknown>, context: Agent
     ...(placement.position ? { position: placement.position } : {}),
     ...(placement.rotation ? { rotation: placement.rotation } : {}),
     ...(scale ? { scale } : {}),
+    ...(targetDimensions ? { targetDimensions } : {}),
     ...(footprint ? { footprint } : {})
   }, context);
   if (result.content.includes(" failed:")) return { ...result, toolName: "update_scene_object", content: result.content.replace("update_asset", "update_scene_object") };
@@ -2540,11 +2550,12 @@ const localPlacementSchema = { type: "array", description: "相对 anchor 的 [�
 const rotationDegreesSchema = { type: "array", description: "欧拉角 [pitch,yaw,roll]，单位度；仅在 facing 和 look_at 都不适用时使用。", items: { type: "number" }, minItems: 3, maxItems: 3 } as const;
 const wallAnchorSchema = { type: "object", description: "锚定墙体的室内/室外侧。room_interior（inside 兼容别名）根据房间或楼板轮廓自动确定室内侧，不依赖墙体绘制方向；against_wall 等同 room_interior。distance 是从墙面起算的垂直间距。", properties: { element_id: { type: "string", description: "墙体 element_id，或唯一墙体显示名。" }, side: { type: "string", enum: ["room_interior", "against_wall", "inside", "outside"] }, distance: { type: "number", minimum: 0, description: "垂直离墙面距离，单位米。" } }, required: ["element_id", "side", "distance"], additionalProperties: false } as const;
 const assetPlacementProperties = { position: worldPositionSchema, anchor: wallAnchorSchema, local: localPlacementSchema, facing: { type: "string", enum: ["north", "south", "east", "west", "wall_inward", "wall_outward"], description: "资产规范正前方为 +Z；wall_inward/outward 只能与 anchor 一起使用。" }, look_at: { ...worldPositionSchema, description: "使资产正前方看向的世界坐标 [x,y,z]；朝向优先级为 look_at、facing、rotation_degrees。" }, rotation_degrees: rotationDegreesSchema } as const;
-const placeLibraryAssetItemSchema = { type: "object", properties: { library_asset_id: { type: "string" }, reference: { type: "string" }, ...assetPlacementProperties, scale: point3Schema, footprint_meters: footprintMetersSchema }, required: ["library_asset_id"], anyOf: [{ required: ["position"] }, { required: ["anchor"] }], additionalProperties: false } as const;
+const targetDimensionsMetersSchema = { type: "array", description: "目标可见尺寸 [宽(X),高(Y),深(Z)]，单位米。加载模型后会按实际包围盒自动校准；用于需要精确物理尺寸的资产。", items: { type: "number", exclusiveMinimum: 0 }, minItems: 3, maxItems: 3 } as const;
+const placeLibraryAssetItemSchema = { type: "object", properties: { library_asset_id: { type: "string" }, reference: { type: "string" }, ...assetPlacementProperties, scale: point3Schema, target_dimensions_meters: targetDimensionsMetersSchema, footprint_meters: footprintMetersSchema }, required: ["library_asset_id"], anyOf: [{ required: ["position"] }, { required: ["anchor"] }], additionalProperties: false } as const;
 const placeLibraryAssetsSchema = { type: "object", properties: { items: { type: "array", minItems: 1, items: placeLibraryAssetItemSchema } }, required: ["items"], additionalProperties: false } as const;
 const previewLibraryAssetPlacementSchema = { type: "object", properties: { items: { type: "array", minItems: 1, items: placeLibraryAssetItemSchema } }, required: ["items"], additionalProperties: false } as const;
 const placeLibraryAssetSchema = { type: "object", properties: { expected_revision: { type: "integer", minimum: 0 }, ...placeLibraryAssetItemSchema.properties }, required: ["expected_revision", "library_asset_id"], anyOf: placeLibraryAssetItemSchema.anyOf, additionalProperties: false } as const;
-const updateSceneObjectsSchema = { type: "object", properties: { expected_revision: { type: "integer", minimum: 0 }, scene_object_id: { type: "string" }, reference: { type: "string" }, action: { type: "string", enum: ["update", "delete"] }, ...assetPlacementProperties, scale: point3Schema, footprint_meters: footprintMetersSchema }, required: ["expected_revision"], additionalProperties: false } as const;
+const updateSceneObjectsSchema = { type: "object", properties: { expected_revision: { type: "integer", minimum: 0 }, scene_object_id: { type: "string" }, reference: { type: "string" }, action: { type: "string", enum: ["update", "delete"] }, ...assetPlacementProperties, scale: point3Schema, target_dimensions_meters: targetDimensionsMetersSchema, footprint_meters: footprintMetersSchema }, required: ["expected_revision"], additionalProperties: false } as const;
 const architectureElementSchema = { type: "object", properties: { kind: { type: "string", enum: ["wall", "slab", "ceiling", "column", "zone", "stair", "fence", "door", "window"] }, reference: { type: "string" }, properties: { type: "object", additionalProperties: true } }, required: ["kind", "properties"], additionalProperties: false } as const;
 const buildArchitectureSchema = { type: "object", properties: { expected_revision: { type: "integer", minimum: 0 }, elements: { type: "array", minItems: 1, items: architectureElementSchema } }, required: ["expected_revision", "elements"], additionalProperties: false } as const;
 const createArchitectureElementSchema = { type: "object", properties: { expected_revision: { type: "integer", minimum: 0 }, ...architectureElementSchema.properties }, required: ["expected_revision", "kind", "properties"], additionalProperties: false } as const;
@@ -2565,7 +2576,7 @@ const agentSceneUpdateSchema = { type: "object", properties: { expected_revision
 const spatialReferenceSchema = { type: "object", properties: { path: { type: "string" }, task: { type: "string" } }, required: ["path"], additionalProperties: false } as const;
 const objectExtractionSchema = { type: "object", properties: { path: { type: "string" }, name: { type: "string" }, instruction: { type: "string" } }, required: ["path", "name", "instruction"], additionalProperties: false } as const;
 const cropReferenceSchema = { type: "object", properties: { path: { type: "string" }, regions: { type: "array", minItems: 1, items: { type: "object", properties: { id: { type: "string" }, name: { type: "string" }, box: { type: "array", items: { type: "number" }, minItems: 4, maxItems: 4 } }, required: ["id", "name", "box"], additionalProperties: false } } }, required: ["path", "regions"], additionalProperties: false } as const;
-const generate3dAssetSchema = { type: "object", properties: { name: { type: "string", description: "一个边界干净、可摆放资产的名称，例如“现代三人位沙发”“站立人物”或“人物坐在单椅上”；不得使用入口标识、重建设计、用途、房间、墙体或松散套装名称。" }, source: { type: "string", enum: ["text", "image"] }, prompt: { type: "string", description: "source=text 时必填：只用中文描述资产的形状、颜色、材质、风格及完整互动；所有组成部分必须完整包含在资产内，不得包含位置、朝向、用途、截断物体、地面、背景、空间、建筑或工作流。" }, resource_id: { type: "string", description: "source=image 时必填：已确认且只包含一个边界完整、可独立摆放资产的资源 ID。" }, category: { type: "string" }, tags: { type: "array", items: { type: "string" }, maxItems: 12 } }, required: ["name", "source"], additionalProperties: false } as const;
+const generate3dAssetSchema = { type: "object", properties: { name: { type: "string", description: "一个边界干净、可摆放资产的名称，例如“现代三人位沙发”“站立人物”或“人物坐在单椅上”；不得使用入口标识、重建设计、用途、房间、墙体或松散套装名称。" }, source: { type: "string", enum: ["text", "image"] }, prompt: { type: "string", description: "source=text 时必填：只用中文描述资产的形状、颜色、材质、风格及完整互动；所有组成部分必须完整包含在资产内，不得包含位置、朝向、用途、截断物体、地面、背景、空间、建筑或工作流。" }, resource_id: { type: "string", description: "source=image 时必填：已确认且只包含一个边界完整、可独立摆放资产的资源 ID。" }, target_dimensions_meters: targetDimensionsMetersSchema, category: { type: "string" }, tags: { type: "array", items: { type: "string" }, maxItems: 12 } }, required: ["name", "source"], additionalProperties: false } as const;
 const importComponentAssetSchema = { type: "object", properties: { path: { type: "string" }, name: { type: "string" }, description: { type: "string" }, category: { type: "string" }, tags: { type: "array", items: { type: "string" } }, placement_rule: { type: "string" } }, required: ["path"], additionalProperties: false } as const;
 const deleteNodeSchema = {
   type: "object",

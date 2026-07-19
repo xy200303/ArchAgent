@@ -30,6 +30,7 @@ import {
   type AgentRuntimeHost,
   type MessageStreamItem
 } from "./agentRuntime";
+import { toAgentFailure } from "./agentFailure";
 import { findBundledPythonRuntime } from "../runtime/bundledRuntime";
 import type { SessionMemoryEntry } from "../projects/sessionPersistence";
 import type { SceneCommandInput, SceneCommandResult, SceneSnapshot } from "../../shared/modeling3d/sceneContracts";
@@ -47,7 +48,7 @@ export function buildAgentModelingSystemPrompt(): string {
     "每当用户补充关键设计背景，都应在后续回复和重建计划中保留已确认事实、待补充信息与设计进度。项目档案应覆盖场景类型、空间尺寸、功能需求、门窗洞口、家具陈设、材质偏好、楼层关系和交付要求。",
     "事实证据规则：只有用户明确提供、图片/工具明确读到、或 remember_project 已记录为“已确认事实”的内容，才能在设计结论中写成确定事实；推断、经验规则和模型猜测必须标注为假设或建议。",
     "场景编辑：先用 inspect_scene 获取版本和公开 ID。建筑构件是空间基准，使用世界米制坐标：平面点为 [x,z]，三维点为 [x,y,z]，X 向东/右、Y 向上、Z 向南/前；贴墙家具优先用 anchor.side=room_interior（inside 为兼容别名），工具会按房间/楼板边界自动判定室内侧，不依赖墙体 start→end 方向。需要确认时先调用 preview_library_asset_placement；提交时必须携带读取时的 expected_revision。",
-    "资产：先用 search_library_assets 搜索可复用资产，结果中的 library_asset_id 是唯一允许传给 place_library_assets 的资产标识。找不到资产时，必须先取得用户对该资产的明确确认，再调用 generate_3d_asset；它会生成 GLB、自动入库并返回 library_asset_id，随后可查看预览或调用 place_library_assets。生成调用的 name 与 prompt 只能描述边界干净、可独立摆放的完整实物资产及其外观；人物、动物和多个物件之间的完整互动可以生成，但所有组成部分必须完整包含在资产内，不能截断、悬挂或混入地面、建筑、背景等场景。不能使用“入口标识”“重建设计”“导向”“动线”等功能、方案或场景词。先把这类需求落实成具体资产（如“单扇入户门”或“人物坐在单椅上”）；无法唯一确定资产边界时先询问用户。绝不将摆放位置、朝向、用途、标签、分类、工作流或场景描述写进生成 prompt。家具优先用 anchor={element_id,side,distance}+local=[沿墙,高度,额外离墙] 锚定墙体；只有精确布局时才使用世界 position=[x,y,z]。朝向优先 facing（north/south/east/west/wall_inward/wall_outward）或 look_at，rotation_degrees=[pitch,yaw,roll]（度）仅作兜底。已知物件实际宽深时传 footprint_meters=[宽,深]，工具会阻止与已有已知占地模型重叠；没有可靠尺寸时不得假装已完成碰撞校验。实例化后得到 scene_object_id 和显示名，后续只用 update_scene_object 修改。绝不传递文件路径、GLB 路径或内部实现 ID。",
+    "资产：先用 search_library_assets 搜索可复用资产，结果中的 library_asset_id 是唯一允许传给 place_library_assets 的资产标识。找不到资产时，必须先取得用户对该资产的明确确认，再调用 generate_3d_asset；它会生成 GLB、自动入库并返回 library_asset_id，随后可查看预览或调用 place_library_assets。生成调用的 name 与 prompt 只能描述边界干净、可独立摆放的完整实物资产及其外观；人物、动物和多个物件之间的完整互动可以生成，但所有组成部分必须完整包含在资产内，不能截断、悬挂或混入地面、建筑、背景等场景。用户给出精确长宽高时，必须传 target_dimensions_meters=[宽,高,深]（米），由应用按模型包围盒自动校准；绝不把尺寸要求只写在 prompt 中。不能使用“入口标识”“重建设计”“导向”“动线”等功能、方案或场景词。先把这类需求落实成具体资产（如“单扇入户门”或“人物坐在单椅上”）；无法唯一确定资产边界时先询问用户。绝不将摆放位置、朝向、用途、标签、分类、工作流或场景描述写进生成 prompt。家具优先用 anchor={element_id,side,distance}+local=[沿墙,高度,额外离墙] 锚定墙体；只有精确布局时才使用世界 position=[x,y,z]。朝向优先 facing（north/south/east/west/wall_inward/wall_outward）或 look_at，rotation_degrees=[pitch,yaw,roll]（度）仅作兜底。已知物件实际宽深时传 footprint_meters=[宽,深]，工具会阻止与已有已知占地模型重叠；没有可靠尺寸时不得假装已完成碰撞校验。实例化后得到 scene_object_id 和显示名，后续只用 update_scene_object 修改。绝不传递文件路径、GLB 路径或内部实现 ID。",
     "工具纪律：没有成功的工具结果，不得声称“已放置”“正在放置”或“马上放置”。场景或资产工具失败后，除返回 current_revision 的 stale 场景版本错误可在确认操作仍适用后直接重试外，下一步必须调用 inspect_scene；严禁复用失败参数。连续两次无法恢复时，停止调用并向用户说明已执行的工具、返回错误和需要的输入，不得用文字承诺代替工具调用。",
     "重建：用 create_reconstruction_plan 把需求拆成原子资产清单：一项只对应一种独立实体，可用 quantity 表示重复数量，绝不能把房间、隔墙、墙体、建筑、布局或多物件场景写入资产项。每个需要落地的资产都使用与 place_library_assets 相同的 position 或 anchor+local、facing/look_at、footprint_meters 语义。生3D严格只生成一个可独立放置的实体（例如一张沙发、一个花瓶）；建筑构件必须用 create_architecture_element 或 create_architecture_elements；复杂实拍图必须先 extract_reference_object 得到并确认单物件图，再图生3D。关键不确定项必须给出 2 到 4 个选项；用户明确确认单件资产后，Agent 调用 generate_3d_asset 逐项生成。",
     "能力边界：不能把通用 3D 资产伪装成可编辑建筑语义，也不能声称完成了未执行的 Mesh 顶点、边、面、UV、贴图烘焙、骨骼或动画编辑。",
@@ -77,7 +78,9 @@ export function createConversationService(options: {
   getSessionOutputDir: (sessionId: string) => string;
   schedulePersistState: () => void;
   sendEvent: (event: RendererEvent) => void;
-  sendStreamItemUpdatedEvent: (sessionId: string, item: StreamItem) => void;
+  sendResponseItemCreatedEvent: (sessionId: string, item: StreamItem) => void;
+  sendResponseItemUpdatedEvent: (sessionId: string, item: StreamItem) => void;
+  sendTurnStatusEvent: (sessionId: string, status: "running" | "completed" | "failed") => void;
   clearPendingStreamItemUpdatesForSession: (sessionId: string) => void;
   createId: (prefix: string) => string;
   now: () => string;
@@ -167,7 +170,7 @@ export function createConversationService(options: {
     session.updatedAt = options.now();
     options.sessions.set(sessionId, session);
     options.schedulePersistState();
-    options.sendEvent({ id: options.createId("event"), type: "stream.item.added", sessionId, payload: item });
+    options.sendResponseItemCreatedEvent(sessionId, item);
     return item;
   }
 
@@ -183,7 +186,7 @@ export function createConversationService(options: {
     session.updatedAt = options.now();
     options.sessions.set(sessionId, session);
     options.schedulePersistState();
-    options.sendStreamItemUpdatedEvent(sessionId, item);
+    options.sendResponseItemUpdatedEvent(sessionId, item);
   }
 
   function setSessionStatus(sessionId: string, status: ChatSession["status"]): void {
@@ -193,7 +196,9 @@ export function createConversationService(options: {
     session.updatedAt = options.now();
     options.sessions.set(sessionId, session);
     options.schedulePersistState();
-    options.sendEvent({ id: options.createId("event"), type: "session.updated", payload: session });
+    if (status === "running" || status === "completed" || status === "failed") {
+      options.sendTurnStatusEvent(sessionId, status);
+    }
   }
 
   function startToolCall(sessionId: string, toolName: string, summary: string): StreamItem {
@@ -352,7 +357,7 @@ export function createConversationService(options: {
       session.updatedAt = options.now();
       options.sessions.set(sessionId, session);
       options.schedulePersistState();
-      options.sendStreamItemUpdatedEvent(sessionId, fileItem);
+      options.sendResponseItemUpdatedEvent(sessionId, fileItem);
       return;
     }
     addItem(sessionId, {
@@ -658,16 +663,18 @@ export function createConversationService(options: {
         if (!options.sessions.has(input.sessionId)) {
           return;
         }
+        const failure = toAgentFailure(error);
         if (assistantItem?.kind === "message") {
           assistantItem.isFinished = true;
-          assistantItem.content += `\n\n> 生成中断：${error instanceof Error ? error.message : String(error)}`;
+          assistantItem.failure = failure;
           updateItem(input.sessionId, assistantItem);
         } else {
           addItem(input.sessionId, {
             id: options.createId("msg"),
             kind: "message",
             role: "assistant",
-            content: `> 生成中断：${error instanceof Error ? error.message : String(error)}`,
+            content: "",
+            failure,
             isFinished: true,
             createdAt: options.now()
           });

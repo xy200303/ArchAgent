@@ -1,11 +1,13 @@
 /** Broadcasts renderer events and throttles unfinished assistant-message updates. */
-import type { RendererEvent, StreamItem } from "../../shared/types";
+import type { AgentResponseEvent, RendererEvent, StreamItem } from "../../shared/types";
 
 const STREAM_ITEM_UPDATE_THROTTLE_MS = 80;
 
 export interface RendererEventBus {
   sendEvent(event: RendererEvent): void;
-  sendStreamItemUpdated(sessionId: string, item: StreamItem): void;
+  sendResponseItemCreated(sessionId: string, item: StreamItem): void;
+  sendResponseItemUpdated(sessionId: string, item: StreamItem): void;
+  sendTurnStatus(sessionId: string, status: "running" | "completed" | "failed"): void;
   clearPendingSessionUpdates(sessionId: string): void;
 }
 
@@ -33,14 +35,29 @@ export function createRendererEventBus(options: {
     options.broadcast(event);
   }
 
-  function sendStreamItemUpdated(sessionId: string, item: StreamItem): void {
-    const event: RendererEvent = {
-      id: options.createId("event"),
-      type: "stream.item.updated",
-      sessionId,
-      payload: item
-    };
-    const shouldThrottle = item.kind === "message" && item.role === "assistant" && !item.isFinished;
+  function createItemEvent(sessionId: string, item: StreamItem, updated: boolean): AgentResponseEvent {
+    const id = options.createId("event");
+    if (item.kind === "message") {
+      if (item.failure) return { id, type: "agent.message.failed", sessionId, payload: item, error: item.failure };
+      if (item.isFinished) return { id, type: "agent.message.completed", sessionId, payload: item };
+      return { id, type: updated ? "agent.message.delta" : "agent.message.created", sessionId, payload: item };
+    }
+    if (item.kind === "tool") {
+      if (item.status === "failed") return { id, type: "agent.tool.failed", sessionId, payload: item };
+      if (item.status === "success") return { id, type: "agent.tool.completed", sessionId, payload: item };
+      return { id, type: updated ? "agent.tool.progress" : "agent.tool.started", sessionId, payload: item };
+    }
+    if (item.kind === "stage") return { id, type: "agent.stage.updated", sessionId, payload: item };
+    return { id, type: "agent.file.created", sessionId, payload: item };
+  }
+
+  function sendResponseItemCreated(sessionId: string, item: StreamItem): void {
+    options.broadcast(createItemEvent(sessionId, item, false));
+  }
+
+  function sendResponseItemUpdated(sessionId: string, item: StreamItem): void {
+    const event = createItemEvent(sessionId, item, true);
+    const shouldThrottle = event.type === "agent.message.delta";
     if (!shouldThrottle) {
       flushPendingUpdate(sessionId, item.id);
       options.broadcast(event);
@@ -56,6 +73,11 @@ export function createRendererEventBus(options: {
     );
   }
 
+  function sendTurnStatus(sessionId: string, status: "running" | "completed" | "failed"): void {
+    const type = status === "running" ? "agent.turn.started" : status === "completed" ? "agent.turn.completed" : "agent.turn.failed";
+    options.broadcast({ id: options.createId("event"), type, sessionId });
+  }
+
   function clearPendingSessionUpdates(sessionId: string): void {
     const prefix = `${sessionId}:`;
     for (const key of Array.from(pendingEvents.keys())) {
@@ -69,7 +91,9 @@ export function createRendererEventBus(options: {
 
   return {
     sendEvent: options.broadcast,
-    sendStreamItemUpdated,
+    sendResponseItemCreated,
+    sendResponseItemUpdated,
+    sendTurnStatus,
     clearPendingSessionUpdates
   };
 }

@@ -160,6 +160,8 @@ export interface SceneAssetNode {
   position: [number, number, number];
   rotation: [number, number, number];
   scale: [number, number, number];
+  /** Requested visible width, height, and depth in metres; applied from the loaded mesh bounds. */
+  targetDimensions?: [number, number, number];
   /** Local X/Z floor footprint in metres, used for deterministic placement collision checks. */
   footprint?: [number, number];
 }
@@ -332,6 +334,7 @@ export interface CreateAssetCommandInput {
   position?: SceneAssetNode["position"];
   rotation?: SceneAssetNode["rotation"];
   scale?: SceneAssetNode["scale"];
+  targetDimensions?: SceneAssetNode["targetDimensions"];
   footprint?: SceneAssetNode["footprint"];
 }
 
@@ -342,6 +345,7 @@ export interface UpdateAssetCommandInput {
   position?: SceneAssetNode["position"];
   rotation?: SceneAssetNode["rotation"];
   scale?: SceneAssetNode["scale"];
+  targetDimensions?: SceneAssetNode["targetDimensions"];
   footprint?: SceneAssetNode["footprint"];
 }
 

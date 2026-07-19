@@ -30,7 +30,8 @@ const api: ArchAgentApi = {
     getMetadata: () => ipcRenderer.invoke("app:metadata"),
     recentProjects: () => ipcRenderer.invoke("app:recent-projects") as Promise<ProjectInfo[]>,
     newWindow: (projectPath?: string) => ipcRenderer.invoke("app:new-window", projectPath),
-    openArchAgentGitHub: () => ipcRenderer.invoke("app:open-archagent-github")
+    openArchAgentGitHub: () => ipcRenderer.invoke("app:open-archagent-github"),
+    openTokenHubApiKeys: () => ipcRenderer.invoke("app:open-tokenhub-api-keys")
   },
   project: {
     open: () => ipcRenderer.invoke("project:open") as Promise<ProjectInfo | undefined>,

@@ -150,6 +150,38 @@
   grid-column: 1 / -1;
 }
 
+.settings-api-key-field {
+  display: grid;
+  align-content: start;
+  gap: var(--fluent-spacing-s);
+}
+
+.settings-api-key-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  gap: var(--fluent-spacing-xs);
+  border: 0;
+  border-radius: var(--fluent-radius-small);
+  background: transparent;
+  color: var(--fluent-color-brand-foreground1);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  justify-self: start;
+  padding: 0;
+}
+
+.settings-api-key-link:hover {
+  color: var(--fluent-color-brand-foreground1);
+  text-decoration: underline;
+}
+
+.settings-api-key-link:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--fluent-color-brand-stroke) 45%, transparent);
+  outline-offset: 2px;
+}
+
 .settings-section {
   display: grid;
   gap: var(--fluent-spacing-m);

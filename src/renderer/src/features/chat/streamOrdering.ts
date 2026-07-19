@@ -68,14 +68,7 @@ export function groupStreamItemsForDisplay(items: StreamItem[]): StreamDisplayBl
   };
 
   const flushTurn = (): void => {
-    let finalAssistantIndex = -1;
-    for (let index = processItems.length - 1; index >= 0; index -= 1) {
-      const item = processItems[index];
-      if (item.kind === "message" && item.role === "assistant") {
-        finalAssistantIndex = index;
-        break;
-      }
-    }
+    const finalAssistantIndex = findFinalAssistantIndex(processItems);
     const finalAssistant = finalAssistantIndex >= 0 ? processItems[finalAssistantIndex] as MessageStreamItem : undefined;
     if (finalAssistantIndex >= 0) processItems.splice(finalAssistantIndex, 1);
     flushProcessItems();
@@ -102,9 +95,24 @@ export function groupStreamItemsForDisplay(items: StreamItem[]): StreamDisplayBl
   return blocks;
 }
 
+function findFinalAssistantIndex(items: ProcessStreamItem[]): number {
+  let lastToolEventIndex = -1;
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (items[index].kind !== "message") {
+      lastToolEventIndex = index;
+      break;
+    }
+  }
+  for (let index = items.length - 1; index > lastToolEventIndex; index -= 1) {
+    const item = items[index];
+    if (item.kind === "message" && item.role === "assistant") return index;
+  }
+  return -1;
+}
+
 function shouldDisplayStreamItem(item: StreamItem): boolean {
   if (item.kind === "tool" && item.toolName === "openai.chat.tools") return false;
-  if (item.kind === "message" && item.role === "assistant" && item.isFinished && !item.content.trim()) {
+  if (item.kind === "message" && item.role === "assistant" && item.isFinished && !item.content.trim() && !item.failure) {
     return false;
   }
   return true;

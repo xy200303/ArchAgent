@@ -58,6 +58,7 @@ export interface AgentRuntimeHost {
     position?: [number, number, number];
     rotation?: [number, number, number];
     scale?: [number, number, number];
+    targetDimensions?: [number, number, number];
     footprint?: [number, number];
   }): SceneCommandResult;
   createReconstructionWorkflow(sessionId: string, input: CreateReconstructionWorkflowInput): ReconstructionWorkflow;

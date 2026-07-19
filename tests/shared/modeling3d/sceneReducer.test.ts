@@ -165,13 +165,13 @@ describe("sceneReducer", () => {
   it("stores imported meshes as reference assets without fabricating building semantics", () => {
     const created = applySceneCommand(
       createDefaultScene(),
-      { type: "asset.create", id: "asset_reference", parentId: "level_default", name: "外部家具", format: "glb", sourcePath: "assets/asset_reference.glb" },
+      { type: "asset.create", id: "asset_reference", parentId: "level_default", name: "外部家具", format: "glb", sourcePath: "assets/asset_reference.glb", targetDimensions: [0.3, 0.3, 0.3] },
       () => "unused"
     );
     if (!created.accepted) throw new Error(created.message);
     const deleted = applySceneCommand(created.snapshot, { type: "node.delete", id: "asset_reference" }, () => "unused");
 
-    expect(created.snapshot.nodes.asset_reference).toMatchObject({ type: "asset", format: "glb", scale: [1, 1, 1] });
+    expect(created.snapshot.nodes.asset_reference).toMatchObject({ type: "asset", format: "glb", scale: [1, 1, 1], targetDimensions: [0.3, 0.3, 0.3] });
     expect(deleted).toMatchObject({ accepted: true });
     if (!deleted.accepted) return;
     expect(deleted.snapshot.nodes.asset_reference).toBeUndefined();
