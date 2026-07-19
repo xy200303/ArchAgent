@@ -29,7 +29,10 @@ export function ComponentModelPreview({ api, assetId, label }: { api: ArchAgentA
         return;
       }
 
-      await queuePreviewGeneration(() => generateAndCachePreview(api, assetId));
+      await queuePreviewGeneration(async () => {
+        await waitForBrowserIdle();
+        await generateAndCachePreview(api, assetId);
+      });
       const generatedPreview = await api.componentLibrary.loadPreview(assetId);
       if (!cancelled) setPreviewUrl(generatedPreview);
     };
@@ -51,6 +54,16 @@ function queuePreviewGeneration(task: () => Promise<void>): Promise<void> {
   const queuedTask = previewGenerationQueue.then(task, task);
   previewGenerationQueue = queuedTask.catch(() => undefined);
   return queuedTask;
+}
+
+function waitForBrowserIdle(): Promise<void> {
+  return new Promise((resolve) => {
+    if (window.requestIdleCallback) {
+      window.requestIdleCallback(() => resolve(), { timeout: 1500 });
+      return;
+    }
+    window.setTimeout(resolve, 200);
+  });
 }
 
 /** Renders one offscreen model image, persists it, then immediately releases all GPU resources. */

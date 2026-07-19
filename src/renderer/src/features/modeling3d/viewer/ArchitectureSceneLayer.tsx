@@ -1,6 +1,6 @@
 /** Renders semantic architecture nodes with native Three.js geometry. */
 import { Edges } from "@react-three/drei";
-import { memo, useMemo, type JSX } from "react";
+import { memo, useLayoutEffect, useMemo, useRef, type JSX } from "react";
 import * as THREE from "three";
 import type { SceneCeilingNode, SceneColumnNode, SceneDoorNode, SceneFenceNode, SceneSlabNode, SceneSnapshot, SceneStairNode, SceneWallNode, SceneWindowNode, SceneZoneNode, WallMaterialPreset } from "../../../../../shared/modeling3d/sceneContracts";
 import { getWallViewportTransform } from "../viewport/sceneViewportMath";
@@ -13,6 +13,7 @@ const MATERIAL_COLORS: Record<WallMaterialPreset, string> = {
 type OpeningNode = SceneDoorNode | SceneWindowNode;
 type WallBlock = { centerX: number; baseY: number; width: number; height: number };
 const EMPTY_OPENINGS: OpeningNode[] = [];
+const surfaceMaterials = new Map<string, THREE.MeshStandardMaterial>();
 
 export function ArchitectureSceneLayer({ snapshot, dragPreview, selectedNodeId, onSelectNode }: { snapshot: SceneSnapshot; dragPreview?: SceneDragPreview; selectedNodeId?: string; onSelectNode: (id: string) => void }): JSX.Element {
   const { nodes, openingsByWall } = useMemo(() => {
@@ -47,7 +48,22 @@ export function ArchitectureSceneLayer({ snapshot, dragPreview, selectedNodeId, 
 }
 
 function SurfaceMaterial({ preset, selected, transparent = false }: { preset: WallMaterialPreset; selected: boolean; transparent?: boolean }): JSX.Element {
-  return <meshStandardMaterial color={MATERIAL_COLORS[preset]} emissive={selected ? "#1677c8" : "#000"} emissiveIntensity={selected ? 0.25 : 0} roughness={preset === "glass" ? 0.18 : 0.75} metalness={preset === "metal" ? 0.55 : 0} transparent={transparent || preset === "glass"} opacity={transparent ? 0.5 : preset === "glass" ? 0.62 : 1} side={THREE.DoubleSide} />;
+  const key = `${preset}:${selected}:${transparent}`;
+  let material = surfaceMaterials.get(key);
+  if (!material) {
+    material = new THREE.MeshStandardMaterial({
+      color: MATERIAL_COLORS[preset],
+      emissive: selected ? "#1677c8" : "#000",
+      emissiveIntensity: selected ? 0.25 : 0,
+      roughness: preset === "glass" ? 0.18 : 0.75,
+      metalness: preset === "metal" ? 0.55 : 0,
+      transparent: transparent || preset === "glass",
+      opacity: transparent ? 0.5 : preset === "glass" ? 0.62 : 1,
+      side: THREE.DoubleSide
+    });
+    surfaceMaterials.set(key, material);
+  }
+  return <primitive object={material} attach="material" />;
 }
 
 const PolygonSurface = memo(function PolygonSurface({ node, selected, onSelectNode }: { node: SceneSlabNode; selected: boolean; onSelectNode: (id: string) => void }): JSX.Element {
@@ -103,8 +119,26 @@ const ZoneMesh = memo(function ZoneMesh({ node, selected, onSelectNode }: { node
 const StairMesh = memo(function StairMesh({ node, selected, onSelectNode }: { node: SceneStairNode; selected: boolean; onSelectNode: (id: string) => void }): JSX.Element {
   const stepDepth = node.width / node.stepCount;
   const click = (event: { stopPropagation(): void }): void => { event.stopPropagation(); onSelectNode(node.id); };
-  return <group position={node.position} rotation={[0, node.rotation, 0]}>{Array.from({ length: node.stepCount }, (_, index) => { const height = ((index + 1) / node.stepCount) * node.totalRise; return <mesh key={index} castShadow receiveShadow position={[0, height / 2, -node.width / 2 + stepDepth * (index + 0.5)]} onClick={click}><boxGeometry args={[node.width, height, stepDepth]} /><SurfaceMaterial preset={node.materialPreset} selected={selected} />{selected ? <Edges color="#1677c8" userData={{ archAgentExportable: false }} /> : null}</mesh>; })}{node.railingMode !== "none" ? <StairRail side={node.railingMode === "right" ? 1 : -1} width={node.width} rise={node.totalRise} /> : null}{node.railingMode === "both" ? <StairRail side={1} width={node.width} rise={node.totalRise} /> : null}</group>;
+  return <group position={node.position} rotation={[0, node.rotation, 0]}><InstancedStairSteps stepCount={node.stepCount} width={node.width} stepDepth={stepDepth} totalRise={node.totalRise} preset={node.materialPreset} selected={selected} onClick={click} />{node.railingMode !== "none" ? <StairRail side={node.railingMode === "right" ? 1 : -1} width={node.width} rise={node.totalRise} /> : null}{node.railingMode === "both" ? <StairRail side={1} width={node.width} rise={node.totalRise} /> : null}</group>;
 });
+
+function InstancedStairSteps({ stepCount, width, stepDepth, totalRise, preset, selected, onClick }: { stepCount: number; width: number; stepDepth: number; totalRise: number; preset: WallMaterialPreset; selected: boolean; onClick: (event: { stopPropagation(): void }) => void }): JSX.Element {
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+  const matrix = useMemo(() => new THREE.Matrix4(), []);
+  useLayoutEffect(() => {
+    const mesh = meshRef.current;
+    if (!mesh) return;
+    for (let index = 0; index < stepCount; index += 1) {
+      const height = ((index + 1) / stepCount) * totalRise;
+      matrix.makeScale(width, height, stepDepth);
+      matrix.setPosition(0, height / 2, -width / 2 + stepDepth * (index + 0.5));
+      mesh.setMatrixAt(index, matrix);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.computeBoundingSphere();
+  }, [matrix, stepCount, stepDepth, totalRise, width]);
+  return <instancedMesh ref={meshRef} args={[undefined, undefined, stepCount]} castShadow receiveShadow onClick={onClick}><boxGeometry args={[1, 1, 1]} /><SurfaceMaterial preset={preset} selected={selected} /></instancedMesh>;
+}
 
 function StairRail({ side, width, rise }: { side: number; width: number; rise: number }): JSX.Element {
   return <mesh position={[side * width / 2, rise + 0.45, 0]} rotation={[0, 0, -side * Math.atan2(rise, width)]}><boxGeometry args={[0.035, 0.035, Math.hypot(width, rise)]} /><meshStandardMaterial color="#64748b" metalness={0.65} roughness={0.28} /></mesh>;
@@ -114,8 +148,25 @@ const FenceMesh = memo(function FenceMesh({ node, selected, onSelectNode }: { no
   const transform = getWallViewportTransform(node.start, node.end, node.height);
   const postCount = Math.max(2, Math.ceil(transform.length / 1.25) + 1);
   const click = (event: { stopPropagation(): void }): void => { event.stopPropagation(); onSelectNode(node.id); };
-  return <group position={transform.position} rotation={[0, transform.rotationY, 0]}>{Array.from({ length: postCount }, (_, index) => <mesh key={index} position={[-transform.length / 2 + (transform.length * index) / (postCount - 1), 0, 0]} onClick={click}><boxGeometry args={[node.thickness * 1.5, node.height, node.thickness * 1.5]} /><SurfaceMaterial preset={node.materialPreset} selected={selected} /></mesh>)}{node.style === "privacy" ? <mesh onClick={click}><boxGeometry args={[transform.length, node.height, node.thickness]} /><SurfaceMaterial preset={node.materialPreset} selected={selected} /></mesh> : <>{[0.25, 0.75].map((ratio) => <mesh key={ratio} position={[0, node.height * (ratio - 0.5), 0]} onClick={click}><boxGeometry args={[transform.length, node.thickness, node.thickness]} /><SurfaceMaterial preset={node.materialPreset} selected={selected} /></mesh>)}</>}{selected ? <Edges color="#1677c8" userData={{ archAgentExportable: false }} /> : null}</group>;
+  return <group position={transform.position} rotation={[0, transform.rotationY, 0]}><InstancedFencePosts count={postCount} length={transform.length} height={node.height} thickness={node.thickness} preset={node.materialPreset} selected={selected} onClick={click} />{node.style === "privacy" ? <mesh onClick={click}><boxGeometry args={[transform.length, node.height, node.thickness]} /><SurfaceMaterial preset={node.materialPreset} selected={selected} /></mesh> : <>{[0.25, 0.75].map((ratio) => <mesh key={ratio} position={[0, node.height * (ratio - 0.5), 0]} onClick={click}><boxGeometry args={[transform.length, node.thickness, node.thickness]} /><SurfaceMaterial preset={node.materialPreset} selected={selected} /></mesh>)}</>}{selected ? <Edges color="#1677c8" userData={{ archAgentExportable: false }} /> : null}</group>;
 });
+
+function InstancedFencePosts({ count, length, height, thickness, preset, selected, onClick }: { count: number; length: number; height: number; thickness: number; preset: WallMaterialPreset; selected: boolean; onClick: (event: { stopPropagation(): void }) => void }): JSX.Element {
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+  const matrix = useMemo(() => new THREE.Matrix4(), []);
+  useLayoutEffect(() => {
+    const mesh = meshRef.current;
+    if (!mesh) return;
+    for (let index = 0; index < count; index += 1) {
+      matrix.makeScale(thickness * 1.5, height, thickness * 1.5);
+      matrix.setPosition(-length / 2 + (length * index) / (count - 1), 0, 0);
+      mesh.setMatrixAt(index, matrix);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.computeBoundingSphere();
+  }, [count, height, length, matrix, thickness]);
+  return <instancedMesh ref={meshRef} args={[undefined, undefined, count]} onClick={onClick}><boxGeometry args={[1, 1, 1]} /><SurfaceMaterial preset={preset} selected={selected} /></instancedMesh>;
+}
 
 function buildWallBlocks(length: number, wallHeight: number, openings: OpeningNode[]): WallBlock[] {
   const levels = Array.from(new Set([0, wallHeight, ...openings.flatMap((opening) => [opening.sillHeight, opening.sillHeight + opening.height])].filter((value) => value >= 0 && value <= wallHeight))).sort((first, second) => first - second);

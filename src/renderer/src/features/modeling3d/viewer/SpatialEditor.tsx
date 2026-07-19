@@ -60,20 +60,24 @@ export function SpatialEditor({
   const [exportRequest, setExportRequest] = useState<{ format: Exclude<SceneExchangeFormat, "scene-json">; revision: number }>();
   const [pendingExportTarget, setPendingExportTarget] = useState<SceneExportTarget>();
 
+  const updateSnapshot = useCallback((nextSnapshot: SceneSnapshot): void => {
+    setSnapshot((currentSnapshot) => currentSnapshot?.revision === nextSnapshot.revision ? currentSnapshot : nextSnapshot);
+  }, []);
+
   useEffect(() => {
     let active = true;
     void api.scene
       .getSnapshot()
       .then((nextSnapshot) => {
-        if (active) setSnapshot(nextSnapshot);
+        if (active) updateSnapshot(nextSnapshot);
       })
       .catch((error: unknown) => {
         if (active) setMessage(`场景加载失败：${getErrorMessage(error)}`);
       });
     const unsubscribe = api.events.subscribe((event) => {
       if (!active) return;
-      if (event.type === "scene.command.applied") setSnapshot(event.payload.snapshot);
-      if (event.type === "scene.snapshot.restored") setSnapshot(event.payload);
+      if (event.type === "scene.command.applied") updateSnapshot(event.payload.snapshot);
+      if (event.type === "scene.snapshot.restored") updateSnapshot(event.payload);
       if (event.type === "scene.command.applied" || event.type === "scene.snapshot.restored") {
         void api.scene.getHistoryState().then(setHistoryState);
       }
@@ -83,7 +87,7 @@ export function SpatialEditor({
       active = false;
       unsubscribe();
     };
-  }, [api]);
+  }, [api, updateSnapshot]);
 
   const selectedNode = useMemo(() => selectedNodeId ? snapshot?.nodes[selectedNodeId] : undefined, [selectedNodeId, snapshot]);
   const selectedWall = useMemo(() => {
@@ -184,7 +188,7 @@ export function SpatialEditor({
   const restoreHistory = useCallback(async (direction: "undo" | "redo"): Promise<void> => {
     try {
       const result = await api.scene[direction]();
-      setSnapshot(result.snapshot);
+      updateSnapshot(result.snapshot);
       setHistoryState(result);
       if (!result.accepted) return;
       setSelectedNodeId(undefined);
@@ -193,7 +197,7 @@ export function SpatialEditor({
     } catch (error) {
       setMessage(`场景${direction === "undo" ? "撤销" : "重做"}失败：${getErrorMessage(error)}`);
     }
-  }, [api]);
+  }, [api, updateSnapshot]);
 
   const execute = useCallback(async (command: SceneCommandInput): Promise<void> => {
     try {
@@ -202,7 +206,7 @@ export function SpatialEditor({
         setMessage(result.message);
         return;
       }
-      setSnapshot(result.snapshot);
+      updateSnapshot(result.snapshot);
       if (
         result.command.type === "wall.create" ||
         result.command.type === "wall.update" ||
@@ -232,7 +236,7 @@ export function SpatialEditor({
     } catch (error) {
       setMessage(`场景操作失败：${getErrorMessage(error)}`);
     }
-  }, [api]);
+  }, [api, updateSnapshot]);
 
   const createWall = useCallback((command: Extract<SceneCommandInput, { type: "wall.create" }>): void => {
     void execute(command);
@@ -346,14 +350,14 @@ export function SpatialEditor({
     try {
       const result = await api.scene.import();
       if (!result) return;
-      setSnapshot(result.snapshot);
+      updateSnapshot(result.snapshot);
       setSelectedNodeId(undefined);
       setPanelMode("none");
       setMessage(result.kind === "scene" ? `已打开可编辑场景：${result.name}` : `已导入参考模型：${result.name}`);
     } catch (error) {
       setMessage(`场景导入失败：${getErrorMessage(error)}`);
     }
-  }, [api]);
+  }, [api, updateSnapshot]);
 
   if (!snapshot) {
     return <div className="spatial-editor spatial-editor-fallback"><strong>正在加载空间场景…</strong></div>;
@@ -391,7 +395,7 @@ export function SpatialEditor({
       <div
         className={`scene-editor-layout${showInspector ? " has-inspector" : ""}${componentLibraryOpen ? " component-library-mode" : ""}${sceneNavigationOpen ? "" : " no-navigation"}`}
       >
-        {componentLibraryOpen ? <EditorPanelBoundary><ComponentLibraryPanel api={api} onSelectComponent={onSelectBuiltInComponent} onPlaceComponent={(id) => { void api.componentLibrary.place(id).then(setSnapshot).catch((error: unknown) => setMessage(`放入构件失败：${getErrorMessage(error)}`)); }} /></EditorPanelBoundary> : null}
+        {componentLibraryOpen ? <EditorPanelBoundary><ComponentLibraryPanel api={api} onSelectComponent={onSelectBuiltInComponent} onPlaceComponent={(id) => { void api.componentLibrary.place(id).then(updateSnapshot).catch((error: unknown) => setMessage(`放入构件失败：${getErrorMessage(error)}`)); }} /></EditorPanelBoundary> : null}
         {sceneNavigationOpen ? (
           <EditorPanelBoundary>
             <SceneNavigationPanel

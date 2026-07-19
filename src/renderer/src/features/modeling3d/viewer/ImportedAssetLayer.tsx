@@ -49,7 +49,10 @@ function ImportedAsset({
   useEffect(() => {
     let disposed = false;
     void api.scene.loadAsset(asset.id)
-      .then((payload) => loadMeshObjectForScene(payload.format, payload.data))
+      .then(async (payload) => {
+        await yieldToNextPaint();
+        return loadMeshObjectForScene(payload.format, payload.data);
+      })
       .then((nextObject) => { if (!disposed) setObject(nextObject); })
       .catch((error: unknown) => {
         if (!disposed) onError(`参考模型“${asset.name}”加载失败：${error instanceof Error ? error.message : String(error)}`);
@@ -78,6 +81,10 @@ function ImportedAsset({
       {selected ? <AssetSelectionOutline object={object} position={previewPosition ?? asset.position} rotation={asset.rotation} scale={asset.scale} /> : null}
     </>
   );
+}
+
+function yieldToNextPaint(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 }
 
 /** Keeps the imported mesh selection visible without mutating source materials. */

@@ -90,7 +90,6 @@ export const ComponentLibraryPanel = memo(function ComponentLibraryPanel({
         </div> : null}
       </section>
       {libraryMessage ? <p className="component-library-error" role="alert">{libraryMessage}</p> : null}
-      <p className="component-library-note">门窗均绑定墙体并经过洞口重叠校验，确保建筑关系始终可验证。</p>
       <ComponentSemanticDialog asset={editingAsset} api={api} onOpenChange={(open) => { if (!open) setEditingAsset(undefined); }} onSaved={(next) => { setAssets((current) => current.map((item) => item.id === next.id ? next : item)); setSelectedAsset(next); setEditingAsset(undefined); }} onPlace={() => { if (editingAsset) onPlaceComponent(editingAsset.id); }} />
       <DeleteComponentDialog asset={assetPendingDelete} onOpenChange={(open) => { if (!open) setAssetPendingDelete(undefined); }} onDelete={() => {
         const asset = assetPendingDelete;
