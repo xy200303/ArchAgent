@@ -29,25 +29,11 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
-  package:
-    name: Package ${{ matrix.label }}
+  package-windows:
+    name: Package Windows
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     needs: verify
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - label: Windows
-            runner: windows-latest
-            command: npm run dist:win
-            artifact_name: ArchAgent-windows
-            artifact_path: release/*.exe
-          - label: macOS
-            runner: macos-15-intel
-            command: npm run dist:mac
-            artifact_name: ArchAgent-macos
-            artifact_path: release/*.dmg
+    runs-on: windows-latest
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -59,28 +45,60 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Build installer
-        run: ${{ matrix.command }}
+        run: npm run dist:win
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.artifact_path }}
+          name: ArchAgent-windows
+          path: release/*.exe
+          if-no-files-found: error
+
+  package-macos:
+    name: Package macOS
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    needs: verify
+    runs-on: macos-15-intel
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.0
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Build installer
+        run: npm run dist:mac
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArchAgent-macos
+          path: release/*.dmg
           if-no-files-found: error
 
   release:
     name: Create GitHub Release
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: package
+    if: always() && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && (needs.package-windows.result == 'success' || needs.package-macos.result == 'success')
+    needs:
+      - package-windows
+      - package-macos
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Download installers
+      - name: Download Windows installer
+        if: needs.package-windows.result == 'success'
         uses: actions/download-artifact@v4
         with:
           path: installers
-          pattern: ArchAgent-*
-          merge-multiple: true
+          name: ArchAgent-windows
+      - name: Download macOS installer
+        if: needs.package-macos.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          path: installers
+          name: ArchAgent-macos
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
