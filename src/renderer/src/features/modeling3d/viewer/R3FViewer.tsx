@@ -13,6 +13,7 @@ import { SelectedNodeDragController } from "./SelectedNodeDragController";
 import { WallDrawingOverlay } from "./WallDrawingOverlay";
 import type { WallDrawingDraft } from "./useWallDrawing";
 import { ViewportNavigationGizmo, type ViewportNavigationGizmoHandle } from "./ViewportNavigationGizmo";
+import type { SceneDragPreview } from "./relocationCommand";
 
 export type { EditorCameraPreset } from "./R3FCameraControls";
 
@@ -20,6 +21,7 @@ function R3FViewer({
   onError,
   api,
   snapshot,
+  dragPreview,
   cameraPreset,
   cameraRevision,
   wallDrawingActive,
@@ -42,6 +44,7 @@ function R3FViewer({
   onError: (message: string) => void;
   api: ArchAgentApi;
   snapshot: SceneSnapshot;
+  dragPreview?: SceneDragPreview;
   cameraPreset: EditorCameraPreset;
   cameraRevision: number;
   wallDrawingActive: boolean;
@@ -75,15 +78,15 @@ function R3FViewer({
 
   return (
     <div className="r3f-viewer-host" aria-label="三维空间视图">
-      <Canvas shadows dpr={[1, 1.5]} camera={{ position: [11, 8, 11], fov: 45, near: 0.1, far: 1000 }} onPointerMissed={() => !wallDrawingActive && onSelectNode(undefined)}>
+      <Canvas frameloop="demand" shadows dpr={[1, 1.5]} camera={{ position: [11, 8, 11], fov: 45, near: 0.1, far: 1000 }} onPointerMissed={() => !wallDrawingActive && onSelectNode(undefined)}>
         <color attach="background" args={["#f5f7fa"]} />
         <group userData={{ archAgentExportable: false }}>
           <ambientLight intensity={0.75} />
           <directionalLight castShadow intensity={1.15} position={[8, 12, 6]} shadow-mapSize={[1024, 1024]} />
           <Grid args={[30, 30]} cellColor="#cbd5e1" sectionColor="#94a3b8" cellSize={1} sectionSize={5} fadeDistance={40} fadeStrength={1} infiniteGrid />
         </group>
-        <ArchitectureSceneLayer snapshot={snapshot} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} />
-        <ImportedAssetLayer api={api} assets={assets} selectedNodeId={selectedNodeId} onError={onError} onSelectNode={onSelectNode} />
+        <ArchitectureSceneLayer snapshot={snapshot} dragPreview={dragPreview} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} />
+        <ImportedAssetLayer api={api} assets={assets} dragPreview={dragPreview} selectedNodeId={selectedNodeId} onError={onError} onSelectNode={onSelectNode} />
         <R3FCameraControls preset={cameraPreset} revision={cameraRevision} enabled={!wallDrawingActive && !manualDragActive} focusTarget={focusTarget} focusRevision={focusRevision} controlsRef={cameraControls} onOrientationChange={syncNavigationOrientation} />
         <SelectedNodeDragController nodeId={selectedNodeId} enabled={manualDragEnabled} onDragState={onManualDragState} onPreview={onManualDragPreview} onDrop={onManualDragDrop} />
         {wallDrawingActive ? <WallDrawingOverlay draft={wallDrawingDraft} onPoint={onWallDrawingPoint} onPreview={onWallDrawingPreview} /> : null}

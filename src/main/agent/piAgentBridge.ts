@@ -33,6 +33,7 @@ export { convertJsonSchemaToTypeBoxSchema } from "./piToolSchema";
 
 const ARCH_AGENT_PROVIDER = "archagent-hy3";
 const PI_TOOL_SCHEMA_VERSION = 8;
+const toolSchemaSignatures = new Map<boolean, string>();
 const ZERO_USAGE = {
   input: 0,
   output: 0,
@@ -108,10 +109,12 @@ async function ensurePiSessionState(
   const signature = buildConfigSignature(settings, host.getSession(input.sessionId)?.workflow?.status);
   const existing = sessionStates.get(input.sessionId);
   if (existing?.configSignature === signature) {
-    existing.systemPrompt = buildPiSystemPrompt(host, input.sessionId);
+    const systemPrompt = buildPiSystemPrompt(host, input.sessionId);
+    const systemPromptChanged = existing.systemPrompt !== systemPrompt;
+    existing.systemPrompt = systemPrompt;
     existing.activeUserPrompt = currentUserPrompt;
     existing.activeSignal = input.controller.signal;
-    await refreshPiSession(existing);
+    if (systemPromptChanged) await refreshPiSession(existing);
     return existing;
   }
 
@@ -210,12 +213,10 @@ async function createPiSessionState(
     get: () => state.activeSignal
   });
 
-  await refreshPiSession(state);
   return state;
 }
 
 async function refreshPiSession(state: PiSessionState): Promise<void> {
-  await state.loader.reload();
   await state.session.reload();
   state.session.setActiveToolsByName(state.toolNames);
 }
@@ -658,7 +659,10 @@ function isQwenCompatibleModel(modelId: string, baseUrl: string): boolean {
 }
 
 export function buildArchAgentPiToolSchemaSignature(settings: AppSettings): string {
-  return JSON.stringify({
+  const cacheKey = settings.agent.execBashEnabled;
+  const cached = toolSchemaSignatures.get(cacheKey);
+  if (cached) return cached;
+  const signature = JSON.stringify({
     version: PI_TOOL_SCHEMA_VERSION,
     tools: buildAgentChatTools({
       includeExecBash: settings.agent.execBashEnabled,
@@ -673,17 +677,16 @@ export function buildArchAgentPiToolSchemaSignature(settings: AppSettings): stri
         executionMode: resolveArchAgentToolExecutionMode(tool.function.name)
       }))
   });
+  toolSchemaSignatures.set(cacheKey, signature);
+  return signature;
 }
 
 async function readToolResultImages(paths: string[]): Promise<ImageContent[]> {
-  const uniquePaths = Array.from(new Set(paths));
-  const images: ImageContent[] = [];
-  for (const path of uniquePaths) {
-    if (!isSupportedImageFile(path)) continue;
+  const imagePaths = Array.from(new Set(paths)).filter(isSupportedImageFile).slice(0, 4);
+  return Promise.all(imagePaths.map(async (path) => {
     const image = await readImageDataUrl(path, MAX_VISION_IMAGE_BYTES);
-    images.push({ type: "image", data: image.dataBase64, mimeType: image.mimeType });
-  }
-  return images;
+    return { type: "image", data: image.dataBase64, mimeType: image.mimeType };
+  }));
 }
 
 function resolveAgentToolLayers(workflowStatus: string | undefined, execBashEnabled: boolean): AgentToolLayer[] {

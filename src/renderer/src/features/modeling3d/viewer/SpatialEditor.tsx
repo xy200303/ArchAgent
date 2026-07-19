@@ -23,8 +23,7 @@ import { SceneToolbar } from "../editor/SceneToolbar";
 import { ScenePreviewBoundary } from "./ScenePreviewBoundary";
 import type { EditorCameraPreset } from "./R3FViewer";
 import { useWallDrawing } from "./useWallDrawing";
-import { applySceneCommand } from "../../../../../shared/modeling3d/sceneReducer";
-import { buildRelocationCommand, canRelocateSceneNode } from "./relocationCommand";
+import { buildRelocationCommand, canRelocateSceneNode, type SceneDragPreview } from "./relocationCommand";
 
 const R3FViewer = lazy(() => import("./R3FViewer"));
 
@@ -102,7 +101,6 @@ export function SpatialEditor({
   const selectedDoor = useMemo(() => selectedNode?.type === "door" ? selectedNode : undefined, [selectedNode]);
   const selectedWindow = useMemo(() => selectedNode?.type === "window" ? selectedNode : undefined, [selectedNode]);
   const selectedAsset = useMemo(() => selectedNode?.type === "asset" ? selectedNode : undefined, [selectedNode]);
-  const draggingNode = useMemo(() => draggingNodeId ? snapshot?.nodes[draggingNodeId] : undefined, [draggingNodeId, snapshot]);
   const walls = useMemo(() => Object.values(snapshot?.nodes ?? {}).filter((node): node is SceneWallNode => node.type === "wall"), [snapshot]);
   const componentLibraryOpen = sidebarMode === "components";
   const sceneNavigationOpen = sidebarMode === "scene";
@@ -112,13 +110,10 @@ export function SpatialEditor({
   );
   const focusTarget = useMemo(() => getFocusTarget(selectedNode, snapshot), [selectedNode, snapshot]);
 
-  const previewSnapshot = useMemo(() => {
-    if (!snapshot || !draggingNode || !dragPreviewPoint) return snapshot;
-    const relocation = buildRelocationCommand(draggingNode, dragPreviewPoint);
-    if ("error" in relocation) return snapshot;
-    const result = applySceneCommand(snapshot, relocation.command, () => "drag_preview");
-    return result.accepted ? result.snapshot : snapshot;
-  }, [dragPreviewPoint, draggingNode, snapshot]);
+  const dragPreview = useMemo<SceneDragPreview | undefined>(
+    () => draggingNodeId && dragPreviewPoint ? { nodeId: draggingNodeId, point: dragPreviewPoint } : undefined,
+    [dragPreviewPoint, draggingNodeId]
+  );
 
   const openWallCreation = useCallback((): void => {
     setSelectedNodeId(undefined);
@@ -418,12 +413,13 @@ export function SpatialEditor({
             <Suspense fallback={<div className="spatial-editor-fallback">正在加载三维视图…</div>}>
               <R3FViewer
                 api={api}
-                snapshot={previewSnapshot ?? snapshot}
+                snapshot={snapshot}
+                dragPreview={dragPreview}
                 cameraPreset={cameraPreset}
                 cameraRevision={cameraRevision}
                 wallDrawingActive={wallDrawing.active}
                 wallDrawingDraft={wallDrawing.draft}
-                manualDragActive={Boolean(draggingNode)}
+                manualDragActive={Boolean(draggingNodeId)}
                 manualDragEnabled={Boolean(selectedNode && canRelocateSceneNode(selectedNode) && !wallDrawing.active)}
                 onWallDrawingPoint={wallDrawing.placePoint}
                 onWallDrawingPreview={wallDrawing.previewPoint}

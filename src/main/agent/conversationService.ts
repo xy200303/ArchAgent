@@ -511,15 +511,14 @@ export function createConversationService(options: {
     }
     if (!selectedPaths.size) return undefined;
 
-    const images: ImageContent[] = [];
-    for (const path of selectedPaths) {
+    const images = await Promise.all(Array.from(selectedPaths).slice(0, 4).map(async (path) => {
       const image = await readImageDataUrl(path, MAX_VISION_IMAGE_BYTES);
-      images.push({
-        type: "image",
+      return {
+        type: "image" as const,
         data: image.dataBase64,
         mimeType: image.mimeType
-      });
-    }
+      };
+    }));
 
     return images.length ? images : undefined;
   }

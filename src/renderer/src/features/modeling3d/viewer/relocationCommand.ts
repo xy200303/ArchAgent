@@ -5,6 +5,11 @@ export type RelocationResult =
   | { command: SceneCommandInput }
   | { error: string };
 
+export type SceneDragPreview = {
+  nodeId: string;
+  point: ScenePoint;
+};
+
 export function canRelocateSceneNode(node: SceneNode): boolean {
   return node.type === "wall" || node.type === "fence" || node.type === "slab" || node.type === "ceiling" || node.type === "zone" || node.type === "column" || node.type === "stair" || node.type === "asset";
 }
@@ -35,6 +40,24 @@ export function buildRelocationCommand(node: SceneNode, target: ScenePoint): Rel
     return { error: "门窗必须保持绑定墙体，请在属性面板中调整所属墙体和沿墙偏移。" };
   }
   return { error: "当前节点不支持重新放置。" };
+}
+
+/** Applies only a transient placement transform without cloning the full scene snapshot. */
+export function getRelocatedSceneNode(node: SceneNode, target: ScenePoint): SceneNode {
+  const relocation = buildRelocationCommand(node, target);
+  if ("error" in relocation) return node;
+
+  const { command } = relocation;
+  if ((command.type === "wall.update" || command.type === "fence.update") && (node.type === "wall" || node.type === "fence")) {
+    return { ...node, start: command.start ?? node.start, end: command.end ?? node.end };
+  }
+  if ((command.type === "slab.update" || command.type === "ceiling.update" || command.type === "zone.update") && (node.type === "slab" || node.type === "ceiling" || node.type === "zone")) {
+    return { ...node, polygon: command.polygon ?? node.polygon };
+  }
+  if ((command.type === "column.update" || command.type === "stair.update" || command.type === "asset.update") && (node.type === "column" || node.type === "stair" || node.type === "asset")) {
+    return { ...node, position: command.position ?? node.position };
+  }
+  return node;
 }
 
 function getSegmentCenter(start: ScenePoint, end: ScenePoint): ScenePoint {

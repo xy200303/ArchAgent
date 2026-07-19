@@ -4,6 +4,7 @@ import { useMemo, type JSX } from "react";
 import * as THREE from "three";
 import type { SceneCeilingNode, SceneColumnNode, SceneDoorNode, SceneFenceNode, SceneSlabNode, SceneSnapshot, SceneStairNode, SceneWallNode, SceneWindowNode, SceneZoneNode, WallMaterialPreset } from "../../../../../shared/modeling3d/sceneContracts";
 import { getWallViewportTransform } from "../viewport/sceneViewportMath";
+import { getRelocatedSceneNode, type SceneDragPreview } from "./relocationCommand";
 
 const MATERIAL_COLORS: Record<WallMaterialPreset, string> = {
   brick: "#b4533c", concrete: "#94a3b8", glass: "#77b7d6", marble: "#d8d5ce", metal: "#6b7280", plaster: "#e5e7eb", tile: "#c8d0d8", white: "#f8fafc", wood: "#9a6d48"
@@ -12,7 +13,7 @@ const MATERIAL_COLORS: Record<WallMaterialPreset, string> = {
 type OpeningNode = SceneDoorNode | SceneWindowNode;
 type WallBlock = { centerX: number; baseY: number; width: number; height: number };
 
-export function ArchitectureSceneLayer({ snapshot, selectedNodeId, onSelectNode }: { snapshot: SceneSnapshot; selectedNodeId?: string; onSelectNode: (id: string) => void }): JSX.Element {
+export function ArchitectureSceneLayer({ snapshot, dragPreview, selectedNodeId, onSelectNode }: { snapshot: SceneSnapshot; dragPreview?: SceneDragPreview; selectedNodeId?: string; onSelectNode: (id: string) => void }): JSX.Element {
   const nodes = Object.values(snapshot.nodes);
   const openingsByWall = new Map<string, OpeningNode[]>();
   for (const node of nodes) {
@@ -22,7 +23,8 @@ export function ArchitectureSceneLayer({ snapshot, selectedNodeId, onSelectNode 
 
   return (
     <group>
-      {nodes.map((node) => {
+      {nodes.map((sourceNode) => {
+        const node = dragPreview?.nodeId === sourceNode.id ? getRelocatedSceneNode(sourceNode, dragPreview.point) : sourceNode;
         if (node.type === "wall") return <WallMesh key={node.id} wall={node} openings={openingsByWall.get(node.id) ?? []} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} />;
         if (node.type === "slab") return <PolygonSurface key={node.id} node={node} selected={selectedNodeId === node.id} onSelectNode={onSelectNode} />;
         if (node.type === "ceiling") return <CeilingMesh key={node.id} node={node} selected={selectedNodeId === node.id} onSelectNode={onSelectNode} />;

@@ -1,14 +1,16 @@
 /** Renders persisted external meshes without coupling them to an editor implementation. */
-import { useFrame, type ThreeEvent } from "@react-three/fiber";
-import { useEffect, useState, type JSX } from "react";
+import { type ThreeEvent } from "@react-three/fiber";
+import { useEffect, useLayoutEffect, useState, type JSX } from "react";
 import { Box3, Box3Helper, type Object3D } from "three";
 import type { ArchAgentApi } from "../../../../../shared/types";
 import type { SceneAssetNode } from "../../../../../shared/modeling3d/sceneContracts";
 import { loadMeshObject, normalizeMeshObjectForScene } from "../scene/loadMeshObject";
+import type { SceneDragPreview } from "./relocationCommand";
 
 export function ImportedAssetLayer({
   api,
   assets,
+  dragPreview,
   selectedNodeId,
   onError,
   onSelectNode,
@@ -16,17 +18,19 @@ export function ImportedAssetLayer({
 }: {
   api: ArchAgentApi;
   assets: SceneAssetNode[];
+  dragPreview?: SceneDragPreview;
   selectedNodeId?: string;
   onError: (message: string) => void;
   onSelectNode: (id: string) => void;
   onObjectChange?: (id: string, object?: Object3D) => void;
 }): JSX.Element {
-  return <>{assets.map((asset) => <ImportedAsset key={asset.id} api={api} asset={asset} selected={selectedNodeId === asset.id} onError={onError} onSelectNode={onSelectNode} onObjectChange={onObjectChange} />)}</>;
+  return <>{assets.map((asset) => <ImportedAsset key={asset.id} api={api} asset={asset} previewPosition={dragPreview?.nodeId === asset.id ? [dragPreview.point[0], asset.position[1], dragPreview.point[1]] : undefined} selected={selectedNodeId === asset.id} onError={onError} onSelectNode={onSelectNode} onObjectChange={onObjectChange} />)}</>;
 }
 
 function ImportedAsset({
   api,
   asset,
+  previewPosition,
   selected,
   onError,
   onSelectNode,
@@ -34,6 +38,7 @@ function ImportedAsset({
 }: {
   api: ArchAgentApi;
   asset: SceneAssetNode;
+  previewPosition?: [number, number, number];
   selected: boolean;
   onError: (message: string) => void;
   onSelectNode: (id: string) => void;
@@ -63,7 +68,7 @@ function ImportedAsset({
     <>
       <primitive
         object={object}
-        position={asset.position}
+        position={previewPosition ?? asset.position}
         rotation={asset.rotation}
         scale={asset.scale}
         onClick={(event: ThreeEvent<MouseEvent>) => {
@@ -71,15 +76,18 @@ function ImportedAsset({
           onSelectNode(asset.id);
         }}
       />
-      {selected ? <AssetSelectionOutline object={object} /> : null}
+      {selected ? <AssetSelectionOutline object={object} position={previewPosition ?? asset.position} rotation={asset.rotation} scale={asset.scale} /> : null}
     </>
   );
 }
 
 /** Keeps the imported mesh selection visible without mutating source materials. */
-function AssetSelectionOutline({ object }: { object: Object3D }): JSX.Element {
+function AssetSelectionOutline({ object, position, rotation, scale }: { object: Object3D; position: [number, number, number]; rotation: [number, number, number]; scale: [number, number, number] }): JSX.Element {
   const [helper] = useState(() => new Box3Helper(new Box3(), "#1677c8"));
-  useFrame(() => helper.box.setFromObject(object));
+  useLayoutEffect(() => {
+    object.updateWorldMatrix(true, true);
+    helper.box.setFromObject(object);
+  }, [helper, object, position, rotation, scale]);
   useEffect(() => {
     helper.userData.archAgentExportable = false;
     return () => helper.dispose();
