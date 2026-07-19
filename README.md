@@ -117,7 +117,7 @@ https://github.com/user-attachments/assets/c24dfcc9-8391-4110-896d-e105841f40de
 ### 环境要求
 
 - Node.js 与 npm
-- Windows 桌面环境用于完整 Electron 打包与运行验证
+- Windows 或 macOS 桌面环境用于完整 Electron 打包与运行验证
 
 ### 安装与运行
 
@@ -189,14 +189,22 @@ flowchart TB
 ```bash
 npm run dev           # 开发模式启动 Electron + Vite
 npm run build         # 类型检查并构建 Main / Preload / Renderer
-npm run pack          # 构建并生成 win-unpacked 目录
-npm run dist          # 构建 NSIS 与 ZIP 安装产物
+npm run pack          # 构建当前系统对应的未打包目录
+npm run dist          # 构建当前系统对应的安装产物
+npm run dist:win      # 在 Windows 构建 NSIS 安装包
+npm run dist:mac      # 在 macOS 构建 DMG 安装包
 npm run preview       # 预览构建产物
 npm test              # 运行全部 Vitest 测试
 npm run test:watch    # 监听模式运行测试
 npm run typecheck     # TypeScript 类型检查
 npm run icon:generate # 生成应用图标
 ```
+
+## 持续集成与发布
+
+GitHub Actions 会在 PR 和推送到 `main` 时执行类型检查，并分别在 Windows 和 macOS Runner 上构建 NSIS 与 DMG 安装包；安装包可从对应的工作流构建产物下载。
+
+推送形如 `v0.2.2` 的 Git 标签时，工作流会自动创建 GitHub Release，并附上 Windows 安装程序与 macOS DMG。当前流水线不进行代码签名；发布前如需签名，请在 GitHub Secrets 配置对应的平台证书并扩展工作流。
 
 ## 验证
 
