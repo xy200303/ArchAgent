@@ -23,15 +23,15 @@ describe("agentToolRegistry", () => {
     expect(names).toContain("generate_3d_asset");
     expect(names).toContain("edit_library_asset");
     expect(names).toContain("search_library_assets");
-    expect(names).toContain("place_library_asset");
     expect(names).toContain("place_library_assets");
     expect(names).toContain("preview_library_asset_placement");
     expect(names).toContain("inspect_scene");
     expect(names).toContain("update_scene_object");
-    expect(names).toContain("create_architecture_element");
     expect(names).toContain("create_architecture_elements");
-    expect(names).toContain("update_architecture_element");
     expect(names).toContain("update_architecture_elements");
+    expect(names).not.toContain("place_library_asset");
+    expect(names).not.toContain("create_architecture_element");
+    expect(names).not.toContain("update_architecture_element");
     expect(names).toContain("create_reconstruction_plan");
     expect(names).toContain("generate_design_preview");
     expect(names).toContain("send_file");
@@ -47,6 +47,13 @@ describe("agentToolRegistry", () => {
     expect(names).not.toContain("render_chart");
     expect(names).not.toContain("generate_report");
     expect(names).not.toContain("exec_external_script");
+
+    const versionedToolNames = ["place_library_assets", "update_scene_object", "create_architecture_elements", "update_architecture_elements"];
+    for (const versionedToolName of versionedToolNames) {
+      const versionedTool = tools.find((tool) => tool.function.name === versionedToolName);
+      const versionedToolParameters = versionedTool?.function.parameters as { required?: string[] };
+      expect(versionedToolParameters.required ?? []).not.toContain("expected_revision");
+    }
   });
 
   it("prioritizes reusing library furniture before generating a new asset", () => {
@@ -636,7 +643,7 @@ describe("agentToolRegistry", () => {
   it("returns the current revision when a precise placement is stale", async () => {
     const sceneService = createSceneService({ createId: () => "agent", broadcast: vi.fn() });
     const result = await executeAgentToolCall(
-      createToolCall("place_library_asset", { expected_revision: 99, library_asset_id: "lib_missing", position: [2, 0, 2] }),
+      createToolCall("place_library_assets", { expected_revision: 99, items: [{ library_asset_id: "lib_missing", position: [2, 0, 2] }] }),
       createContext({ getSceneSnapshot: sceneService.getSnapshot })
     );
 
@@ -703,7 +710,7 @@ describe("agentToolRegistry", () => {
     expect(result.content).toContain("家具碰撞：与“预览资产 2”占地重叠");
   });
 
-  it("lets a single placement use the latest revision unless one is supplied", async () => {
+  it("lets a one-item placement batch use the latest revision unless one is supplied", async () => {
     const sandbox = mkdtempSync(join(tmpdir(), "arch-agent-latest-placement-"));
     const libraryDir = join(sandbox, "data", "component-library", "assets");
     const componentFile = join(libraryDir, "cube.glb");
@@ -719,9 +726,9 @@ describe("agentToolRegistry", () => {
       const context = createContext({ componentLibraryRootDir: sandbox, getSceneSnapshot: () => ({ revision: 4, rootNodeIds: ["site_default"], nodes: {} }), placeComponentLibraryItem });
       const search = await executeAgentToolCall(createToolCall("search_library_assets", { query: "方块" }), context);
       const libraryAssetId = search.content.match(/library_asset_id: ([^\n]+)/)?.[1];
-      const result = await executeAgentToolCall(createToolCall("place_library_asset", { library_asset_id: libraryAssetId, position: [0, 0, 0] }), context);
+      const result = await executeAgentToolCall(createToolCall("place_library_assets", { items: [{ library_asset_id: libraryAssetId, position: [0, 0, 0] }] }), context);
 
-      expect(result.toolName).toBe("place_library_asset");
+      expect(result.toolName).toBe("place_library_assets");
       expect(placeComponentLibraryItem).toHaveBeenCalledOnce();
     } finally {
       rmSync(sandbox, { recursive: true, force: true });
