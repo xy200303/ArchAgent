@@ -6,7 +6,7 @@ import {
   Files,
   FolderOpen,
   FolderPlus,
-  Github,
+  GitFork,
   Library,
   Menu,
   Network,
@@ -70,7 +70,7 @@ export function ActivityBar({
       </nav>
       <div className="activity-bottom">
         <TooltipButton label="在 GitHub 上查看 ArchAgent" className="activity-button" onClick={openArchAgentGitHub}>
-          <Github size={20} />
+          <GitFork size={20} />
         </TooltipButton>
         <TooltipButton label="运行设置" className="activity-button" onClick={onOpenSettings}>
           <Settings size={20} />
