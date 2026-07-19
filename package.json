@@ -2,7 +2,7 @@
   "name": "arch-agent",
   "version": "0.2.1",
   "description": "Desktop spatial design agent powered by Tencent Hunyuan Hy3",
-  "author": "ArchAgent Team",
+  "author": "xy200303",
   "private": true,
   "type": "module",
   "main": "out/main/index.js",
@@ -48,7 +48,7 @@
         ]
       },
       {
-        "from": ".env",
+        "from": ".env.example",
         "to": ".env"
       }
     ],

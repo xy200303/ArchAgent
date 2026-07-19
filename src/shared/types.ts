@@ -53,6 +53,7 @@ export type StreamItem =
       kind: "message";
       role: MessageRole;
       content: string;
+      thinking?: string;
       isFinished: boolean;
       createdAt: string;
       attachmentIds?: string[];
@@ -263,6 +264,11 @@ export interface DeleteFileInput {
   path: string;
 }
 
+export interface RenameFileInput {
+  path: string;
+  name: string;
+}
+
 export interface AttachmentRef {
   id: string;
   sessionId?: string;
@@ -378,12 +384,22 @@ export interface AppSettings {
     model: string;
     requestTimeoutSeconds: number;
   };
+  tokenHub3d: {
+    submitEndpoint: string;
+    queryEndpoint: string;
+    model: string;
+    faceCount: number;
+    submitTimeoutSeconds: number;
+    pollIntervalSeconds: number;
+    jobTimeoutSeconds: number;
+  };
   output: {
     autoPdfExport: boolean;
     libreOfficePath: string;
   };
   agent: {
     execBashEnabled: boolean;
+    scriptTimeoutSeconds: number;
   };
 }
 
@@ -404,12 +420,22 @@ export interface UpdateAppSettingsInput {
     model: string;
     requestTimeoutSeconds: number;
   };
+  tokenHub3d: {
+    submitEndpoint: string;
+    queryEndpoint: string;
+    model: string;
+    faceCount: number;
+    submitTimeoutSeconds: number;
+    pollIntervalSeconds: number;
+    jobTimeoutSeconds: number;
+  };
   output: {
     autoPdfExport: boolean;
     libreOfficePath: string;
   };
   agent: {
     execBashEnabled: boolean;
+    scriptTimeoutSeconds: number;
   };
 }
 
@@ -463,6 +489,7 @@ export interface ArchAgentApi {
     getMetadata(): Promise<AppMetadata>;
     recentProjects(): Promise<ProjectInfo[]>;
     newWindow(projectPath?: string): Promise<void>;
+    openArchAgentGitHub(): Promise<void>;
   };
   project: {
     open(): Promise<ProjectInfo | undefined>;
@@ -508,6 +535,7 @@ export interface ArchAgentApi {
     writeText(input: WriteTextFileInput): Promise<void>;
     create(input: CreateFileInput): Promise<void>;
     createDirectory(input: CreateDirectoryInput): Promise<void>;
+    rename(input: RenameFileInput): Promise<void>;
     delete(input: DeleteFileInput): Promise<void>;
     reveal(path: string): Promise<void>;
     open(path: string): Promise<void>;
@@ -515,6 +543,7 @@ export interface ArchAgentApi {
   settings: {
     get(): Promise<AppSettings>;
     save(input: UpdateAppSettingsInput): Promise<AppSettings>;
+    reset(): Promise<AppSettings>;
     checkRuntime(): Promise<RuntimeCheckResult>;
   };
   scene: {

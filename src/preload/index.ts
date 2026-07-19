@@ -15,6 +15,7 @@ import type {
   ProjectInfo,
   ReadBinaryFileInput,
   ReadTextFileInput,
+  RenameFileInput,
   RenameSessionInput,
   RendererEvent,
   UpdateAppSettingsInput,
@@ -28,7 +29,8 @@ const api: ArchAgentApi = {
   app: {
     getMetadata: () => ipcRenderer.invoke("app:metadata"),
     recentProjects: () => ipcRenderer.invoke("app:recent-projects") as Promise<ProjectInfo[]>,
-    newWindow: (projectPath?: string) => ipcRenderer.invoke("app:new-window", projectPath)
+    newWindow: (projectPath?: string) => ipcRenderer.invoke("app:new-window", projectPath),
+    openArchAgentGitHub: () => ipcRenderer.invoke("app:open-archagent-github")
   },
   project: {
     open: () => ipcRenderer.invoke("project:open") as Promise<ProjectInfo | undefined>,
@@ -75,6 +77,7 @@ const api: ArchAgentApi = {
     writeText: (input: WriteTextFileInput) => ipcRenderer.invoke("file:write-text", input),
     create: (input: CreateFileInput) => ipcRenderer.invoke("file:create", input),
     createDirectory: (input: CreateDirectoryInput) => ipcRenderer.invoke("file:create-directory", input),
+    rename: (input: RenameFileInput) => ipcRenderer.invoke("file:rename", input),
     delete: (input: DeleteFileInput) => ipcRenderer.invoke("file:delete", input),
     reveal: (path: string) => ipcRenderer.invoke("file:reveal", path),
     open: (path: string) => ipcRenderer.invoke("file:open", path)
@@ -82,6 +85,7 @@ const api: ArchAgentApi = {
   settings: {
     get: () => ipcRenderer.invoke("settings:get"),
     save: (input: UpdateAppSettingsInput) => ipcRenderer.invoke("settings:save", input),
+    reset: () => ipcRenderer.invoke("settings:reset"),
     checkRuntime: () => ipcRenderer.invoke("settings:check-runtime")
   },
   scene: {

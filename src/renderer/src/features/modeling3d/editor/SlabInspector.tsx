@@ -3,7 +3,7 @@ import { PanelsTopLeft, Save, Trash2 } from "lucide-react";
 import { useEffect, useState, type FormEvent, type JSX } from "react";
 import type { SceneCommandInput, SceneSlabNode, WallMaterialPreset } from "../../../../../shared/modeling3d/sceneContracts";
 import { TooltipButton } from "../../../shared/TooltipButton";
-import { SceneToolbar } from "./SceneToolbar";
+import { SidePanelHeader } from "../../../shared/SidePanelHeader";
 
 const MATERIAL_OPTIONS: Array<{ value: WallMaterialPreset; label: string }> = [
   { value: "concrete", label: "混凝土" },
@@ -60,11 +60,9 @@ export function SlabInspector({
 
   return (
     <aside className="scene-inspector" aria-label={slab ? "楼板属性" : "新建楼板"}>
-      <SceneToolbar title={slab ? "楼板属性" : "新建楼板"} icon={PanelsTopLeft} className="scene-inspector-heading">
-        <TooltipButton label="关闭属性面板" className="scene-inspector-close" onClick={onClose}>
+      <SidePanelHeader title={slab ? "楼板属性" : "新建楼板"} icon={PanelsTopLeft} actions={<TooltipButton label="关闭属性面板" className="scene-inspector-close" onClick={onClose}>
           <span aria-hidden="true">×</span>
-        </TooltipButton>
-      </SceneToolbar>
+        </TooltipButton>} />
       <form className="wall-property-form" onSubmit={submit}>
         <label>
           <span>名称</span>

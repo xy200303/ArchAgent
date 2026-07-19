@@ -3,7 +3,7 @@ import { PanelTop, Save, Trash2 } from "lucide-react";
 import { useEffect, useState, type FormEvent, type JSX } from "react";
 import type { SceneCeilingNode, SceneCommandInput, WallMaterialPreset } from "../../../../../shared/modeling3d/sceneContracts";
 import { TooltipButton } from "../../../shared/TooltipButton";
-import { SceneToolbar } from "./SceneToolbar";
+import { SidePanelHeader } from "../../../shared/SidePanelHeader";
 
 type CeilingDraft = {
   name: string;
@@ -44,11 +44,9 @@ export function CeilingInspector({ ceiling, onCreate, onUpdate, onDelete, onClos
 
   return (
     <aside className="scene-inspector" aria-label={ceiling ? "天花属性" : "新建天花"}>
-      <SceneToolbar title={ceiling ? "天花属性" : "新建天花"} icon={PanelTop} className="scene-inspector-heading">
-        <TooltipButton label="关闭属性面板" className="scene-inspector-close" onClick={onClose}>
+      <SidePanelHeader title={ceiling ? "天花属性" : "新建天花"} icon={PanelTop} actions={<TooltipButton label="关闭属性面板" className="scene-inspector-close" onClick={onClose}>
           <span aria-hidden="true">×</span>
-        </TooltipButton>
-      </SceneToolbar>
+        </TooltipButton>} />
       <form className="wall-property-form" onSubmit={submit}>
         <label><span>名称</span><input value={draft.name} onChange={(event) => updateField("name", event.target.value)} required /></label>
         <div className="wall-property-grid">

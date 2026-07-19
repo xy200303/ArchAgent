@@ -1,5 +1,5 @@
 /** Coordinates scene commands, snapshots, and the renderer-owned WebGL viewport. */
-import { Axis3d, Check, ChevronDown, Crosshair, Download, Layers3, Library, Orbit, PanelsTopLeft, PencilRuler, Plus, Redo2, Square, Undo2, Upload, type LucideIcon } from "lucide-react";
+import { Axis3d, Check, ChevronDown, Crosshair, Download, Orbit, PanelsTopLeft, PencilRuler, Redo2, Square, Undo2, Upload, type LucideIcon } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type JSX } from "react";
 import type { ArchAgentApi } from "../../../../../shared/types";
@@ -43,7 +43,7 @@ export function SpatialEditor({
 }: {
   api: ArchAgentApi;
   componentRequest?: ComponentLibraryRequest;
-  sidebarMode?: "explorer" | "components";
+  sidebarMode?: "scene" | "components";
   onSelectBuiltInComponent: (componentId: BuiltInComponentId) => void;
 }): JSX.Element {
   const [snapshot, setSnapshot] = useState<SceneSnapshot>();
@@ -105,7 +105,7 @@ export function SpatialEditor({
   const draggingNode = useMemo(() => draggingNodeId ? snapshot?.nodes[draggingNodeId] : undefined, [draggingNodeId, snapshot]);
   const walls = useMemo(() => Object.values(snapshot?.nodes ?? {}).filter((node): node is SceneWallNode => node.type === "wall"), [snapshot]);
   const componentLibraryOpen = sidebarMode === "components";
-  const sceneNavigationOpen = sidebarMode === "explorer";
+  const sceneNavigationOpen = sidebarMode === "scene";
   const activeLevelId = useMemo(
     () => Object.values(snapshot?.nodes ?? {}).find((node) => node.type === "level")?.id ?? "level_default",
     [snapshot]
@@ -169,6 +169,17 @@ export function SpatialEditor({
     setCameraPreset(preset);
     setCameraRevision((revision) => revision + 1);
   }, []);
+
+  useEffect(() => {
+    const onScenePreviewCamera = (event: Event): void => {
+      const detail = (event as CustomEvent<{ preset?: EditorCameraPreset; done?: () => void }>).detail;
+      if (!detail || !["free", "top", "front", "right", "left", "bottom", "back"].includes(detail.preset ?? "")) return;
+      selectCameraPreset(detail.preset!);
+      requestAnimationFrame(() => requestAnimationFrame(() => detail.done?.()));
+    };
+    window.addEventListener("arch-agent:scene-preview-camera", onScenePreviewCamera);
+    return () => window.removeEventListener("arch-agent:scene-preview-camera", onScenePreviewCamera);
+  }, [selectCameraPreset]);
 
   const focusSelectedNode = useCallback((): void => {
     if (focusTarget) setFocusRevision((revision) => revision + 1);
@@ -355,36 +366,30 @@ export function SpatialEditor({
   const showInspector = panelMode !== "none";
   return (
     <section className="spatial-editor">
-      <SceneToolbar title={componentLibraryOpen ? "构件库" : "空间编辑器"} icon={componentLibraryOpen ? Library : Layers3}>
-        {componentLibraryOpen ? null : (
-          <div className="scene-toolbar-viewport" role="toolbar" aria-label="视图控制">
-            <TooltipButton label={wallDrawing.active ? "退出画墙工具" : "绘制墙体"} className={`scene-tool-button${wallDrawing.active ? " active" : ""}`} pressed={wallDrawing.active} onClick={toggleWallDrawing}>
-              <PencilRuler size={17} />
-            </TooltipButton>
-            <TooltipButton label="聚焦选中构件" className="scene-tool-button" disabled={!focusTarget} onClick={focusSelectedNode}>
-              <Crosshair size={17} />
-            </TooltipButton>
-            <CameraPresetMenu preset={cameraPreset} onSelectPreset={selectCameraPreset} />
-            <span className="scene-toolbar-divider" aria-hidden="true" />
-            <TooltipButton label="撤销上一步" className="scene-tool-button" onClick={() => void restoreHistory("undo")} disabled={!historyState.canUndo}>
-              <Undo2 size={17} />
-            </TooltipButton>
-            <TooltipButton label="重做上一步" className="scene-tool-button" onClick={() => void restoreHistory("redo")} disabled={!historyState.canRedo}>
-              <Redo2 size={17} />
-            </TooltipButton>
-            <span className="scene-toolbar-divider" aria-hidden="true" />
-            <TooltipButton label="导入场景或参考模型" className="scene-tool-button" onClick={() => void importScene()}>
-              <Upload size={17} />
-            </TooltipButton>
-            <TooltipButton label="导出场景或三维模型" className="scene-tool-button" onClick={() => void exportScene()} disabled={Boolean(pendingExportTarget)}>
-              <Download size={17} />
-            </TooltipButton>
-            <button type="button" className="primary-action scene-create-wall-action" onClick={openWallCreation}>
-              <Plus size={16} />
-              参数创建
-            </button>
-          </div>
-        )}
+      <SceneToolbar>
+        <div className="scene-toolbar-viewport" role="toolbar" aria-label="视图控制">
+          <TooltipButton label={wallDrawing.active ? "退出画墙工具" : "绘制墙体"} className={`scene-tool-button${wallDrawing.active ? " active" : ""}`} pressed={wallDrawing.active} onClick={toggleWallDrawing}>
+            <PencilRuler size={17} />
+          </TooltipButton>
+          <TooltipButton label="聚焦选中构件" className="scene-tool-button" disabled={!focusTarget} onClick={focusSelectedNode}>
+            <Crosshair size={17} />
+          </TooltipButton>
+          <CameraPresetMenu preset={cameraPreset} onSelectPreset={selectCameraPreset} />
+          <span className="scene-toolbar-divider" aria-hidden="true" />
+          <TooltipButton label="撤销上一步" className="scene-tool-button" onClick={() => void restoreHistory("undo")} disabled={!historyState.canUndo}>
+            <Undo2 size={17} />
+          </TooltipButton>
+          <TooltipButton label="重做上一步" className="scene-tool-button" onClick={() => void restoreHistory("redo")} disabled={!historyState.canRedo}>
+            <Redo2 size={17} />
+          </TooltipButton>
+          <span className="scene-toolbar-divider" aria-hidden="true" />
+          <TooltipButton label="导入场景或参考模型" className="scene-tool-button" onClick={() => void importScene()}>
+            <Upload size={17} />
+          </TooltipButton>
+          <TooltipButton label="导出场景或三维模型" className="scene-tool-button" onClick={() => void exportScene()} disabled={Boolean(pendingExportTarget)}>
+            <Download size={17} />
+          </TooltipButton>
+        </div>
       </SceneToolbar>
       {message ? <div className="scene-editor-message" role="status">{message}</div> : null}
       <div

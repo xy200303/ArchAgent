@@ -3,65 +3,131 @@
 .project-picker {
   display: grid;
   place-items: center;
-  height: 100vh;
+  min-height: 100vh;
+  overflow: auto;
   background: var(--fluent-color-neutral-background2);
+  padding: 32px;
 }
 
 .project-picker-card {
   display: grid;
-  gap: var(--fluent-spacing-l);
-  width: min(560px, calc(100vw - 48px));
+  grid-template-columns: minmax(300px, 0.92fr) minmax(420px, 1.08fr);
+  width: min(1040px, 100%);
   border: 1px solid var(--color-line);
-  border-radius: var(--radius-lg);
+  border-radius: 20px;
   background: var(--color-surface);
-  box-shadow: var(--shadow-card);
-  padding: 28px 30px;
+  box-shadow: var(--fluent-shadow-64);
+  overflow: hidden;
+}
+
+.project-picker-hero {
+  display: flex;
+  min-height: 530px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #f5fbff;
+  background: #273b6f;
+  padding: 44px;
 }
 
 .project-picker-brand {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 14px;
+  gap: 18px;
+  text-align: center;
 }
 
-.project-picker-brand svg {
-  color: var(--color-primary);
+.project-picker-logo {
+  width: 112px;
+  height: 112px;
   flex: none;
+  border-radius: 25px;
+  box-shadow: 0 12px 24px rgb(0 0 0 / 18%);
 }
 
-.project-picker-brand strong {
-  display: block;
-  font-size: 18px;
+.project-picker-brand h1,
+.project-picker-workspace h2 {
+  margin: 0;
+}
+
+.project-picker-brand h1 {
+  font-size: 28px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.project-picker-workspace {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  padding: 46px 48px 32px;
+}
+
+.project-picker-workspace h2 {
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: 0;
   color: var(--color-ink);
 }
 
-.project-picker-brand span {
-  display: block;
-  margin-top: 4px;
-  font-size: 13px;
-  color: var(--color-muted);
+.project-picker-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 24px;
 }
 
-.project-picker-actions {
-  display: flex;
-  gap: 10px;
+.project-picker-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 46px;
+  border-radius: 9px;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 650;
+  transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.project-picker-actions .primary-action {
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--fluent-color-brand-background) 27%, transparent);
+}
+
+.project-picker-actions .primary-action:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 11px 22px color-mix(in srgb, var(--fluent-color-brand-background) 32%, transparent);
+}
+
+.project-picker-action-arrow {
+  margin-left: auto;
 }
 
 .project-picker-recent {
   display: grid;
-  gap: 8px;
+  gap: 10px;
+  min-height: 0;
+  margin-top: 34px;
+}
+
+.project-picker-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .project-picker-recent-title {
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--color-muted);
 }
 
 .project-picker-recent ul {
   display: grid;
-  gap: 4px;
-  max-height: 260px;
+  gap: 8px;
+  max-height: 185px;
   overflow-y: auto;
   margin: 0;
   padding: 0;
@@ -71,30 +137,44 @@
 .project-picker-recent button {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
-  border: 1px solid transparent;
-  border-radius: var(--fluent-radius-medium);
-  background: transparent;
+  min-height: 58px;
+  border: 1px solid var(--color-line);
+  border-radius: 10px;
+  background: var(--color-surface-soft);
   color: var(--color-ink);
   cursor: pointer;
-  padding: 8px 10px;
+  padding: 8px 12px;
   text-align: left;
+  transition: background-color 180ms ease, border-color 180ms ease, transform 180ms ease;
 }
 
 .project-picker-recent button:hover {
-  border-color: var(--color-line);
-  background: var(--color-surface-soft);
+  border-color: var(--fluent-color-brand-stroke);
+  background: var(--color-primary-soft);
+  transform: translateY(-1px);
 }
 
-.project-picker-recent button svg {
-  color: var(--color-muted);
+.recent-project-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
   flex: none;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--fluent-color-brand-background) 12%, var(--color-surface));
+  color: var(--color-primary);
+}
+
+.recent-project-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
 }
 
 .recent-project-name {
   font-weight: 600;
-  flex: none;
 }
 
 .recent-project-path {
@@ -105,9 +185,37 @@
   color: var(--color-muted);
 }
 
+.recent-project-arrow {
+  margin-left: auto;
+  flex: none;
+  color: var(--color-muted);
+}
+
+.project-picker-empty-recent {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 34px;
+  border: 1px dashed var(--color-line-strong);
+  border-radius: 10px;
+  color: var(--color-muted);
+  padding: 16px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.project-picker-empty-recent svg {
+  color: var(--color-primary);
+}
+
 .project-picker-footer {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  margin-top: auto;
+  padding-top: 28px;
+  color: var(--color-subtle);
+  font-size: 11px;
 }
 
 .project-picker-link {
@@ -119,11 +227,68 @@
   color: var(--color-muted);
   cursor: pointer;
   font-size: 12px;
-  padding: 4px 6px;
+  padding: 6px;
 }
 
 .project-picker-link:hover {
   color: var(--color-ink);
+}
+
+.project-picker-actions button:focus-visible,
+.project-picker-recent button:focus-visible,
+.project-picker-link:focus-visible {
+  outline: 2px solid var(--fluent-color-brand-stroke);
+  outline-offset: 2px;
+}
+
+@media (max-width: 800px) {
+  .project-picker {
+    place-items: start center;
+    padding: 20px;
+  }
+
+  .project-picker-card {
+    grid-template-columns: 1fr;
+    max-width: 560px;
+  }
+
+  .project-picker-hero {
+    min-height: 330px;
+    padding: 32px;
+  }
+
+  .project-picker-workspace {
+    padding: 32px;
+  }
+}
+
+@media (max-width: 480px) {
+  .project-picker {
+    padding: 12px;
+  }
+
+  .project-picker-hero,
+  .project-picker-workspace {
+    padding: 26px 22px;
+  }
+
+  .project-picker-brand {
+    align-items: flex-start;
+  }
+
+  .project-picker-logo {
+    width: 84px;
+    height: 84px;
+    border-radius: 19px;
+  }
+
+  .project-picker-brand h1 {
+    font-size: 25px;
+  }
+
+  .project-picker-actions {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Bridge missing / app crash / app notice */

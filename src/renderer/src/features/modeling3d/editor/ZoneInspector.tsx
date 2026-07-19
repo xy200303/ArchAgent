@@ -3,7 +3,7 @@ import { MapPinned, Save, Trash2 } from "lucide-react";
 import { useEffect, useState, type FormEvent, type JSX } from "react";
 import type { SceneCommandInput, SceneZoneNode } from "../../../../../shared/modeling3d/sceneContracts";
 import { TooltipButton } from "../../../shared/TooltipButton";
-import { SceneToolbar } from "./SceneToolbar";
+import { SidePanelHeader } from "../../../shared/SidePanelHeader";
 
 type ZoneDraft = {
   name: string;
@@ -48,11 +48,9 @@ export function ZoneInspector({
 
   return (
     <aside className="scene-inspector" aria-label={zone ? "房间属性" : "新建房间"}>
-      <SceneToolbar title={zone ? "房间属性" : "新建房间"} icon={MapPinned} className="scene-inspector-heading">
-        <TooltipButton label="关闭属性面板" className="scene-inspector-close" onClick={onClose}>
+      <SidePanelHeader title={zone ? "房间属性" : "新建房间"} icon={MapPinned} actions={<TooltipButton label="关闭属性面板" className="scene-inspector-close" onClick={onClose}>
           <span aria-hidden="true">×</span>
-        </TooltipButton>
-      </SceneToolbar>
+        </TooltipButton>} />
       <form className="wall-property-form" onSubmit={submit}>
         <label>
           <span>名称</span>

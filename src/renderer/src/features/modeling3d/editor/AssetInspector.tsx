@@ -3,7 +3,7 @@ import { Box, Save, Trash2 } from "lucide-react";
 import { useEffect, useState, type FormEvent, type JSX } from "react";
 import type { SceneAssetNode, SceneCommandInput } from "../../../../../shared/modeling3d/sceneContracts";
 import { TooltipButton } from "../../../shared/TooltipButton";
-import { SceneToolbar } from "./SceneToolbar";
+import { SidePanelHeader } from "../../../shared/SidePanelHeader";
 
 type AssetDraft = {
   name: string;
@@ -38,9 +38,7 @@ export function AssetInspector({ asset, onUpdate, onDelete, onClose }: {
 
   return (
     <aside className="scene-inspector" aria-label="参考模型属性">
-      <SceneToolbar title="参考模型属性" icon={Box} className="scene-inspector-heading">
-        <TooltipButton label="关闭属性面板" className="scene-inspector-close" onClick={onClose}><span aria-hidden="true">×</span></TooltipButton>
-      </SceneToolbar>
+      <SidePanelHeader title="参考模型属性" icon={Box} actions={<TooltipButton label="关闭属性面板" className="scene-inspector-close" onClick={onClose}><span aria-hidden="true">×</span></TooltipButton>} />
       <form className="wall-property-form" onSubmit={submit}>
         <label><span>名称</span><input value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} required /></label>
         <p className="asset-inspector-format">{asset.format.toUpperCase()} 参考模型 · 不支持 Mesh 级编辑</p>

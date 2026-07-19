@@ -1,5 +1,5 @@
 /** Conversation selector and session actions for the chat panel header. */
-import { memo, type JSX } from "react";
+import { memo, useState, type JSX } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Select from "@radix-ui/react-select";
 import {
@@ -53,7 +53,8 @@ export const ChatPanelHeader = memo(function ChatPanelHeader({
   onCreateConversation,
   onSelectSession,
   onRenameSession,
-  onDeleteSession
+  onDeleteSession,
+  deletingSessionId
 }: {
   sessions: ChatSession[];
   currentSession?: ChatSession;
@@ -62,11 +63,24 @@ export const ChatPanelHeader = memo(function ChatPanelHeader({
   onSelectSession: (sessionId: string) => void;
   onRenameSession: (session: ChatSession) => void;
   onDeleteSession: (session: ChatSession) => void;
+  deletingSessionId?: string;
 }): JSX.Element {
+  const [sessionSelectorOpen, setSessionSelectorOpen] = useState(false);
+
+  function requestDeleteSession(session: ChatSession): void {
+    setSessionSelectorOpen(false);
+    onDeleteSession(session);
+  }
+
   return (
     <header className="chat-panel-header">
       <div className="chat-session-select">
-        <Select.Root value={currentSessionId || ""} onValueChange={onSelectSession}>
+        <Select.Root
+          value={currentSessionId || ""}
+          open={sessionSelectorOpen}
+          onOpenChange={setSessionSelectorOpen}
+          onValueChange={onSelectSession}
+        >
           <Select.Trigger className="session-select-trigger" aria-label="选择设计会话">
             <Select.Value placeholder="选择会话" />
             <Select.Icon className="session-select-icon">
@@ -77,15 +91,31 @@ export const ChatPanelHeader = memo(function ChatPanelHeader({
             <Select.Content className="session-select-content" position="popper" sideOffset={4}>
               <Select.Viewport className="session-select-viewport">
                 {sessions.map((session) => (
-                  <Select.Item className="session-select-item" value={session.id} key={session.id}>
-                    <Select.ItemIndicator className="session-select-item-indicator">
-                      <Check size={14} />
-                    </Select.ItemIndicator>
-                    <Select.ItemText>
-                      <span className="session-select-item-title">{session.title}</span>
-                    </Select.ItemText>
-                    <span className="session-select-item-date">{formatDateTime(session.updatedAt)}</span>
-                  </Select.Item>
+                  <div className="session-select-row" key={session.id}>
+                    <Select.Item className="session-select-item" value={session.id}>
+                      <Select.ItemIndicator className="session-select-item-indicator">
+                        <Check size={14} />
+                      </Select.ItemIndicator>
+                      <Select.ItemText>
+                        <span className="session-select-item-title">{session.title}</span>
+                      </Select.ItemText>
+                      <span className="session-select-item-date">{formatDateTime(session.updatedAt)}</span>
+                    </Select.Item>
+                    <button
+                      type="button"
+                      className="session-select-delete"
+                      aria-label={`删除对话：${session.title}`}
+                      title="删除对话"
+                      disabled={deletingSessionId === session.id}
+                      onPointerDown={(event) => event.preventDefault()}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        requestDeleteSession(session);
+                      }}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 ))}
               </Select.Viewport>
             </Select.Content>
@@ -97,11 +127,7 @@ export const ChatPanelHeader = memo(function ChatPanelHeader({
           <Plus size={16} />
         </button>
         {currentSession ? (
-          <SessionMoreMenu
-            session={currentSession}
-            onRenameSession={onRenameSession}
-            onDeleteSession={onDeleteSession}
-          />
+          <SessionMoreMenu session={currentSession} onRenameSession={onRenameSession} onDeleteSession={onDeleteSession} />
         ) : null}
       </div>
     </header>

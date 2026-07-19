@@ -3,7 +3,7 @@ import { Save, Trash2, Waypoints } from "lucide-react";
 import { useEffect, useState, type FormEvent, type JSX } from "react";
 import type { SceneCommandInput, SceneStairNode, WallMaterialPreset } from "../../../../../shared/modeling3d/sceneContracts";
 import { TooltipButton } from "../../../shared/TooltipButton";
-import { SceneToolbar } from "./SceneToolbar";
+import { SidePanelHeader } from "../../../shared/SidePanelHeader";
 
 type StairDraft = {
   name: string;
@@ -59,11 +59,9 @@ export function StairInspector({
 
   return (
     <aside className="scene-inspector" aria-label={stair ? "楼梯属性" : "新建楼梯"}>
-      <SceneToolbar title={stair ? "楼梯属性" : "新建楼梯"} icon={Waypoints} className="scene-inspector-heading">
-        <TooltipButton label="关闭属性面板" className="scene-inspector-close" onClick={onClose}>
+      <SidePanelHeader title={stair ? "楼梯属性" : "新建楼梯"} icon={Waypoints} actions={<TooltipButton label="关闭属性面板" className="scene-inspector-close" onClick={onClose}>
           <span aria-hidden="true">×</span>
-        </TooltipButton>
-      </SceneToolbar>
+        </TooltipButton>} />
       <form className="wall-property-form" onSubmit={submit}>
         <label>
           <span>名称</span>

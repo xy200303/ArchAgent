@@ -119,7 +119,7 @@ export const EditorWorkspace = memo(function EditorWorkspace({
   theme: "light" | "dark";
   mdMode: "preview" | "edit";
   componentRequest?: ComponentLibraryRequest;
-  sidebarMode?: "explorer" | "components";
+  sidebarMode?: "scene" | "components";
   onSelectBuiltInComponent: (componentId: BuiltInComponentId) => void;
   onPreviewArtifact: (artifactId: string) => void;
   onSaveContent: (path: string, content: string) => Promise<void>;

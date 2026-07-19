@@ -98,9 +98,16 @@ const sceneExchangeService = createSceneExchangeService({
   executeSceneCommand: sceneService.execute
 });
 const createWindow = windowManager.createWindow;
-const settingsService = createSettingsService({ envLocalPath, envPath, projectRootDir, resourcesDir });
+const settingsService = createSettingsService({
+  envLocalPath,
+  envPath,
+  projectRootDir,
+  resourcesDir,
+  initializeDefaultEnv: app.isPackaged
+});
 const loadEnv = settingsService.load;
 const saveEnv = settingsService.save;
+const resetEnv = settingsService.reset;
 const projectStateStore = createProjectStateStore({
   statePath,
   sessions,
@@ -153,6 +160,7 @@ const {
   writeTextFile,
   createFile,
   createDirectory,
+  renameFile,
   deleteFile,
   revealFile
 } = fileService;
@@ -214,6 +222,28 @@ const conversationService = createConversationService({
   now,
   loadEnv,
   getSceneSnapshot: sceneService.getSnapshot,
+  captureScenePreview: async (view = "current") => {
+    const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+    if (!window) throw new Error("当前没有可捕获的应用窗口。");
+    if (view !== "current") {
+      const preset = view === "perspective" ? "free" : view;
+      await window.webContents.executeJavaScript(`new Promise((resolve) => {
+        const timeout = setTimeout(resolve, 600);
+        window.dispatchEvent(new CustomEvent("arch-agent:scene-preview-camera", {
+          detail: { preset: ${JSON.stringify(preset)}, done: () => { clearTimeout(timeout); requestAnimationFrame(() => requestAnimationFrame(resolve)); } }
+        }));
+      })`);
+    }
+    const rect = await window.webContents.executeJavaScript(`(() => {
+      const canvas = document.querySelector(".r3f-viewer-host canvas");
+      if (!canvas) return undefined;
+      const bounds = canvas.getBoundingClientRect();
+      return bounds.width > 0 && bounds.height > 0
+        ? { x: Math.round(bounds.x), y: Math.round(bounds.y), width: Math.round(bounds.width), height: Math.round(bounds.height) }
+        : undefined;
+    })()`);
+    return (await window.webContents.capturePage(rect)).toPNG().toString("base64");
+  },
   executeSceneCommand: sceneService.execute,
   placeComponentLibraryItem: (input) => {
     const component = findGlobalComponent(rootDir, input.componentId);
@@ -268,11 +298,13 @@ function registerIpc(): void {
     writeTextFile,
     createFile,
     createDirectory,
+    renameFile,
     deleteFile,
     revealFile,
     isPathWithinAllowed,
     loadSettings: loadEnv,
     saveSettings: saveEnv,
+    resetSettings: resetEnv,
     listWorkspaceFiles,
     projectRootDir,
     resourcesDir,

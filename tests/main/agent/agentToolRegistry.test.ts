@@ -574,10 +574,39 @@ describe("agentToolRegistry", () => {
       }), context);
 
       expect(result.toolName).toBe("place_library_assets");
-      expect(placeComponentLibraryItem).toHaveBeenCalledWith(expect.objectContaining({ position: [4.45, 0, 2], rotation: [0, -Math.PI / 2, 0] }));
+      expect(placeComponentLibraryItem).toHaveBeenCalledWith(expect.objectContaining({ position: [4.35, 0, 2], rotation: [0, -Math.PI / 2, 0] }));
     } finally {
       rmSync(sandbox, { recursive: true, force: true });
     }
+  });
+
+  it("previews a reversed north-wall anchor on the room interior side", async () => {
+    const sceneService = createSceneService({ createId: () => "agent", broadcast: vi.fn() });
+    sceneService.execute({ type: "node.delete", id: "wall_south" });
+    sceneService.execute({ type: "wall.create", id: "wall_reversed_north", parentId: "level_default", name: "反向北墙", start: [0, 4.1], end: [4, 4.1], thickness: 0.2 });
+
+    const result = await executeAgentToolCall(
+      createToolCall("preview_library_asset_placement", {
+        items: [{ library_asset_id: "lib_preview", anchor: { element_id: "wall_reversed_north", side: "room_interior", distance: 0.15 }, local: [0, 0, 0], footprint_meters: [1, 0.3] }]
+      }),
+      createContext({ getSceneSnapshot: sceneService.getSnapshot })
+    );
+
+    expect(result.toolName).toBe("preview_library_asset_placement");
+    expect(result.content).toContain("预览落点：[2, 0, 3.85]");
+    expect(result.content).toContain("位于房间/楼板范围内：是");
+    expect(result.content).toContain("未发现墙体穿模");
+  });
+
+  it("returns the current revision when a precise placement is stale", async () => {
+    const sceneService = createSceneService({ createId: () => "agent", broadcast: vi.fn() });
+    const result = await executeAgentToolCall(
+      createToolCall("place_library_asset", { expected_revision: 99, library_asset_id: "lib_missing", position: [2, 0, 2] }),
+      createContext({ getSceneSnapshot: sceneService.getSnapshot })
+    );
+
+    expect(result.summary).toContain("最新版本为 0");
+    expect(result.content).toContain("current_revision: 0");
   });
 
   it("blocks placement when two declared furniture footprints overlap", async () => {

@@ -2,7 +2,7 @@
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { ChevronDown, ChevronRight, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Library, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
 import { memo, useEffect, useState, type JSX } from "react";
 import type { ArchAgentApi, GlobalComponentSummary } from "../../../../../shared/types";
 import type { BuiltInComponentId } from "./componentLibraryContracts";
@@ -63,7 +63,7 @@ export const ComponentLibraryPanel = memo(function ComponentLibraryPanel({
     });
   }, [api]);
   return (
-    <WorkspaceSidePanel label="构件库" className="component-library-sidebar">
+    <WorkspaceSidePanel label="构件库" title="构件库" icon={Library} className="component-library-sidebar">
       <section className={`component-library-section${structureOpen ? " is-open" : ""}`}>
         <button type="button" className="component-library-heading" aria-controls="structure-components" aria-expanded={structureOpen} onClick={() => setStructureOpen((open) => !open)}>
           {structureOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}

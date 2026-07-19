@@ -12,6 +12,7 @@ import {
   ChevronRight,
   Layers3,
   MapPinned,
+  Network,
   PanelsTopLeft,
   PanelTop,
   Save,
@@ -22,7 +23,7 @@ import {
 import { memo, useEffect, useState, type FormEvent, type JSX } from "react";
 import type { SceneCommandInput, SceneNode, SceneSnapshot, SceneWallNode, WallMaterialPreset } from "../../../../../shared/modeling3d/sceneContracts";
 import { TooltipButton } from "../../../shared/TooltipButton";
-import { SceneToolbar } from "./SceneToolbar";
+import { SidePanelHeader } from "../../../shared/SidePanelHeader";
 import { WorkspaceSidePanel } from "./WorkspaceSidePanel";
 
 const MATERIAL_OPTIONS: Array<{ value: WallMaterialPreset; label: string }> = [
@@ -51,7 +52,7 @@ export const SceneNavigationPanel = memo(function SceneNavigationPanel({
   onClearLevel: (levelId: string) => void;
 }): JSX.Element {
   return (
-    <WorkspaceSidePanel label="编辑器导航" className="scene-navigation-panel">
+    <WorkspaceSidePanel label="编辑器导航" title="场景节点" icon={Network} className="scene-navigation-panel">
       <SceneTreeContent
         snapshot={snapshot}
         selectedNodeId={selectedNodeId}
@@ -392,15 +393,13 @@ export const WallInspector = memo(function WallInspector({
 
   return (
     <aside className="scene-inspector" aria-label={wall ? "墙体属性" : "新建墙体"}>
-      <SceneToolbar
+      <SidePanelHeader
         title={wall ? "墙体属性" : "新建墙体"}
         icon={BrickWall}
-        className="scene-inspector-heading"
-      >
-        <TooltipButton label="关闭属性面板" className="scene-inspector-close" onClick={onClose}>
+        actions={<TooltipButton label="关闭属性面板" className="scene-inspector-close" onClick={onClose}>
           <span aria-hidden="true">×</span>
-        </TooltipButton>
-      </SceneToolbar>
+        </TooltipButton>}
+      />
       <form className="wall-property-form" onSubmit={submit}>
         <label>
           <span>名称</span>

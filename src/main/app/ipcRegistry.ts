@@ -1,6 +1,5 @@
 /** Registers the stable preload IPC contract against explicit domain-service dependencies. */
 import electron from "electron";
-import type { BrowserWindow as BrowserWindowType } from "electron";
 import { resolve } from "node:path";
 import type {
   AppMetadata,
@@ -26,6 +25,7 @@ import type {
   ReadBinaryFileInput,
   ReadBinaryFileResult,
   ReadTextFileInput,
+  RenameFileInput,
   RenameSessionInput,
   UpdateAppSettingsInput,
   WorkspaceFileItem,
@@ -37,7 +37,8 @@ import { checkRuntime } from "../runtime/runtimeDiagnostics";
 import type { GlobalComponentRecord } from "../modeling3d/componentLibraryService";
 import type { GlobalComponentSummary } from "../../shared/types";
 
-const { BrowserWindow, clipboard, ipcMain, shell } = electron;
+const { clipboard, ipcMain, shell } = electron;
+const ARCH_AGENT_GITHUB_URL = "https://github.com/xy200303/ArchAgent";
 
 export function registerIpcHandlers(options: {
   getAppMetadata: () => AppMetadata;
@@ -67,11 +68,13 @@ export function registerIpcHandlers(options: {
   writeTextFile: (input: WriteTextFileInput) => Promise<void>;
   createFile: (input: CreateFileInput) => Promise<void>;
   createDirectory: (input: CreateDirectoryInput) => Promise<void>;
-  deleteFile: (input: DeleteFileInput, parentWindow?: BrowserWindowType) => Promise<void>;
+  renameFile: (input: RenameFileInput) => Promise<void>;
+  deleteFile: (input: DeleteFileInput) => Promise<void>;
   revealFile: (filePath: string) => Promise<void>;
   isPathWithinAllowed: (filePath: string) => boolean;
   loadSettings: () => AppSettings;
   saveSettings: (input: UpdateAppSettingsInput) => AppSettings;
+  resetSettings: () => AppSettings;
   listWorkspaceFiles: (input: ListWorkspaceFilesInput) => WorkspaceFileItem[];
   projectRootDir: string;
   resourcesDir?: string;
@@ -98,6 +101,7 @@ export function registerIpcHandlers(options: {
   ipcMain.handle("app:metadata", options.getAppMetadata);
   ipcMain.handle("app:recent-projects", options.listRecentProjects);
   ipcMain.handle("app:new-window", (_event, projectPath?: string) => options.createWindow(projectPath));
+  ipcMain.handle("app:open-archagent-github", () => shell.openExternal(ARCH_AGENT_GITHUB_URL));
   ipcMain.handle("project:open", options.openProject);
   ipcMain.handle("project:create", options.createProject);
   ipcMain.handle("session:list", (_event, projectPath: string) =>
@@ -141,9 +145,8 @@ export function registerIpcHandlers(options: {
   ipcMain.handle("file:write-text", (_event, input: WriteTextFileInput) => options.writeTextFile(input));
   ipcMain.handle("file:create", (_event, input: CreateFileInput) => options.createFile(input));
   ipcMain.handle("file:create-directory", (_event, input: CreateDirectoryInput) => options.createDirectory(input));
-  ipcMain.handle("file:delete", (event, input: DeleteFileInput) =>
-    options.deleteFile(input, BrowserWindow.fromWebContents(event.sender) ?? undefined)
-  );
+  ipcMain.handle("file:rename", (_event, input: RenameFileInput) => options.renameFile(input));
+  ipcMain.handle("file:delete", (_event, input: DeleteFileInput) => options.deleteFile(input));
   ipcMain.handle("file:reveal", (_event, filePath: string) => options.revealFile(filePath));
   ipcMain.handle("file:open", async (_event, filePath: string) => {
     if (!options.isPathWithinAllowed(filePath)) throw new Error("无权打开该文件路径");
@@ -152,6 +155,7 @@ export function registerIpcHandlers(options: {
   });
   ipcMain.handle("settings:get", options.loadSettings);
   ipcMain.handle("settings:save", (_event, input: UpdateAppSettingsInput) => options.saveSettings(input));
+  ipcMain.handle("settings:reset", options.resetSettings);
   ipcMain.handle("workspace:list-files", (_event, input: ListWorkspaceFilesInput) => options.listWorkspaceFiles(input));
   ipcMain.handle("settings:check-runtime", () =>
     checkRuntime({

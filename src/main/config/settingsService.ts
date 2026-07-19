@@ -1,5 +1,6 @@
 /** Loads and persists user settings while maintaining Hy3/OpenAI environment compatibility. */
-import { existsSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import dotenv from "dotenv";
 import {
   clampContextWindowTokens,
@@ -12,6 +13,7 @@ import { serializeEnvFile } from "./envFile";
 export interface SettingsService {
   load(): AppSettings;
   save(input: UpdateAppSettingsInput): AppSettings;
+  reset(): AppSettings;
 }
 
 export function createSettingsService(options: {
@@ -19,6 +21,7 @@ export function createSettingsService(options: {
   envPath: string;
   projectRootDir: string;
   resourcesDir?: string;
+  initializeDefaultEnv?: boolean;
 }): SettingsService {
   function readEnvValue(primaryKey: string, legacyKey: string, fallback: string): string {
     const primary = process.env[primaryKey];
@@ -57,7 +60,54 @@ export function createSettingsService(options: {
     return Number.isFinite(value) && value > 0 ? Math.trunc(value) : fallback;
   }
 
+  function readPositiveInteger(key: string, fallback: number, min: number, max: number): number {
+    const value = Number(process.env[key]);
+    if (!Number.isFinite(value)) return fallback;
+    return Math.min(max, Math.max(min, Math.trunc(value)));
+  }
+
+  function writeDefaultEnv(): void {
+    const templatePath = options.initializeDefaultEnv
+      ? options.envPath
+      : join(options.projectRootDir, ".env.example");
+    if (existsSync(templatePath)) {
+      copyFileSync(templatePath, options.envLocalPath);
+      return;
+    }
+    writeFileSync(options.envLocalPath, serializeEnvFile([
+      { key: "ARCH_AGENT_THEME", value: "light" },
+      { key: "HY3_API_KEY", value: "" },
+      { key: "HY3_BASE_URL", value: "https://tokenhub.tencentmaas.com/v1" },
+      { key: "HY3_CHAT_MODEL", value: "hy3" },
+      { key: "HY3_THINKING_ENABLED", value: false },
+      { key: "HY3_REASONING_EFFORT", value: "high" },
+      { key: "HY3_REQUEST_TIMEOUT_S", value: 120 },
+      { key: "HY3_CONTEXT_WINDOW_TOKENS", value: 256000 },
+      { key: "HY3_MAX_OUTPUT_TOKENS", value: 16000 },
+      { key: "HY3_IMAGE_ENDPOINT", value: "https://tokenhub.tencentmaas.com/v1/api/image/lite" },
+      { key: "HY3_IMAGE_MODEL", value: "hy-image-v3.0" },
+      { key: "HY3_IMAGE_REQUEST_TIMEOUT_S", value: 300 },
+      { key: "HY3_3D_SUBMIT_ENDPOINT", value: "https://tokenhub.tencentmaas.com/v1/api/3d/submit" },
+      { key: "HY3_3D_QUERY_ENDPOINT", value: "https://tokenhub.tencentmaas.com/v1/api/3d/query" },
+      { key: "HY3_3D_MODEL", value: "hy-3d-3.0" },
+      { key: "HY3_3D_FACE_COUNT", value: 50000 },
+      { key: "HY3_3D_SUBMIT_TIMEOUT_S", value: 120 },
+      { key: "HY3_3D_POLL_INTERVAL_S", value: 3 },
+      { key: "HY3_3D_JOB_TIMEOUT_S", value: 900 },
+      { key: "AGENT_EXEC_BASH_ENABLED", value: false },
+      { key: "AGENT_SCRIPT_TIMEOUT_S", value: 60 },
+      { key: "AGENT_AUTO_PDF_EXPORT", value: false },
+      { key: "LIBREOFFICE_PATH", value: "" }
+    ]), "utf-8");
+  }
+
+  function initializeDefaultEnv(): void {
+    if (!options.initializeDefaultEnv || existsSync(options.envLocalPath)) return;
+    writeDefaultEnv();
+  }
+
   function load(): AppSettings {
+    initializeDefaultEnv();
     const envFilePath = existsSync(options.envLocalPath)
       ? options.envLocalPath
       : existsSync(options.envPath)
@@ -77,7 +127,7 @@ export function createSettingsService(options: {
         baseUrl: readEnvValue("HY3_BASE_URL", "OPENAI_BASE_URL", "https://tokenhub.tencentmaas.com/v1"),
         chatModel: readEnvValue("HY3_CHAT_MODEL", "OPENAI_CHAT_MODEL", "hy3-preview"),
         thinkingEnabled: parseBoolean(readEnvValue("HY3_THINKING_ENABLED", "OPENAI_THINKING_ENABLED", ""), false),
-        reasoningEffort: readEnvValue("HY3_REASONING_EFFORT", "OPENAI_REASONING_EFFORT", ""),
+        reasoningEffort: readEnvValue("HY3_REASONING_EFFORT", "OPENAI_REASONING_EFFORT", "high"),
         requestTimeoutSeconds: readTimeoutSeconds("HY3_REQUEST_TIMEOUT_S", "OPENAI_REQUEST_TIMEOUT_S", 120),
         contextWindowTokens: clampContextWindowTokens(readEnvValue("HY3_CONTEXT_WINDOW_TOKENS", "OPENAI_CONTEXT_WINDOW_TOKENS", "")),
         maxOutputTokens: Number(readEnvValue("HY3_MAX_OUTPUT_TOKENS", "OPENAI_MAX_OUTPUT_TOKENS", "16000")),
@@ -88,36 +138,39 @@ export function createSettingsService(options: {
         model: process.env.HY3_IMAGE_MODEL?.trim() || "hy-image-v3.0",
         requestTimeoutSeconds: readTimeoutSeconds("HY3_IMAGE_REQUEST_TIMEOUT_S", "HY3_IMAGE_REQUEST_TIMEOUT_S", 300)
       },
+      tokenHub3d: {
+        submitEndpoint: process.env.HY3_3D_SUBMIT_ENDPOINT?.trim() || "https://tokenhub.tencentmaas.com/v1/api/3d/submit",
+        queryEndpoint: process.env.HY3_3D_QUERY_ENDPOINT?.trim() || "https://tokenhub.tencentmaas.com/v1/api/3d/query",
+        model: process.env.HY3_3D_MODEL?.trim() || "hy-3d-3.0",
+        faceCount: readPositiveInteger("HY3_3D_FACE_COUNT", 50000, 3000, 150000),
+        submitTimeoutSeconds: readPositiveInteger("HY3_3D_SUBMIT_TIMEOUT_S", 120, 1, 3600),
+        pollIntervalSeconds: readPositiveInteger("HY3_3D_POLL_INTERVAL_S", 3, 1, 300),
+        jobTimeoutSeconds: readPositiveInteger("HY3_3D_JOB_TIMEOUT_S", 900, 1, 21600)
+      },
       output: {
         autoPdfExport: parseBoolean(process.env.AGENT_AUTO_PDF_EXPORT, false),
         libreOfficePath: process.env.LIBREOFFICE_PATH || ""
       },
       agent: {
-        execBashEnabled: parseBoolean(process.env.AGENT_EXEC_BASH_ENABLED, true)
+        execBashEnabled: parseBoolean(process.env.AGENT_EXEC_BASH_ENABLED, false),
+        scriptTimeoutSeconds: readPositiveInteger("AGENT_SCRIPT_TIMEOUT_S", 60, 1, 600)
       }
     };
   }
 
   function save(input: UpdateAppSettingsInput): AppSettings {
     const currentKey = readEnvValue("HY3_API_KEY", "OPENAI_API_KEY", "");
-    const current3dModel = process.env.HY3_3D_MODEL?.trim() || "hy-3d-3.0";
-    const current3dSubmitEndpoint = process.env.HY3_3D_SUBMIT_ENDPOINT?.trim() || "https://tokenhub.tencentmaas.com/v1/api/3d/submit";
-    const current3dQueryEndpoint = process.env.HY3_3D_QUERY_ENDPOINT?.trim() || "https://tokenhub.tencentmaas.com/v1/api/3d/query";
-    const current3dFaceCount = process.env.HY3_3D_FACE_COUNT?.trim() || "50000";
-    const current3dSubmitTimeout = process.env.HY3_3D_SUBMIT_TIMEOUT_S?.trim() || "120";
-    const current3dPollInterval = process.env.HY3_3D_POLL_INTERVAL_S?.trim() || "3";
-    const current3dJobTimeout = process.env.HY3_3D_JOB_TIMEOUT_S?.trim() || "900";
     const content = serializeEnvFile([
       { key: "HY3_API_KEY", value: input.openai.apiKey ?? currentKey },
       { key: "HY3_BASE_URL", value: input.openai.baseUrl },
       { key: "HY3_CHAT_MODEL", value: input.openai.chatModel },
-      { key: "HY3_3D_MODEL", value: current3dModel },
-      { key: "HY3_3D_SUBMIT_ENDPOINT", value: current3dSubmitEndpoint },
-      { key: "HY3_3D_QUERY_ENDPOINT", value: current3dQueryEndpoint },
-      { key: "HY3_3D_FACE_COUNT", value: current3dFaceCount },
-      { key: "HY3_3D_SUBMIT_TIMEOUT_S", value: current3dSubmitTimeout },
-      { key: "HY3_3D_POLL_INTERVAL_S", value: current3dPollInterval },
-      { key: "HY3_3D_JOB_TIMEOUT_S", value: current3dJobTimeout },
+      { key: "HY3_3D_MODEL", value: input.tokenHub3d.model },
+      { key: "HY3_3D_SUBMIT_ENDPOINT", value: input.tokenHub3d.submitEndpoint },
+      { key: "HY3_3D_QUERY_ENDPOINT", value: input.tokenHub3d.queryEndpoint },
+      { key: "HY3_3D_FACE_COUNT", value: input.tokenHub3d.faceCount },
+      { key: "HY3_3D_SUBMIT_TIMEOUT_S", value: input.tokenHub3d.submitTimeoutSeconds },
+      { key: "HY3_3D_POLL_INTERVAL_S", value: input.tokenHub3d.pollIntervalSeconds },
+      { key: "HY3_3D_JOB_TIMEOUT_S", value: input.tokenHub3d.jobTimeoutSeconds },
       { key: "HY3_THINKING_ENABLED", value: input.openai.thinkingEnabled },
       { key: "HY3_REASONING_EFFORT", value: input.openai.reasoningEffort },
       { key: "HY3_REQUEST_TIMEOUT_S", value: input.openai.requestTimeoutSeconds },
@@ -127,6 +180,7 @@ export function createSettingsService(options: {
       { key: "HY3_IMAGE_MODEL", value: input.tokenHubImage.model },
       { key: "HY3_IMAGE_REQUEST_TIMEOUT_S", value: input.tokenHubImage.requestTimeoutSeconds },
       { key: "AGENT_EXEC_BASH_ENABLED", value: input.agent.execBashEnabled },
+      { key: "AGENT_SCRIPT_TIMEOUT_S", value: input.agent.scriptTimeoutSeconds },
       { key: "AGENT_AUTO_PDF_EXPORT", value: input.output.autoPdfExport },
       { key: "LIBREOFFICE_PATH", value: input.output.libreOfficePath }
     ]);
@@ -135,5 +189,11 @@ export function createSettingsService(options: {
     return load();
   }
 
-  return { load, save };
+  function reset(): AppSettings {
+    writeDefaultEnv();
+    dotenv.config({ path: options.envLocalPath, override: true });
+    return load();
+  }
+
+  return { load, save, reset };
 }

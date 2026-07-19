@@ -14,7 +14,7 @@ import {
   type AgentSessionEvent,
   type ToolDefinition
 } from "@mariozechner/pi-coding-agent";
-import type { Api, AssistantMessage, ImageContent, Model, TextContent } from "@mariozechner/pi-ai";
+import type { Api, AssistantMessage, ImageContent, Model, TextContent, ThinkingContent } from "@mariozechner/pi-ai";
 import { compactText, isSupportedImageFile, MAX_VISION_IMAGE_BYTES, readImageDataUrl } from "./agentTools";
 import { buildAgentChatTools, executeAgentToolCall, type AgentToolExecutionResult, type AgentToolLayer } from "./agentToolRegistry";
 import {
@@ -318,6 +318,12 @@ function handlePiSessionEvent(
         context.host.updateItem(context.input.sessionId, assistantItem);
         return;
       }
+      if (update.type === "thinking_delta") {
+        const assistantItem = ensureAssistantItem(context);
+        assistantItem.thinking = `${assistantItem.thinking ?? ""}${update.delta}`;
+        context.host.updateItem(context.input.sessionId, assistantItem);
+        return;
+      }
       if (update.type === "done") {
         captureAssistantCompletion(update.message, context);
         return;
@@ -490,10 +496,12 @@ function captureAssistantCompletion(
   context.assistantCompletion.stopReason = message.stopReason;
   context.assistantCompletion.errorMessage = message.errorMessage;
   const text = stripSealedAssistantText(extractAssistantText(message), context.sealedAssistantTexts);
+  const thinking = extractAssistantThinking(message);
   context.assistantCompletion.finalText = text || context.assistantCompletion.finalText;
-  if (!text) return;
+  if (!text && !thinking) return;
   const assistantItem = ensureAssistantItem(context);
-  assistantItem.content = text;
+  if (text) assistantItem.content = text;
+  if (thinking) assistantItem.thinking = thinking;
   context.host.updateItem(context.input.sessionId, assistantItem);
 }
 
@@ -553,6 +561,7 @@ function createArchAgentPiTools(
             execBashEnabled: activeSettings.agent.execBashEnabled,
             bundledPythonRuntime: host.getBundledPythonRuntime(),
             getSceneSnapshot: host.getSceneSnapshot,
+            captureScenePreview: host.captureScenePreview,
             executeSceneCommand: host.executeSceneCommand,
             placeComponentLibraryItem: host.placeComponentLibraryItem,
             createReconstructionWorkflow: (input) => host.createReconstructionWorkflow(sessionId, input)
@@ -564,6 +573,11 @@ function createArchAgentPiTools(
             if (isSupportedImageFile(result.artifactPath)) {
               result.imagePaths = [...(result.imagePaths ?? []), result.artifactPath];
             }
+          }
+          if (result.sendResourceId) {
+            const artifact = host.sendArtifact(sessionId, result.sendResourceId);
+            result.summary = `已发送 ${artifact.name}`;
+            result.content = `${result.content}\nsend_file delivered: artifact_id: ${artifact.id}`;
           }
           host.appendSessionMemory(sessionId, `工具 ${result.toolName}`, result.content);
 
@@ -763,6 +777,13 @@ function extractAssistantText(message: AssistantMessage): string {
   return message.content
     .filter((content): content is TextContent => content.type === "text")
     .map((content) => content.text)
+    .join("");
+}
+
+function extractAssistantThinking(message: AssistantMessage): string {
+  return message.content
+    .filter((content): content is ThinkingContent => content.type === "thinking")
+    .map((content) => content.thinking)
     .join("");
 }
 

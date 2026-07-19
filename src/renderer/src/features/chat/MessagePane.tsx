@@ -1,11 +1,11 @@
 /** Chat transcript rendering, process grouping, tool details, and artifact actions. */
 import { memo, useEffect, useMemo, useRef, useState, type JSX } from "react";
 import * as Collapsible from "@radix-ui/react-collapsible";
+import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as ScrollArea from "@radix-ui/react-scroll-area";
 import { IncremarkContent } from "@incremark/react";
 import {
-  Bot,
   BrickWall,
   CheckCircle2,
   CircleAlert,
@@ -18,7 +18,6 @@ import {
   Loader2,
   Menu,
   MoreHorizontal,
-  User,
   XCircle
 } from "lucide-react";
 import type { ArchAgentApi, ChatSession, ReconstructionWorkflow, StreamItem } from "../../../../shared/types";
@@ -123,6 +122,10 @@ function ReconstructionWorkflowCard({
   onError: (message: string) => void;
 }): JSX.Element {
   const [pendingAction, setPendingAction] = useState<string>();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const unansweredQuestions = workflow.questions.filter((question) => question.required && !question.selectedOptionId);
+  const activeQuestion = unansweredQuestions[0];
+  const answeredQuestionCount = workflow.questions.length - unansweredQuestions.length;
   const statusLabel = {
     needs_clarification: "等待你的选择",
     ready_for_confirmation: "等待生成确认",
@@ -132,6 +135,10 @@ function ReconstructionWorkflowCard({
     needs_attention: "需要处理失败项",
     cancelled: "已取消"
   }[workflow.status];
+
+  useEffect(() => {
+    if (workflow.status === "needs_clarification" && activeQuestion) setDialogOpen(true);
+  }, [workflow.id]);
 
   async function answer(questionId: string, optionId: string): Promise<void> {
     setPendingAction(`${questionId}:${optionId}`);
@@ -154,19 +161,10 @@ function ReconstructionWorkflowCard({
     setPendingAction("confirm");
     try {
       await api.workflow.confirm({ sessionId, workflowId: workflow.id, revision: workflow.revision });
+      await api.chat.prompt({ sessionId, message: buildWorkflowConfirmationMessage(workflow) });
+      setDialogOpen(false);
     } catch (error) {
-      onError(`确认生成失败：${getErrorMessage(error)}`);
-    } finally {
-      setPendingAction(undefined);
-    }
-  }
-
-  async function retry(assetId: string): Promise<void> {
-    setPendingAction(`retry:${assetId}`);
-    try {
-      await api.workflow.retry({ sessionId, workflowId: workflow.id, revision: workflow.revision, assetId });
-    } catch (error) {
-      onError(`重试资产失败：${getErrorMessage(error)}`);
+      onError(`确认并继续失败：${getErrorMessage(error)}`);
     } finally {
       setPendingAction(undefined);
     }
@@ -183,58 +181,85 @@ function ReconstructionWorkflowCard({
       </header>
       <p>{workflow.summary}</p>
       {workflow.assumptions.length ? <small>假设：{workflow.assumptions.join("；")}</small> : null}
-      {workflow.questions.map((question) => (
-        <section className="workflow-question" key={question.id}>
-          <strong>{question.prompt}{question.required ? " *" : ""}</strong>
-          <div className="workflow-options">
-            {question.options.map((option) => {
-              const selected = question.selectedOptionId === option.id;
-              const action = `${question.id}:${option.id}`;
-              return (
-                <button
-                  type="button"
-                  key={option.id}
-                  className={selected ? "selected" : ""}
-                  disabled={workflow.status !== "needs_clarification" || Boolean(pendingAction)}
-                  onClick={() => void answer(question.id, option.id)}
-                >
-                  <span>{option.label}</span>
-                  {option.description ? <small>{option.description}</small> : null}
-                  {pendingAction === action ? <Loader2 size={13} className="spin" /> : null}
+      <div className="workflow-card-summary">
+        <span>{workflow.questions.length ? `已确认 ${answeredQuestionCount}/${workflow.questions.length} 个问题` : "无需补充问题"}</span>
+        <span>{workflow.assets.length} 项待执行资产</span>
+      </div>
+      {workflow.status === "confirmed" ? <small>确认结果已写入会话，Agent 正在按当前方案继续处理。</small> : null}
+      <button type="button" className="workflow-review" disabled={Boolean(pendingAction)} onClick={() => setDialogOpen(true)}>
+        {workflow.status === "needs_clarification" ? "继续确认" : workflow.status === "ready_for_confirmation" ? "查看并确认方案" : "查看方案"}
+      </button>
+      <Dialog.Root open={dialogOpen} onOpenChange={setDialogOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="modal-backdrop" />
+          <Dialog.Content className="modal-panel workflow-review-dialog">
+            <Dialog.Title>{activeQuestion ? "确认方案细节" : "确认并继续"}</Dialog.Title>
+            <Dialog.Description>
+              {activeQuestion
+                ? `第 ${answeredQuestionCount + 1} / ${workflow.questions.length} 题。选择会保存到当前方案，下一题将自动出现。`
+                : "所有必答项已保存。确认后会把你的确认写入当前 Agent 会话，并立即继续处理。"}
+            </Dialog.Description>
+            {workflow.questions.length ? (
+              <div className="workflow-progress" role="progressbar" aria-label="方案确认进度" aria-valuemin={0} aria-valuemax={workflow.questions.length} aria-valuenow={answeredQuestionCount}>
+                <span style={{ width: `${(answeredQuestionCount / workflow.questions.length) * 100}%` }} />
+              </div>
+            ) : null}
+            {activeQuestion ? (
+              <section className="workflow-dialog-question" aria-live="polite">
+                <strong>{activeQuestion.prompt}{activeQuestion.required ? " *" : ""}</strong>
+                <div className="workflow-options">
+                  {activeQuestion.options.map((option) => {
+                    const action = `${activeQuestion.id}:${option.id}`;
+                    return (
+                      <button
+                        type="button"
+                        key={option.id}
+                        disabled={workflow.status !== "needs_clarification" || Boolean(pendingAction)}
+                        onClick={() => void answer(activeQuestion.id, option.id)}
+                      >
+                        <span>{option.label}</span>
+                        {option.description ? <small>{option.description}</small> : null}
+                        {pendingAction === action ? <Loader2 size={13} className="spin" /> : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            ) : (
+              <section className="workflow-dialog-summary">
+                <strong>执行清单</strong>
+                <span>{workflow.assets.length} 项资产将在 Agent 后续回合中按方案处理。</span>
+              </section>
+            )}
+            <footer>
+              <Dialog.Close asChild>
+                <button type="button" className="secondary-action">稍后继续</button>
+              </Dialog.Close>
+              {!activeQuestion && workflow.status === "ready_for_confirmation" ? (
+                <button type="button" className="workflow-confirm" disabled={pendingAction === "confirm"} onClick={() => void confirm()}>
+                  {pendingAction === "confirm" ? <Loader2 size={14} className="spin" /> : <CheckCircle2 size={14} />}
+                  确认并继续
                 </button>
-              );
-            })}
-          </div>
-        </section>
-      ))}
-      <section className="workflow-assets">
-        <strong>资产执行清单</strong>
-        {workflow.assets.map((asset) => (
-          <div className="workflow-asset-row" key={asset.id}>
-            <span>{asset.name} × {asset.quantity} · {describeWorkflowAsset(asset)}</span>
-            {asset.status === "failed" ? <button type="button" disabled={Boolean(pendingAction)} onClick={() => void retry(asset.id)}>{pendingAction === `retry:${asset.id}` ? "重试中…" : "重试"}</button> : null}
-          </div>
-        ))}
-      </section>
-      {workflow.status === "ready_for_confirmation" ? (
-        <footer>
-          <span>确认后按当前版本并行处理；缺失资产默认使用最低低模配置。</span>
-          <button type="button" className="workflow-confirm" disabled={pendingAction === "confirm"} onClick={() => void confirm()}>
-            {pendingAction === "confirm" ? <Loader2 size={14} className="spin" /> : <CheckCircle2 size={14} />}
-            按当前方案生成
-          </button>
-        </footer>
-      ) : null}
+              ) : null}
+            </footer>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </section>
   );
 }
 
-function describeWorkflowAsset(asset: ReconstructionWorkflow["assets"][number]): string {
-  if (asset.status === "failed") return `失败：${asset.error || "请重试"}`;
-  if (asset.status === "placed") return "已放置";
-  if (asset.status === "running") return asset.source === "library" ? "正在放置" : "正在生成";
-  if (asset.status === "queued") return "等待执行";
-  return asset.source === "library" ? "复用构件库" : asset.source === "image" ? "图生低模" : "文生低模";
+function buildWorkflowConfirmationMessage(workflow: ReconstructionWorkflow): string {
+  const selections = workflow.questions
+    .flatMap((question) => {
+      const option = question.options.find((item) => item.id === question.selectedOptionId);
+      return option ? [`- ${question.prompt}：${option.label}`] : [];
+    });
+  return [
+    `我已确认“${workflow.title}”的当前方案，请继续处理。`,
+    ...(selections.length ? ["已确认选项：", ...selections] : []),
+    "请依据当前方案继续执行；如仍有关键不确定项，请在本会话中继续向我提问。"
+  ].join("\n");
 }
 
 function isUnfinishedAssistantMessage(item: StreamItem): boolean {
@@ -244,9 +269,6 @@ function isUnfinishedAssistantMessage(item: StreamItem): boolean {
 function PendingAssistantRow(): JSX.Element {
   return (
     <article className="message-row assistant thinking-row">
-      <div className="avatar">
-        <Bot size={15} />
-      </div>
       <div className="message-body">
         <ThinkingIndicator />
       </div>
@@ -353,8 +375,8 @@ const StreamRow = memo(function StreamRow({
     if (embedded && item.role === "assistant") {
       return (
         <div className="process-message-row">
-          <Bot size={14} />
           <div className="process-message-body">
+            {item.thinking?.trim() ? <ThinkingCard content={item.thinking} isFinished={item.isFinished} /> : null}
             {item.content.trim() ? (
               <IncremarkContent content={item.content} isFinished={item.isFinished} />
             ) : item.isFinished ? null : (
@@ -369,23 +391,24 @@ const StreamRow = memo(function StreamRow({
     const failure = item.role === "assistant" && item.isFinished ? describeAgentFailure(item.content) : undefined;
     return (
       <article className={`message-row ${item.role}`}>
-        {!isUser ? <div className="avatar"><Bot size={15} /></div> : null}
         <div className="message-body">
           {item.role === "assistant" ? (
-            failure ? (
-              <AgentFailureCard failure={failure} />
-            ) : item.content.trim() ? (
-              <IncremarkContent content={item.content} isFinished={item.isFinished} />
-            ) : item.isFinished ? (
-              null
-            ) : (
-              <ThinkingIndicator />
-            )
+            <>
+              {item.thinking?.trim() ? <ThinkingCard content={item.thinking} isFinished={item.isFinished} /> : null}
+              {failure ? (
+                <AgentFailureCard failure={failure} />
+              ) : item.content.trim() ? (
+                <IncremarkContent content={item.content} isFinished={item.isFinished} />
+              ) : item.isFinished || item.thinking?.trim() ? (
+                null
+              ) : (
+                <ThinkingIndicator />
+              )}
+            </>
           ) : (
             <p>{item.content}</p>
           )}
         </div>
-        {isUser ? <div className="avatar"><User size={15} /></div> : null}
       </article>
     );
   }
@@ -457,6 +480,18 @@ function ThinkingIndicator(): JSX.Element {
         <span />
       </span>
     </div>
+  );
+}
+
+function ThinkingCard({ content, isFinished }: { content: string; isFinished: boolean }): JSX.Element {
+  return (
+    <details className="thinking-card" open>
+      <summary>
+        <span>思考过程</span>
+        <span className="thinking-card-status">{isFinished ? "已完成" : "生成中"}</span>
+      </summary>
+      <pre>{content}</pre>
+    </details>
   );
 }
 

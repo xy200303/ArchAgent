@@ -1,6 +1,6 @@
-import math
 from pathlib import Path
-from PIL import Image, ImageDraw
+
+from PIL import Image, ImageDraw, ImageFilter
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -8,78 +8,79 @@ OUT_DIR = ROOT / "build"
 OUT_DIR.mkdir(exist_ok=True)
 
 SIZE = 1024
-img = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-draw = ImageDraw.Draw(img)
+SCALE = 4
+CANVAS = SIZE * SCALE
 
-outer = (62, 76, SIZE - 62, SIZE - 62)
-inner = (122, 122, SIZE - 122, SIZE - 122)
-bg_top = (9, 35, 53)
-bg_bottom = (16, 78, 92)
-edge = (123, 201, 207, 210)
-panel = (12, 44, 59, 235)
-grid = (93, 143, 155, 95)
-cyan = (68, 217, 217, 255)
-mint = (139, 232, 190, 255)
-gold = (243, 183, 73, 255)
-white = (246, 251, 252, 255)
 
-mask = Image.new("L", (SIZE, SIZE), 0)
-mask_draw = ImageDraw.Draw(mask)
-mask_draw.rounded_rectangle(outer, radius=218, fill=255)
+def point(value):
+    return int(value * SCALE)
 
-gradient = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
-gradient_pixels = gradient.load()
-for y in range(SIZE):
-    t = y / (SIZE - 1)
-    for x in range(SIZE):
-        r = int(bg_top[0] * (1 - t) + bg_bottom[0] * t)
-        g = int(bg_top[1] * (1 - t) + bg_bottom[1] * t)
-        b = int(bg_top[2] * (1 - t) + bg_bottom[2] * t)
-        gradient_pixels[x, y] = (r, g, b, 255)
-img.alpha_composite(Image.composite(gradient, Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0)), mask))
 
-draw.rounded_rectangle(outer, radius=218, outline=edge, width=26)
-draw.rounded_rectangle(inner, radius=164, fill=panel, outline=(67, 126, 144, 180), width=8)
+def box(values):
+    return tuple(point(value) for value in values)
 
-for offset in range(0, 600, 120):
-    x = 216 + offset
-    draw.line((x, 214, x, 790), fill=grid, width=3)
-    y = 214 + offset
-    draw.line((214, y, 810, y), fill=grid, width=3)
 
-bar_specs = [
-    (266, 606, 90, 166, cyan),
-    (388, 512, 90, 260, mint),
-    (510, 432, 90, 340, gold),
-    (632, 344, 90, 428, cyan),
-]
-for x, y, width, height, color in bar_specs:
-    draw.rounded_rectangle((x, y, x + width, y + height), radius=30, fill=color)
-    draw.rounded_rectangle((x + 18, y + 20, x + width - 18, y + 52), radius=16, fill=(255, 255, 255, 52))
+def rounded_mask(bounds, radius):
+    result = Image.new("L", (CANVAS, CANVAS), 0)
+    ImageDraw.Draw(result).rounded_rectangle(box(bounds), radius=point(radius), fill=255)
+    return result
 
-trend = [(250, 500), (367, 468), (482, 382), (606, 410), (740, 292)]
-draw.line(trend, fill=white, width=30, joint="curve")
-draw.line(trend, fill=(68, 217, 217, 255), width=16, joint="curve")
-for x, y in trend:
-    draw.ellipse((x - 30, y - 30, x + 30, y + 30), fill=(11, 43, 55, 255), outline=white, width=10)
-    draw.ellipse((x - 12, y - 12, x + 12, y + 12), fill=gold)
 
-center = (512, 264)
-for angle in (18, 138, 258):
-    rad = math.radians(angle)
-    end = (center[0] + int(math.cos(rad) * 78), center[1] + int(math.sin(rad) * 78))
-    draw.line((center[0], center[1], end[0], end[1]), fill=(139, 232, 190, 190), width=10)
-    draw.ellipse((end[0] - 18, end[1] - 18, end[0] + 18, end[1] + 18), fill=mint)
-draw.ellipse((center[0] - 32, center[1] - 32, center[0] + 32, center[1] + 32), fill=white)
-draw.ellipse((center[0] - 14, center[1] - 14, center[0] + 14, center[1] + 14), fill=cyan)
+def vertical_gradient(top, bottom):
+    image = Image.new("RGBA", (CANVAS, CANVAS))
+    pixels = image.load()
+    for y in range(CANVAS):
+        mix = y / (CANVAS - 1)
+        color = tuple(int(start * (1 - mix) + end * mix) for start, end in zip(top, bottom))
+        for x in range(CANVAS):
+            pixels[x, y] = (*color, 255)
+    return image
 
-draw.arc((682, 198, 798, 314), 305, 55, fill=gold, width=14)
-draw.arc((226, 736, 342, 852), 125, 235, fill=mint, width=14)
 
+canvas = Image.new("RGBA", (CANVAS, CANVAS), (0, 0, 0, 0))
+outer = (52, 52, 972, 972)
+inner = (80, 80, 944, 944)
+
+background = vertical_gradient((35, 27, 95), (10, 91, 126))
+canvas.alpha_composite(Image.composite(background, Image.new("RGBA", (CANVAS, CANVAS)), rounded_mask(outer, 226)))
+
+glow = Image.new("RGBA", (CANVAS, CANVAS), (0, 0, 0, 0))
+glow_draw = ImageDraw.Draw(glow)
+glow_draw.ellipse(box((460, 210, 1060, 810)), fill=(74, 222, 223, 85))
+glow = glow.filter(ImageFilter.GaussianBlur(point(115)))
+canvas.alpha_composite(Image.composite(glow, Image.new("RGBA", (CANVAS, CANVAS)), rounded_mask(outer, 226)))
+
+draw = ImageDraw.Draw(canvas)
+draw.rounded_rectangle(box(outer), radius=point(226), outline=(201, 238, 255, 128), width=point(20))
+draw.rounded_rectangle(box(inner), radius=point(196), outline=(171, 219, 242, 62), width=point(5))
+
+# The room outline forms an architectural "A" from two perspective planes.
+left_face = [(point(x), point(y)) for x, y in ((210, 720), (452, 272), (512, 330), (512, 794))]
+right_face = [(point(x), point(y)) for x, y in ((512, 330), (572, 272), (814, 720), (512, 794))]
+draw.polygon(left_face, fill=(224, 248, 255, 255))
+draw.polygon(right_face, fill=(103, 225, 231, 255))
+
+# Negative-space doorway makes the mark read as a usable room, not a generic letter.
+door = [(point(x), point(y)) for x, y in ((412, 720), (512, 530), (612, 720), (612, 794), (412, 794))]
+draw.polygon(door, fill=(31, 67, 133, 255))
+draw.line([(point(x), point(y)) for x, y in ((377, 564), (512, 440), (647, 564))], fill=(255, 255, 255, 210), width=point(22), joint="curve")
+
+# Small connected nodes signal the design agent without compromising small-size legibility.
+node_line = [(point(x), point(y)) for x, y in ((512, 230), (512, 174), (561, 145))]
+draw.line(node_line, fill=(255, 200, 92, 255), width=point(18), joint="curve")
+for x, y, radius in ((512, 230, 24), (561, 145, 29)):
+    draw.ellipse(box((x - radius, y - radius, x + radius, y + radius)), fill=(255, 200, 92, 255))
+    draw.ellipse(box((x - radius + 9, y - radius + 9, x + radius - 9, y + radius - 9)), fill=(255, 245, 210, 255))
+
+# Deliberate blueprint accents give the icon depth while staying quiet.
+for start, end in (((184, 804), (294, 804)), ((730, 804), (840, 804))):
+    draw.line([(point(x), point(y)) for x, y in (start, end)], fill=(154, 234, 231, 160), width=point(12))
+
+image = canvas.resize((SIZE, SIZE), Image.Resampling.LANCZOS)
 png_path = OUT_DIR / "icon.png"
 ico_path = OUT_DIR / "icon.ico"
-img.save(png_path)
-img.save(ico_path, sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
+image.save(png_path)
+image.save(ico_path, sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
 
 print(f"Generated {png_path}")
 print(f"Generated {ico_path}")

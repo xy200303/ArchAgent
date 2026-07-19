@@ -6,8 +6,7 @@
   position: fixed;
   inset: 0;
   z-index: 120;
-  background: rgb(0 0 0 / 40%);
-  backdrop-filter: blur(2px);
+  background: rgb(0 0 0 / 36%);
 }
 
 .settings-backdrop {
@@ -25,13 +24,13 @@
   height: min(680px, calc(100dvh - 64px));
   max-height: calc(100dvh - 32px);
   grid-template-rows: auto minmax(0, 1fr) auto;
-  gap: var(--fluent-spacing-xl);
+  gap: var(--fluent-spacing-l);
   transform: translate(-50%, -50%);
   border: 1px solid var(--fluent-color-neutral-stroke1);
-  border-radius: var(--fluent-radius-xlarge);
+  border-radius: var(--fluent-radius-large);
   background: var(--fluent-color-neutral-background1);
   padding: var(--fluent-spacing-xxl);
-  box-shadow: var(--fluent-shadow-64);
+  box-shadow: none;
 }
 
 .settings-panel header,
@@ -67,9 +66,9 @@
   place-items: center;
   width: 34px;
   height: 34px;
-  border: 1px solid var(--fluent-color-neutral-stroke1);
+  border: 0;
   border-radius: var(--fluent-radius-medium);
-  background: var(--fluent-color-neutral-background1);
+  background: transparent;
   color: var(--fluent-color-neutral-foreground2);
   cursor: pointer;
   flex: 0 0 auto;
@@ -87,27 +86,22 @@
   display: grid;
   min-height: 0;
   flex: 1;
-  grid-template-columns: 140px minmax(0, 1fr);
-  gap: var(--fluent-spacing-l);
+  grid-template-columns: 156px minmax(0, 1fr);
+  gap: var(--fluent-spacing-xl);
 }
 
 .settings-scroll {
   min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--fluent-color-neutral-stroke1);
-  border-radius: var(--fluent-radius-large);
-  background: var(--fluent-color-neutral-background1);
 }
 
 .tabs-list {
   display: flex;
   flex-direction: column;
-  gap: var(--fluent-spacing-xs);
+  gap: 2px;
   min-height: 0;
-  border: 1px solid var(--fluent-color-neutral-stroke1);
-  border-radius: var(--fluent-radius-large);
-  background: var(--fluent-color-neutral-background2);
-  padding: var(--fluent-spacing-s);
+  border-right: 1px solid var(--fluent-color-neutral-stroke2);
+  padding: 0 var(--fluent-spacing-xl) 0 0;
 }
 
 .tabs-trigger {
@@ -117,7 +111,7 @@
   min-height: 36px;
   border: 0;
   border-left: 3px solid transparent;
-  border-radius: var(--fluent-radius-medium);
+  border-radius: var(--fluent-radius-small);
   background: transparent;
   color: var(--fluent-color-neutral-foreground3);
   cursor: pointer;
@@ -139,11 +133,16 @@
 
 .settings-form {
   display: grid;
+  align-content: start;
   gap: var(--fluent-spacing-xl);
-  padding: 2px var(--fluent-spacing-l) var(--fluent-spacing-m) 2px;
+  padding: 2px 2px var(--fluent-spacing-m);
 }
 
 .settings-form-model {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.settings-form-3d {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
@@ -220,7 +219,8 @@
 .modal-panel input:focus,
 .modal-panel select:focus {
   border-color: var(--fluent-color-brand-stroke);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--fluent-color-brand-stroke) 30%, transparent);
+  outline: 2px solid color-mix(in srgb, var(--fluent-color-brand-stroke) 30%, transparent);
+  outline-offset: 1px;
 }
 
 .switch-row {
@@ -228,11 +228,10 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--fluent-spacing-l);
-  min-height: 48px;
-  border: 1px solid var(--fluent-color-neutral-stroke1);
-  border-radius: var(--fluent-radius-large);
-  background: var(--fluent-color-neutral-background2);
-  padding: var(--fluent-spacing-s) var(--fluent-spacing-l);
+  min-height: 44px;
+  border-top: 1px solid var(--fluent-color-neutral-stroke2);
+  border-bottom: 1px solid var(--fluent-color-neutral-stroke2);
+  padding: var(--fluent-spacing-s) 0;
   color: var(--fluent-color-neutral-foreground1);
   font-size: 13px;
 }
@@ -262,7 +261,7 @@
   height: 16px;
   border-radius: var(--fluent-radius-circle);
   background: var(--fluent-color-neutral-background1);
-  box-shadow: var(--fluent-shadow-2);
+  box-shadow: none;
   transform: translateX(2px);
   transition: transform 160ms ease;
 }
@@ -273,7 +272,7 @@
 
 .settings-panel footer {
   border-top: 1px solid var(--fluent-color-neutral-stroke2);
-  padding-top: var(--fluent-spacing-l);
+  padding-top: var(--fluent-spacing-xl);
 }
 
 .settings-env-path {
@@ -313,6 +312,9 @@
   .tabs-list {
     flex-direction: row;
     width: 100%;
+    border-right: 0;
+    border-bottom: 1px solid var(--fluent-color-neutral-stroke2);
+    padding: 0 0 var(--fluent-spacing-s);
   }
 
   .tabs-trigger {
@@ -330,6 +332,10 @@
   }
 
   .settings-form-model {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-form-3d {
     grid-template-columns: 1fr;
   }
 }

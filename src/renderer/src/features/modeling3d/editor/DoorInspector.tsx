@@ -3,7 +3,7 @@ import { DoorOpen, Save, Trash2 } from "lucide-react";
 import { useEffect, useState, type FormEvent, type JSX } from "react";
 import type { SceneCommandInput, SceneDoorNode, SceneWallNode, WallMaterialPreset } from "../../../../../shared/modeling3d/sceneContracts";
 import { TooltipButton } from "../../../shared/TooltipButton";
-import { SceneToolbar } from "./SceneToolbar";
+import { SidePanelHeader } from "../../../shared/SidePanelHeader";
 
 type DoorDraft = { name: string; wallId: string; offset: string; width: string; height: string; sillHeight: string; materialPreset: WallMaterialPreset };
 const MATERIALS: WallMaterialPreset[] = ["wood", "metal", "glass", "white"];
@@ -26,7 +26,7 @@ export function DoorInspector({ door, walls, onCreate, onUpdate, onDelete, onClo
     else onCreate({ type: "door.create", wallId: draft.wallId, ...payload });
   }
   return <aside className="scene-inspector" aria-label={door ? "门属性" : "新建门"}>
-    <SceneToolbar title={door ? "门属性" : "新建门"} icon={DoorOpen} className="scene-inspector-heading"><TooltipButton label="关闭属性面板" className="scene-inspector-close" onClick={onClose}><span aria-hidden="true">×</span></TooltipButton></SceneToolbar>
+    <SidePanelHeader title={door ? "门属性" : "新建门"} icon={DoorOpen} actions={<TooltipButton label="关闭属性面板" className="scene-inspector-close" onClick={onClose}><span aria-hidden="true">×</span></TooltipButton>} />
     <form className="wall-property-form" onSubmit={submit}>
       <label><span>名称</span><input value={draft.name} onChange={(event) => update("name", event.target.value)} required /></label>
       <label><span>宿主墙体</span><select value={draft.wallId} disabled={Boolean(door)} onChange={(event) => update("wallId", event.target.value)}>{walls.map((wall) => <option key={wall.id} value={wall.id}>{wall.name}</option>)}</select></label>

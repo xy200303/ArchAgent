@@ -1,18 +1,21 @@
 /** Runtime, model-provider, appearance, and output settings dialog. */
 import { useState, type JSX } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
+import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as ScrollArea from "@radix-ui/react-scroll-area";
 import * as Select from "@radix-ui/react-select";
 import * as Switch from "@radix-ui/react-switch";
 import * as Tabs from "@radix-ui/react-tabs";
 import {
   Bot,
+  Box,
   Check,
   Image,
   Loader2,
   Moon,
   Palette,
   Play,
+  RotateCcw,
   Settings,
   SlidersHorizontal,
   Sun,
@@ -85,15 +88,25 @@ export function SettingsPanel({
   const [imageRequestTimeoutSeconds, setImageRequestTimeoutSeconds] = useState(settings?.tokenHubImage.requestTimeoutSeconds || 300);
   const [imageEndpoint, setImageEndpoint] = useState(settings?.tokenHubImage.endpoint || "https://tokenhub.tencentmaas.com/v1/api/image/lite");
   const [imageModel, setImageModel] = useState(settings?.tokenHubImage.model || "hy-image-v3.0");
+  const [threeDSubmitEndpoint, setThreeDSubmitEndpoint] = useState(settings?.tokenHub3d.submitEndpoint || "https://tokenhub.tencentmaas.com/v1/api/3d/submit");
+  const [threeDQueryEndpoint, setThreeDQueryEndpoint] = useState(settings?.tokenHub3d.queryEndpoint || "https://tokenhub.tencentmaas.com/v1/api/3d/query");
+  const [threeDModel, setThreeDModel] = useState(settings?.tokenHub3d.model || "hy-3d-3.0");
+  const [threeDFaceCount, setThreeDFaceCount] = useState(settings?.tokenHub3d.faceCount || 50000);
+  const [threeDSubmitTimeoutSeconds, setThreeDSubmitTimeoutSeconds] = useState(settings?.tokenHub3d.submitTimeoutSeconds || 120);
+  const [threeDPollIntervalSeconds, setThreeDPollIntervalSeconds] = useState(settings?.tokenHub3d.pollIntervalSeconds || 3);
+  const [threeDJobTimeoutSeconds, setThreeDJobTimeoutSeconds] = useState(settings?.tokenHub3d.jobTimeoutSeconds || 900);
   const [contextWindowTokens, setContextWindowTokens] = useState(
     settings ? clampContextWindowTokens(settings.openai.contextWindowTokens) : CONTEXT_WINDOW_TOKENS_DEFAULT
   );
   const [maxTokens, setMaxTokens] = useState(settings?.openai.maxOutputTokens || 16000);
   const [execBashEnabled, setExecBashEnabled] = useState(settings?.agent.execBashEnabled ?? true);
+  const [scriptTimeoutSeconds, setScriptTimeoutSeconds] = useState(settings?.agent.scriptTimeoutSeconds || 60);
   const [apiKey, setApiKey] = useState("");
   const [runtimeCheck, setRuntimeCheck] = useState<RuntimeCheckResult | undefined>();
   const [checkingRuntime, setCheckingRuntime] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetConfirmationOpen, setResetConfirmationOpen] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">(settings?.theme || "light");
 
   async function save(): Promise<void> {
@@ -116,12 +129,22 @@ export function SettingsPanel({
           model: imageModel,
           requestTimeoutSeconds: imageRequestTimeoutSeconds,
         },
+        tokenHub3d: {
+          submitEndpoint: threeDSubmitEndpoint,
+          queryEndpoint: threeDQueryEndpoint,
+          model: threeDModel,
+          faceCount: threeDFaceCount,
+          submitTimeoutSeconds: threeDSubmitTimeoutSeconds,
+          pollIntervalSeconds: threeDPollIntervalSeconds,
+          jobTimeoutSeconds: threeDJobTimeoutSeconds
+        },
         output: {
           autoPdfExport,
           libreOfficePath
         },
         agent: {
-          execBashEnabled
+          execBashEnabled,
+          scriptTimeoutSeconds
         }
       });
       onSaved(next);
@@ -141,6 +164,19 @@ export function SettingsPanel({
       onError(`运行时自检失败：${getErrorMessage(error)}`);
     } finally {
       setCheckingRuntime(false);
+    }
+  }
+
+  async function resetToDefaults(): Promise<void> {
+    setResetting(true);
+    try {
+      const next = await api.settings.reset();
+      onSaved(next);
+      onClose();
+    } catch (error) {
+      onError(`恢复默认配置失败：${getErrorMessage(error)}`);
+    } finally {
+      setResetting(false);
     }
   }
 
@@ -173,6 +209,10 @@ export function SettingsPanel({
               <Tabs.Trigger className="tabs-trigger" value="model">
                 <Bot size={16} />
                 模型
+              </Tabs.Trigger>
+              <Tabs.Trigger className="tabs-trigger" value="3d">
+                <Box size={16} />
+                3D
               </Tabs.Trigger>
               <Tabs.Trigger className="tabs-trigger" value="appearance">
                 <Palette size={16} />
@@ -235,6 +275,37 @@ export function SettingsPanel({
                       <option value="high">high</option>
                       <option value="xhigh">xhigh</option>
                     </select>
+                  </label>
+                </Tabs.Content>
+
+                <Tabs.Content className="settings-form settings-form-3d" value="3d">
+                  <label>
+                    TokenHub 3D 提交端点
+                    <input value={threeDSubmitEndpoint} onChange={(event) => setThreeDSubmitEndpoint(event.target.value)} />
+                  </label>
+                  <label>
+                    TokenHub 3D 查询端点
+                    <input value={threeDQueryEndpoint} onChange={(event) => setThreeDQueryEndpoint(event.target.value)} />
+                  </label>
+                  <label>
+                    TokenHub 3D 模型
+                    <input value={threeDModel} onChange={(event) => setThreeDModel(event.target.value)} placeholder="hy-3d-3.0" />
+                  </label>
+                  <label>
+                    普通细节面数
+                    <input type="number" min={3000} max={150000} step={1000} value={threeDFaceCount} onChange={(event) => setThreeDFaceCount(Number(event.target.value))} />
+                  </label>
+                  <label>
+                    提交请求超时（秒）
+                    <input type="number" min={1} step={1} value={threeDSubmitTimeoutSeconds} onChange={(event) => setThreeDSubmitTimeoutSeconds(Number(event.target.value))} />
+                  </label>
+                  <label>
+                    任务轮询间隔（秒）
+                    <input type="number" min={1} step={1} value={threeDPollIntervalSeconds} onChange={(event) => setThreeDPollIntervalSeconds(Number(event.target.value))} />
+                  </label>
+                  <label>
+                    任务最大等待（秒）
+                    <input type="number" min={1} step={1} value={threeDJobTimeoutSeconds} onChange={(event) => setThreeDJobTimeoutSeconds(Number(event.target.value))} />
                   </label>
                 </Tabs.Content>
 
@@ -318,6 +389,17 @@ export function SettingsPanel({
                   <SwitchRow checked={execBashEnabled} onCheckedChange={setExecBashEnabled}>
                     允许 Agent 使用 exec_bash 执行命令
                   </SwitchRow>
+                  <label>
+                    外部脚本最长执行时间（秒）
+                    <input
+                      type="number"
+                      min={1}
+                      max={600}
+                      step={1}
+                      value={scriptTimeoutSeconds}
+                      onChange={(event) => setScriptTimeoutSeconds(Number(event.target.value))}
+                    />
+                  </label>
                 </Tabs.Content>
               </ScrollArea.Viewport>
               <ScrollArea.Scrollbar className="scrollbar" orientation="vertical">
@@ -330,6 +412,10 @@ export function SettingsPanel({
               {settings?.runtime.envFilePath || ".env.local"}
             </span>
             <div className="settings-footer-actions">
+              <button type="button" className="secondary-action" onClick={() => setResetConfirmationOpen(true)} disabled={saving || resetting}>
+                <RotateCcw size={14} />
+                恢复默认
+              </button>
               <button type="button" className="secondary-action" onClick={onClose} disabled={saving}>
                 取消
               </button>
@@ -339,6 +425,26 @@ export function SettingsPanel({
               </button>
             </div>
           </footer>
+          <AlertDialog.Root open={resetConfirmationOpen} onOpenChange={(open) => { if (!resetting) setResetConfirmationOpen(open); }}>
+            <AlertDialog.Portal>
+              <AlertDialog.Overlay className="modal-backdrop" />
+              <AlertDialog.Content className="modal-panel delete-panel">
+                <AlertDialog.Title>恢复默认配置？</AlertDialog.Title>
+                <AlertDialog.Description>将覆盖当前 `.env.local` 中的所有设置，并清空 API Key。此操作无法撤销。</AlertDialog.Description>
+                <footer>
+                  <AlertDialog.Cancel asChild>
+                    <button type="button" className="secondary-action" disabled={resetting}>取消</button>
+                  </AlertDialog.Cancel>
+                  <AlertDialog.Action asChild>
+                    <button type="button" className="danger-action" disabled={resetting} onClick={(event) => { event.preventDefault(); void resetToDefaults(); }}>
+                      {resetting ? <Loader2 size={14} className="spin" /> : <RotateCcw size={14} />}
+                      恢复默认
+                    </button>
+                  </AlertDialog.Action>
+                </footer>
+              </AlertDialog.Content>
+            </AlertDialog.Portal>
+          </AlertDialog.Root>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

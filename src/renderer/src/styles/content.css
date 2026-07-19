@@ -55,6 +55,7 @@
 
 /* Spatial 3D editor */
 .spatial-editor {
+  --scene-toolbar-height: 48px;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -155,25 +156,10 @@
 .scene-toolbar {
   display: flex;
   align-items: center;
-  min-height: 48px;
+  min-height: var(--scene-toolbar-height);
   border-bottom: 1px solid var(--fluent-color-neutral-stroke2);
   background: var(--fluent-color-neutral-background2);
   padding: 0 var(--fluent-spacing-l);
-}
-
-.scene-toolbar-title {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-  gap: var(--fluent-spacing-s);
-  color: var(--fluent-color-brand-foreground1);
-}
-
-.scene-toolbar h2 {
-  margin: 0;
-  color: var(--fluent-color-neutral-foreground1);
-  font-size: 13px;
-  font-weight: 700;
 }
 
 .scene-toolbar-actions {
@@ -183,25 +169,15 @@
   margin-left: auto;
 }
 
-.scene-create-wall-action {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 34px;
-  margin-left: var(--fluent-spacing-s);
-  white-space: nowrap;
-}
-
 .scene-toolbar-viewport {
   display: inline-flex;
   align-items: center;
-  gap: var(--fluent-spacing-s);
+  gap: 4px;
 }
 
 .scene-toolbar-divider {
-  width: 1px;
-  height: 20px;
-  background: var(--fluent-color-neutral-stroke2);
+  width: 8px;
+  height: 1px;
   margin: 0 2px;
 }
 
@@ -225,9 +201,9 @@
   place-items: center;
   width: 34px;
   height: 34px;
-  border: 1px solid var(--fluent-color-neutral-stroke1);
-  border-radius: var(--fluent-radius-medium);
-  background: var(--fluent-color-neutral-background1);
+  border: 0;
+  border-radius: var(--fluent-radius-small);
+  background: transparent;
   color: var(--fluent-color-neutral-foreground2);
   cursor: pointer;
 }
@@ -238,7 +214,6 @@
 }
 
 .scene-tool-button.active {
-  border-color: var(--fluent-color-brand-stroke);
   background: var(--fluent-color-neutral-background-selected);
   color: var(--fluent-color-brand-foreground1);
 }
@@ -254,9 +229,9 @@
   gap: 6px;
   height: 34px;
   min-width: 132px;
-  border: 1px solid var(--fluent-color-neutral-stroke1);
-  border-radius: var(--fluent-radius-medium);
-  background: var(--fluent-color-neutral-background1);
+  border: 0;
+  border-radius: var(--fluent-radius-small);
+  background: transparent;
   color: var(--fluent-color-neutral-foreground1);
   cursor: pointer;
   font-size: 12px;
@@ -266,7 +241,6 @@
 
 .scene-camera-trigger:hover,
 .scene-camera-trigger[data-state="open"] {
-  border-color: var(--fluent-color-brand-stroke);
   background: var(--fluent-color-neutral-background-hover);
 }
 
@@ -359,6 +333,11 @@
   flex-direction: column;
   overflow: hidden;
   border-right: 1px solid var(--fluent-color-neutral-stroke2);
+}
+
+.scene-editor-layout > .workspace-side-panel,
+.scene-editor-layout > .scene-inspector {
+  margin-top: calc(var(--scene-toolbar-height) * -1);
 }
 
 .scene-navigation-panel > .scene-tree-panel {
@@ -674,10 +653,6 @@
     flex-wrap: wrap;
     align-content: center;
     padding: var(--fluent-spacing-s) var(--fluent-spacing-m);
-  }
-
-  .scene-toolbar-title {
-    margin-right: auto;
   }
 
   .scene-toolbar-viewport {

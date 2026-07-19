@@ -3,13 +3,14 @@ import type { JSX } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   Activity,
-  ChevronRight,
   Files,
   FolderOpen,
   FolderPlus,
+  Github,
   Library,
   Menu,
-  Plus,
+  Network,
+  PackageOpen,
   Settings,
   XCircle
 } from "lucide-react";
@@ -19,26 +20,28 @@ import { TooltipButton } from "../shared/TooltipButton";
 export function ActivityBar({
   metadata,
   hasProject,
-  onCreateConversation,
   onOpenProject,
   onCreateProject,
   onCloseProject,
-  onOpenArtifacts,
+  onRevealProject,
   onOpenSettings,
   activeSection,
   onOpenExplorer,
+  onOpenResources,
+  onOpenSceneNavigation,
   onOpenComponentLibrary
 }: {
   metadata: AppMetadata;
   hasProject: boolean;
-  onCreateConversation: () => void;
   onOpenProject: () => void;
   onCreateProject: () => void;
   onCloseProject: () => void;
-  onOpenArtifacts: () => void;
+  onRevealProject: () => void;
   onOpenSettings: () => void;
-  activeSection?: "explorer" | "components";
+  activeSection?: "explorer" | "resources" | "scene" | "components";
   onOpenExplorer: () => void;
+  onOpenResources: () => void;
+  onOpenSceneNavigation: () => void;
   onOpenComponentLibrary: () => void;
 }): JSX.Element {
   return (
@@ -46,22 +49,29 @@ export function ActivityBar({
       <WorkbenchMenu
         label={metadata.displayName}
         hasProject={hasProject}
-        onCreateConversation={onCreateConversation}
         onOpenProject={onOpenProject}
         onCreateProject={onCreateProject}
         onCloseProject={onCloseProject}
-        onOpenArtifacts={onOpenArtifacts}
-        onOpenSettings={onOpenSettings}
+        onRevealProject={onRevealProject}
       />
       <nav className="activity-nav" aria-label="工作台导航">
+        <TooltipButton label="场景节点" className={activeSection === "scene" ? "activity-button active" : "activity-button"} onClick={onOpenSceneNavigation}>
+          <Network size={19} strokeWidth={1.8} />
+        </TooltipButton>
         <TooltipButton label="资源管理器" className={activeSection === "explorer" ? "activity-button active" : "activity-button"} onClick={onOpenExplorer}>
           <Files size={20} />
+        </TooltipButton>
+        <TooltipButton label="当前资源" className={activeSection === "resources" ? "activity-button active" : "activity-button"} onClick={onOpenResources}>
+          <PackageOpen size={19} strokeWidth={1.8} />
         </TooltipButton>
         <TooltipButton label="构件库" className={activeSection === "components" ? "activity-button active" : "activity-button"} onClick={onOpenComponentLibrary}>
           <Library size={18} strokeWidth={1.8} />
         </TooltipButton>
       </nav>
       <div className="activity-bottom">
+        <TooltipButton label="在 GitHub 上查看 ArchAgent" className="activity-button" onClick={openArchAgentGitHub}>
+          <Github size={20} />
+        </TooltipButton>
         <TooltipButton label="运行设置" className="activity-button" onClick={onOpenSettings}>
           <Settings size={20} />
         </TooltipButton>
@@ -70,24 +80,24 @@ export function ActivityBar({
   );
 }
 
+function openArchAgentGitHub(): void {
+  void window.archAgent?.app.openArchAgentGitHub();
+}
+
 function WorkbenchMenu({
   label,
   hasProject,
-  onCreateConversation,
   onOpenProject,
   onCreateProject,
   onCloseProject,
-  onOpenArtifacts,
-  onOpenSettings
+  onRevealProject
 }: {
   label: string;
   hasProject: boolean;
-  onCreateConversation: () => void;
   onOpenProject: () => void;
   onCreateProject: () => void;
   onCloseProject: () => void;
-  onOpenArtifacts: () => void;
-  onOpenSettings: () => void;
+  onRevealProject: () => void;
 }): JSX.Element {
   return (
     <DropdownMenu.Root>
@@ -103,80 +113,27 @@ function WorkbenchMenu({
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content className="dropdown-content workbench-menu-content" side="right" align="start" sideOffset={10}>
-          <DropdownMenu.Sub>
-            <DropdownMenu.SubTrigger className="dropdown-item workbench-menu-trigger">
-              文件
-              <ChevronRight size={14} />
-            </DropdownMenu.SubTrigger>
-            <DropdownMenu.Portal>
-              <DropdownMenu.SubContent className="dropdown-content workbench-submenu" sideOffset={8} alignOffset={-4}>
-                <DropdownMenu.Item className="dropdown-item" onSelect={onOpenProject}>
-                  <FolderOpen size={14} />
-                  打开项目…
-                </DropdownMenu.Item>
-                <DropdownMenu.Item className="dropdown-item" onSelect={onCreateProject}>
-                  <FolderPlus size={14} />
-                  新建项目…
-                </DropdownMenu.Item>
-                {hasProject ? (
-                  <DropdownMenu.Item className="dropdown-item" onSelect={onCloseProject}>
-                    <XCircle size={14} />
-                    关闭项目
-                  </DropdownMenu.Item>
-                ) : null}
-                <DropdownMenu.Item className="dropdown-item" onSelect={onCreateConversation}>
-                  <Plus size={14} />
-                  新建设计会话
-                </DropdownMenu.Item>
-                <DropdownMenu.Item className="dropdown-item" onSelect={onOpenArtifacts}>
-                  <FolderOpen size={14} />
-                  设计产物
-                </DropdownMenu.Item>
-              </DropdownMenu.SubContent>
-            </DropdownMenu.Portal>
-          </DropdownMenu.Sub>
-          <DropdownMenu.Sub>
-            <DropdownMenu.SubTrigger className="dropdown-item workbench-menu-trigger">
-              运行
-              <ChevronRight size={14} />
-            </DropdownMenu.SubTrigger>
-            <DropdownMenu.Portal>
-              <DropdownMenu.SubContent className="dropdown-content workbench-submenu" sideOffset={8} alignOffset={-4}>
-                <DropdownMenu.Item className="dropdown-item" onSelect={onOpenSettings}>
-                  <Settings size={14} />
-                  运行设置
-                </DropdownMenu.Item>
-              </DropdownMenu.SubContent>
-            </DropdownMenu.Portal>
-          </DropdownMenu.Sub>
-          <DropdownMenu.Sub>
-            <DropdownMenu.SubTrigger className="dropdown-item workbench-menu-trigger">
-              查看
-              <ChevronRight size={14} />
-            </DropdownMenu.SubTrigger>
-            <DropdownMenu.Portal>
-              <DropdownMenu.SubContent className="dropdown-content workbench-submenu" sideOffset={8} alignOffset={-4}>
-                <DropdownMenu.Item className="dropdown-item" onSelect={onOpenArtifacts}>
-                  <Files size={14} />
-                  查看文件资源
-                </DropdownMenu.Item>
-              </DropdownMenu.SubContent>
-            </DropdownMenu.Portal>
-          </DropdownMenu.Sub>
-          <DropdownMenu.Sub>
-            <DropdownMenu.SubTrigger className="dropdown-item workbench-menu-trigger">
-              帮助
-              <ChevronRight size={14} />
-            </DropdownMenu.SubTrigger>
-            <DropdownMenu.Portal>
-              <DropdownMenu.SubContent className="dropdown-content workbench-submenu" sideOffset={8} alignOffset={-4}>
-                <DropdownMenu.Item className="dropdown-item" onSelect={onOpenSettings}>
-                  <Settings size={14} />
-                  查看配置
-                </DropdownMenu.Item>
-              </DropdownMenu.SubContent>
-            </DropdownMenu.Portal>
-          </DropdownMenu.Sub>
+          <DropdownMenu.Item className="dropdown-item" onSelect={onOpenProject}>
+            <FolderOpen size={14} />
+            打开项目…
+          </DropdownMenu.Item>
+          <DropdownMenu.Item className="dropdown-item" onSelect={onCreateProject}>
+            <FolderPlus size={14} />
+            新建项目…
+          </DropdownMenu.Item>
+          {hasProject ? (
+            <>
+              <DropdownMenu.Separator className="workbench-menu-separator" />
+              <DropdownMenu.Item className="dropdown-item" onSelect={onRevealProject}>
+                <FolderOpen size={14} />
+                在资源管理器中显示
+              </DropdownMenu.Item>
+              <DropdownMenu.Item className="dropdown-item" onSelect={onCloseProject}>
+                <XCircle size={14} />
+                关闭项目
+              </DropdownMenu.Item>
+            </>
+          ) : null}
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>

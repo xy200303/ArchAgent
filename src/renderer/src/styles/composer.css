@@ -40,7 +40,8 @@
   background: transparent;
   color: var(--color-ink);
   padding: 4px 2px;
-  line-height: 1.6;
+  font-size: 14px;
+  line-height: 1.55;
   resize: none;
   field-sizing: content;
 }

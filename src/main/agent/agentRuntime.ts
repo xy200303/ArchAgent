@@ -9,6 +9,7 @@ import type { ReconstructionWorkflow } from "../../shared/types";
 import { createPiAgentBridge } from "./piAgentBridge";
 
 export type MessageStreamItem = Extract<StreamItem, { kind: "message" }>;
+export type ScenePreviewView = "current" | "perspective" | "top" | "front" | "right" | "left" | "back" | "bottom";
 
 export interface AgentRuntimeTurnInput {
   sessionId: string;
@@ -48,6 +49,7 @@ export interface AgentRuntimeHost {
   getSessionResources(sessionId: string): SessionResource[];
   getBundledPythonRuntime(): BundledPythonRuntime | undefined;
   getSceneSnapshot(): SceneSnapshot;
+  captureScenePreview(view?: ScenePreviewView): Promise<string>;
   executeSceneCommand(command: SceneCommandInput): SceneCommandResult;
   placeComponentLibraryItem(input: {
     componentId: string;
@@ -60,6 +62,7 @@ export interface AgentRuntimeHost {
   }): SceneCommandResult;
   createReconstructionWorkflow(sessionId: string, input: CreateReconstructionWorkflowInput): ReconstructionWorkflow;
   createArtifact(sessionId: string, filePath: string, parentResourceIds?: string[]): ArtifactSummary;
+  sendArtifact(sessionId: string, resourceId: string): ArtifactSummary;
 }
 
 export function createAgentRuntime(host: AgentRuntimeHost): AgentRuntime {

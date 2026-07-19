@@ -7,7 +7,6 @@ import { ActivityBar } from "./ActivityBar";
 import {
   applyRendererEvent,
   setArtifacts,
-  setArtifactsOpen,
   setCurrentProject,
   setCurrentSession,
   setRecentProjects,
@@ -19,8 +18,7 @@ import {
   type RootState
 } from "./store";
 import { FALLBACK_APP_METADATA } from "../../../shared/appMetadata";
-import type { AppMetadata, ArtifactSummary, ArchAgentApi, ChatSession } from "../../../shared/types";
-import { ArtifactHistoryDialog } from "../features/chat/ArtifactHistoryDialog";
+import type { AppMetadata, ArtifactKind, ArtifactSummary, ArchAgentApi, ChatSession, WorkspaceFileItem } from "../../../shared/types";
 import { ChatWorkspace } from "../features/chat/ChatWorkspace";
 import {
   EditorHeader,
@@ -32,6 +30,8 @@ import type { BuiltInComponentId, ComponentLibraryRequest } from "../features/mo
 import { useResizableChatPanel } from "../features/layout/useResizableChatPanel";
 import { ProjectPicker } from "../features/projects/ProjectPicker";
 import { SettingsPanel } from "../features/settings/SettingsPanel";
+import { ResourceExplorer } from "../features/workspace/ResourceExplorer";
+import { CurrentResourcesPanel } from "../features/workspace/CurrentResourcesPanel";
 import { getErrorMessage, resolveArchAgentApi } from "../platform/bridge";
 import { getInitialProjectFromUrl } from "../shared/presentation";
 
@@ -40,16 +40,20 @@ export function App(): JSX.Element {
   const {
     settings,
     settingsOpen,
-    artifactsOpen,
+    artifacts,
     currentProject,
-    recentProjects
+    recentProjects,
+    sessions,
+    currentSessionId
   } = useSelector(
     (state: RootState) => ({
       settings: state.chat.settings,
       settingsOpen: state.chat.settingsOpen,
-      artifactsOpen: state.chat.artifactsOpen,
+      artifacts: state.chat.artifacts,
       currentProject: state.chat.currentProject,
-      recentProjects: state.chat.recentProjects
+      recentProjects: state.chat.recentProjects,
+      sessions: state.chat.sessions,
+      currentSessionId: state.chat.currentSessionId
     }),
     shallowEqual
   );
@@ -58,12 +62,14 @@ export function App(): JSX.Element {
   const [previewDirty, setPreviewDirty] = useState(false);
   const [mdEditMode, setMdEditMode] = useState(false);
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | undefined>();
-  const [activeSidePanel, setActiveSidePanel] = useState<"explorer" | "components" | undefined>("explorer");
+  const [activeSidePanel, setActiveSidePanel] = useState<"explorer" | "resources" | "scene" | "components" | undefined>("explorer");
+  const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFileItem[]>([]);
   const [componentRequest, setComponentRequest] = useState<ComponentLibraryRequest>();
   const workbenchRef = useRef<HTMLDivElement>(null);
   const chatPanelResize = useResizableChatPanel({
     rootRef: workbenchRef,
-    componentLibraryOpen: activeSidePanel === "components"
+    componentLibraryOpen: activeSidePanel === "components",
+    workspaceExplorerOpen: activeSidePanel === "explorer" || activeSidePanel === "resources"
   });
 
   const [appError, setAppError] = useState("");
@@ -92,6 +98,60 @@ export function App(): JSX.Element {
     document.title = currentProject ? `${currentProject.name} - ${metadata.title}` : metadata.title;
   }, [metadata.title, currentProject?.name]);
   const api = bridge.api;
+
+  const refreshWorkspaceFiles = useCallback(async (): Promise<void> => {
+    if (!api || !currentProject) {
+      setWorkspaceFiles([]);
+      return;
+    }
+    try {
+      setWorkspaceFiles(await api.workspace.listFiles({ projectPath: currentProject.path }));
+    } catch (error) {
+      setAppError(`读取项目文件失败：${getErrorMessage(error)}`);
+    }
+  }, [api, currentProject]);
+
+  const previewWorkspaceFile = useCallback(async (file: WorkspaceFileItem): Promise<void> => {
+    if (!api || file.kind !== "file") return;
+    const kind = getWorkspaceArtifactKind(file.name);
+    setSelectedArtifactId(undefined);
+    setPreviewError("");
+    try {
+      if (isWorkspaceImage(file.name)) {
+        const binary = await api.file.readBinary({ path: file.path });
+        setPreview({
+          name: file.name,
+          kind,
+          mode: "image",
+          path: file.path,
+          size: binary.size,
+          dataUrl: `data:${binary.mimeType || "application/octet-stream"};base64,${binary.dataBase64}`,
+          mimeType: binary.mimeType
+        });
+        return;
+      }
+      if (isWorkspaceTextFile(file.name)) {
+        const text = await api.file.readText({ path: file.path });
+        setPreview({ name: file.name, kind, mode: "text", path: file.path, size: text.size, text: text.content });
+        return;
+      }
+      setPreview({
+        name: file.name,
+        kind,
+        mode: "unsupported",
+        path: file.path,
+        size: file.size,
+        summary: "该文件暂不支持内联预览"
+      });
+    } catch (error) {
+      setPreview(undefined);
+      setPreviewError(getErrorMessage(error));
+    }
+  }, [api]);
+
+  useEffect(() => {
+    void refreshWorkspaceFiles();
+  }, [refreshWorkspaceFiles]);
 
   useEffect(() => {
     if (!api || !currentProject) return;
@@ -135,6 +195,13 @@ export function App(): JSX.Element {
     document.documentElement.setAttribute("data-theme", settings.theme);
     localStorage.setItem("arch-agent-theme", settings.theme);
   }, [settings?.theme]);
+
+  useEffect(() => {
+    if (!currentProject || !currentSessionId) return;
+    const session = sessions.find((item) => item.id === currentSessionId);
+    if (!session || normalizeProjectPath(session.projectPath) !== normalizeProjectPath(currentProject.path)) return;
+    localStorage.setItem(getLastSessionStorageKey(currentProject.path), currentSessionId);
+  }, [currentProject?.path, currentSessionId, sessions]);
 
   useEffect(() => {
     if (!api) return;
@@ -208,13 +275,6 @@ export function App(): JSX.Element {
     }
   }, [api]);
 
-  async function openArtifactHistory(): Promise<void> {
-    if (!api || !currentProject) return;
-    const sessions = await api.session.list(currentProject.path);
-    dispatch(setArtifacts(await listProjectArtifacts(api, sessions)));
-    dispatch(setArtifactsOpen(true));
-  }
-
   const savePreviewContent = useCallback(async (path: string, content: string): Promise<void> => {
     if (!api) return;
     await api.file.writeText({ path, content });
@@ -260,24 +320,46 @@ export function App(): JSX.Element {
 
   return (
     <Tooltip.Provider delayDuration={350}>
-      <div ref={workbenchRef} className="workbench-shell">
+      <div ref={workbenchRef} className={activeSidePanel === "explorer" || activeSidePanel === "resources" ? "workbench-shell has-resource-explorer" : "workbench-shell"}>
         <ActivityBar
           metadata={metadata}
           hasProject={Boolean(currentProject)}
-          onCreateConversation={createConversation}
           onOpenProject={() => void openProject()}
           onCreateProject={() => void createProject()}
           onCloseProject={() => dispatch(setCurrentProject(undefined))}
-          onOpenArtifacts={() => void openArtifactHistory()}
+          onRevealProject={() => void api.file.reveal(currentProject.path).catch((error: unknown) => handleAppError(`打开项目文件夹失败：${getErrorMessage(error)}`))}
           onOpenSettings={() => dispatch(setSettingsOpen(true))}
           activeSection={activeSidePanel}
           onOpenExplorer={() =>
             setActiveSidePanel((current) => (current === "explorer" ? undefined : "explorer"))
           }
+          onOpenResources={() =>
+            setActiveSidePanel((current) => (current === "resources" ? undefined : "resources"))
+          }
+          onOpenSceneNavigation={() =>
+            setActiveSidePanel((current) => (current === "scene" ? undefined : "scene"))
+          }
           onOpenComponentLibrary={() =>
             setActiveSidePanel((current) => (current === "components" ? undefined : "components"))
           }
         />
+        {activeSidePanel === "explorer" ? (
+          <ResourceExplorer
+            api={api}
+            project={currentProject}
+            files={workspaceFiles}
+            selectedFilePath={preview?.path}
+            onPreviewFile={(file) => void previewWorkspaceFile(file)}
+            onFilesChanged={() => void refreshWorkspaceFiles()}
+          />
+        ) : null}
+        {activeSidePanel === "resources" ? (
+          <CurrentResourcesPanel
+            api={api}
+            artifacts={artifacts.filter((artifact) => artifact.sessionId === currentSessionId)}
+            onPreviewArtifact={handlePreviewArtifact}
+          />
+        ) : null}
         <main className="editor-area">
           <EditorHeader
             preview={preview}
@@ -295,7 +377,7 @@ export function App(): JSX.Element {
             theme={settings?.theme ?? "light"}
             mdMode={mdEditMode ? "edit" : "preview"}
             componentRequest={componentRequest}
-            sidebarMode={activeSidePanel}
+            sidebarMode={activeSidePanel === "scene" || activeSidePanel === "components" ? activeSidePanel : undefined}
             onSelectBuiltInComponent={requestBuiltInComponent}
             onPreviewArtifact={handlePreviewArtifact}
             onSaveContent={savePreviewContent}
@@ -336,9 +418,6 @@ export function App(): JSX.Element {
             onError={(message) => setAppError(message)}
           />
         ) : null}
-        {artifactsOpen ? (
-          <ArtifactHistoryDialog api={api} onError={handleAppError} onPreviewArtifact={handlePreviewArtifact} />
-        ) : null}
         {appError ? <AppNotice message={appError} onClose={() => setAppError("")} /> : null}
       </div>
     </Tooltip.Provider>
@@ -377,6 +456,10 @@ async function bootstrap(
     api.app.recentProjects()
   ]);
   const artifacts = await listProjectArtifacts(api, sessions);
+  const lastSessionId = projectPath ? localStorage.getItem(getLastSessionStorageKey(projectPath)) : undefined;
+  if (lastSessionId && sessions.some((session) => session.id === lastSessionId)) {
+    dispatch(setCurrentSession(lastSessionId));
+  }
   dispatch(setSessions(sessions));
   dispatch(setSettings(settings));
   dispatch(setArtifacts(artifacts));
@@ -386,6 +469,31 @@ async function bootstrap(
     dispatch(upsertSession(session));
     dispatch(setCurrentSession(session.id));
   }
+}
+
+function getLastSessionStorageKey(projectPath: string): string {
+  return `arch-agent:last-session:${normalizeProjectPath(projectPath)}`;
+}
+
+function normalizeProjectPath(projectPath: string): string {
+  return projectPath.replace(/\\/g, "/").toLowerCase();
+}
+
+function getWorkspaceArtifactKind(name: string): ArtifactKind {
+  const extension = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1).toLowerCase() : "";
+  if (["docx", "pdf", "png", "jpg", "jpeg", "webp", "svg", "json", "md", "txt", "log", "stl", "obj", "glb", "gltf", "3mf", "step", "iges", "dxf"].includes(extension)) {
+    return extension as ArtifactKind;
+  }
+  return "other";
+}
+
+function isWorkspaceImage(name: string): boolean {
+  return ["png", "jpg", "jpeg", "webp", "svg", "gif", "bmp"].includes(name.split(".").at(-1)?.toLowerCase() || "");
+}
+
+function isWorkspaceTextFile(name: string): boolean {
+  const extension = name.split(".").at(-1)?.toLowerCase() || "";
+  return ["txt", "md", "markdown", "json", "jsonc", "log", "js", "jsx", "ts", "tsx", "py", "css", "scss", "html", "xml", "yaml", "yml", "toml", "ini", "env", "sh", "ps1", "sql"].includes(extension);
 }
 
 async function listProjectArtifacts(api: ArchAgentApi, sessions: ChatSession[]): Promise<ArtifactSummary[]> {

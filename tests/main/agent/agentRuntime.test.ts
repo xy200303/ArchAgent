@@ -113,7 +113,8 @@ function createHost(items: StreamItem[], settings: AppSettings = createSettings(
       code: "unsupported_node",
       message: "测试未实现"
     }),
-    createArtifact: () => ({ id: "artifact_1", name: "output.png", kind: "png", path: "C:/tmp/output.png", createdAt: "2026-07-18T00:00:00.000Z" })
+    createArtifact: () => ({ id: "artifact_1", name: "output.png", kind: "png", path: "C:/tmp/output.png", size: 1, createdAt: "2026-07-18T00:00:00.000Z" }),
+    sendArtifact: () => ({ id: "artifact_1", name: "output.png", kind: "png", path: "C:/tmp/output.png", size: 1, createdAt: "2026-07-18T00:00:00.000Z" })
   };
 }
 

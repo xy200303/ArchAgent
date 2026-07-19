@@ -7,10 +7,12 @@ const RESIZER_WIDTH = 8;
 const ACTIVITY_BAR_WIDTH = 54;
 const EDITOR_MIN_WIDTH = 360;
 const COMPONENT_LIBRARY_MIN_WIDTH = 212;
+const RESOURCE_EXPLORER_MIN_WIDTH = 220;
 
 interface UseResizableChatPanelOptions {
   rootRef: RefObject<HTMLElement | null>;
   componentLibraryOpen: boolean;
+  workspaceExplorerOpen: boolean;
 }
 
 interface ResizableChatPanel {
@@ -24,9 +26,13 @@ interface ResizableChatPanel {
   onPointerUp: () => void;
 }
 
-function getMaximumWidth(componentLibraryOpen: boolean): number {
+function getMaximumWidth(componentLibraryOpen: boolean, workspaceExplorerOpen: boolean): number {
   const fixedWidth =
-    ACTIVITY_BAR_WIDTH + RESIZER_WIDTH + EDITOR_MIN_WIDTH + (componentLibraryOpen ? COMPONENT_LIBRARY_MIN_WIDTH : 0);
+    ACTIVITY_BAR_WIDTH +
+    RESIZER_WIDTH +
+    EDITOR_MIN_WIDTH +
+    (componentLibraryOpen ? COMPONENT_LIBRARY_MIN_WIDTH : 0) +
+    (workspaceExplorerOpen ? RESOURCE_EXPLORER_MIN_WIDTH : 0);
   return Math.max(MIN_CHAT_PANEL_WIDTH, Math.min(MAX_CHAT_PANEL_WIDTH, window.innerWidth - fixedWidth));
 }
 
@@ -35,15 +41,16 @@ function getMaximumWidth(componentLibraryOpen: boolean): number {
  */
 export function useResizableChatPanel({
   rootRef,
-  componentLibraryOpen
+  componentLibraryOpen,
+  workspaceExplorerOpen
 }: UseResizableChatPanelOptions): ResizableChatPanel {
   const [width, setWidth] = useState(DEFAULT_CHAT_PANEL_WIDTH);
   const widthRef = useRef(DEFAULT_CHAT_PANEL_WIDTH);
   const draggingRef = useRef(false);
 
   const clampWidth = useCallback(
-    (nextWidth: number): number => Math.min(getMaximumWidth(componentLibraryOpen), Math.max(MIN_CHAT_PANEL_WIDTH, nextWidth)),
-    [componentLibraryOpen]
+    (nextWidth: number): number => Math.min(getMaximumWidth(componentLibraryOpen, workspaceExplorerOpen), Math.max(MIN_CHAT_PANEL_WIDTH, nextWidth)),
+    [componentLibraryOpen, workspaceExplorerOpen]
   );
 
   const applyWidth = useCallback(
@@ -92,7 +99,7 @@ export function useResizableChatPanel({
   return {
     width,
     minWidth: MIN_CHAT_PANEL_WIDTH,
-    maxWidth: getMaximumWidth(componentLibraryOpen),
+    maxWidth: getMaximumWidth(componentLibraryOpen, workspaceExplorerOpen),
     onPointerDown: (event) => {
       if (event.button !== 0) return;
       draggingRef.current = true;
@@ -113,7 +120,7 @@ export function useResizableChatPanel({
       if (event.key === "ArrowLeft") nextWidth = widthRef.current + step;
       if (event.key === "ArrowRight") nextWidth = widthRef.current - step;
       if (event.key === "Home") nextWidth = MIN_CHAT_PANEL_WIDTH;
-      if (event.key === "End") nextWidth = getMaximumWidth(componentLibraryOpen);
+      if (event.key === "End") nextWidth = getMaximumWidth(componentLibraryOpen, workspaceExplorerOpen);
       if (nextWidth === undefined) return;
       event.preventDefault();
       commitWidth(nextWidth);

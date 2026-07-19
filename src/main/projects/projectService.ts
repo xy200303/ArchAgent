@@ -106,7 +106,7 @@ export function createProjectService(options: {
     if (depth > MAX_DEPTH || !existsSync(dirPath)) return [];
     const entries = readdirSync(dirPath, { withFileTypes: true });
     return entries
-      .filter((entry) => (entry.isFile() || entry.isDirectory()) && entry.name !== ".agent")
+      .filter((entry) => entry.isFile() || entry.isDirectory())
       .map((entry) => {
         const itemPath = join(dirPath, entry.name);
         const item: WorkspaceFileItem = {

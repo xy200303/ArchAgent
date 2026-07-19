@@ -26,6 +26,7 @@ export const ChatWorkspace = memo(function ChatWorkspace({
         onCreateConversation={onCreateConversation}
         onRenameSession={onRenameSession}
         onDeleteSession={onDeleteSession}
+        onError={onError}
       />
       <ChatTranscript
         api={api}
