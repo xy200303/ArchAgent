@@ -7,17 +7,6 @@ import type { SceneCeilingNode, SceneColumnNode, SceneCommandInput, SceneDoorNod
 import type { SceneHistoryState } from "../../../../../shared/modeling3d/sceneContracts";
 import { getErrorMessage } from "../../../platform/bridge";
 import { TooltipButton } from "../../../shared/TooltipButton";
-import { ComponentLibraryPanel } from "../editor/ComponentLibraryPanel";
-import { SceneNavigationPanel, WallInspector } from "../editor/SceneEditorPanels";
-import { SlabInspector } from "../editor/SlabInspector";
-import { DoorInspector } from "../editor/DoorInspector";
-import { WindowInspector } from "../editor/WindowInspector";
-import { CeilingInspector } from "../editor/CeilingInspector";
-import { ColumnInspector } from "../editor/ColumnInspector";
-import { ZoneInspector } from "../editor/ZoneInspector";
-import { StairInspector } from "../editor/StairInspector";
-import { FenceInspector } from "../editor/FenceInspector";
-import { AssetInspector } from "../editor/AssetInspector";
 import type { BuiltInComponentId, ComponentLibraryRequest } from "../editor/componentLibraryContracts";
 import { SceneToolbar } from "../editor/SceneToolbar";
 import { ScenePreviewBoundary } from "./ScenePreviewBoundary";
@@ -26,6 +15,18 @@ import { useWallDrawing } from "./useWallDrawing";
 import { buildRelocationCommand, canRelocateSceneNode, type SceneDragPreview } from "./relocationCommand";
 
 const R3FViewer = lazy(() => import("./R3FViewer"));
+const ComponentLibraryPanel = lazy(() => import("../editor/ComponentLibraryPanel").then((module) => ({ default: module.ComponentLibraryPanel })));
+const SceneNavigationPanel = lazy(() => import("../editor/SceneEditorPanels").then((module) => ({ default: module.SceneNavigationPanel })));
+const WallInspector = lazy(() => import("../editor/SceneEditorPanels").then((module) => ({ default: module.WallInspector })));
+const SlabInspector = lazy(() => import("../editor/SlabInspector").then((module) => ({ default: module.SlabInspector })));
+const DoorInspector = lazy(() => import("../editor/DoorInspector").then((module) => ({ default: module.DoorInspector })));
+const WindowInspector = lazy(() => import("../editor/WindowInspector").then((module) => ({ default: module.WindowInspector })));
+const CeilingInspector = lazy(() => import("../editor/CeilingInspector").then((module) => ({ default: module.CeilingInspector })));
+const ColumnInspector = lazy(() => import("../editor/ColumnInspector").then((module) => ({ default: module.ColumnInspector })));
+const ZoneInspector = lazy(() => import("../editor/ZoneInspector").then((module) => ({ default: module.ZoneInspector })));
+const StairInspector = lazy(() => import("../editor/StairInspector").then((module) => ({ default: module.StairInspector })));
+const FenceInspector = lazy(() => import("../editor/FenceInspector").then((module) => ({ default: module.FenceInspector })));
+const AssetInspector = lazy(() => import("../editor/AssetInspector").then((module) => ({ default: module.AssetInspector })));
 
 const CAMERA_PRESET_OPTIONS: Array<{ id: EditorCameraPreset; label: string; icon: LucideIcon }> = [
   { id: "free", label: "自由视角", icon: Orbit },
@@ -390,15 +391,17 @@ export function SpatialEditor({
       <div
         className={`scene-editor-layout${showInspector ? " has-inspector" : ""}${componentLibraryOpen ? " component-library-mode" : ""}${sceneNavigationOpen ? "" : " no-navigation"}`}
       >
-        {componentLibraryOpen ? <ComponentLibraryPanel api={api} onSelectComponent={onSelectBuiltInComponent} onPlaceComponent={(id) => { void api.componentLibrary.place(id).then(setSnapshot).catch((error: unknown) => setMessage(`放入构件失败：${getErrorMessage(error)}`)); }} /> : null}
+        {componentLibraryOpen ? <EditorPanelBoundary><ComponentLibraryPanel api={api} onSelectComponent={onSelectBuiltInComponent} onPlaceComponent={(id) => { void api.componentLibrary.place(id).then(setSnapshot).catch((error: unknown) => setMessage(`放入构件失败：${getErrorMessage(error)}`)); }} /></EditorPanelBoundary> : null}
         {sceneNavigationOpen ? (
-          <SceneNavigationPanel
-            snapshot={snapshot}
-            selectedNodeId={selectedNodeId}
-            onSelectNode={selectNode}
-            onDeleteNode={deleteNode}
-            onClearLevel={clearLevel}
-          />
+          <EditorPanelBoundary>
+            <SceneNavigationPanel
+              snapshot={snapshot}
+              selectedNodeId={selectedNodeId}
+              onSelectNode={selectNode}
+              onDeleteNode={deleteNode}
+              onClearLevel={clearLevel}
+            />
+          </EditorPanelBoundary>
         ) : null}
         <div className={`scene-viewport${wallDrawing.active ? " drawing" : ""}`}>
           {wallDrawing.active ? (
@@ -439,40 +442,32 @@ export function SpatialEditor({
           </ScenePreviewBoundary>
         </div>
         {panelMode === "create-wall" || selectedWall ? (
-          <WallInspector
-            wall={selectedWall}
-            onCreate={createWall}
-            onUpdate={updateWall}
-            onDelete={deleteNode}
-            onClose={closeInspector}
-          />
+          <EditorPanelBoundary><WallInspector wall={selectedWall} onCreate={createWall} onUpdate={updateWall} onDelete={deleteNode} onClose={closeInspector} /></EditorPanelBoundary>
         ) : null}
         {panelMode === "create-slab" || selectedSlab ? (
-          <SlabInspector
-            slab={selectedSlab}
-            onCreate={createSlab}
-            onUpdate={updateSlab}
-            onDelete={deleteNode}
-            onClose={closeInspector}
-          />
+          <EditorPanelBoundary><SlabInspector slab={selectedSlab} onCreate={createSlab} onUpdate={updateSlab} onDelete={deleteNode} onClose={closeInspector} /></EditorPanelBoundary>
         ) : null}
         {panelMode === "create-ceiling" || selectedCeiling ? (
-          <CeilingInspector ceiling={selectedCeiling} onCreate={createCeiling} onUpdate={updateCeiling} onDelete={deleteNode} onClose={closeInspector} />
+          <EditorPanelBoundary><CeilingInspector ceiling={selectedCeiling} onCreate={createCeiling} onUpdate={updateCeiling} onDelete={deleteNode} onClose={closeInspector} /></EditorPanelBoundary>
         ) : null}
-        {panelMode === "create-column" || selectedColumn ? <ColumnInspector column={selectedColumn} onCreate={createColumn} onUpdate={updateColumn} onDelete={deleteNode} onClose={closeInspector} /> : null}
-        {panelMode === "create-zone" || selectedZone ? <ZoneInspector zone={selectedZone} onCreate={createZone} onUpdate={updateZone} onDelete={deleteNode} onClose={closeInspector} /> : null}
-        {panelMode === "create-stair" || selectedStair ? <StairInspector stair={selectedStair} onCreate={createStair} onUpdate={updateStair} onDelete={deleteNode} onClose={closeInspector} /> : null}
-        {panelMode === "create-fence" || selectedFence ? <FenceInspector fence={selectedFence} onCreate={createFence} onUpdate={updateFence} onDelete={deleteNode} onClose={closeInspector} /> : null}
+        {panelMode === "create-column" || selectedColumn ? <EditorPanelBoundary><ColumnInspector column={selectedColumn} onCreate={createColumn} onUpdate={updateColumn} onDelete={deleteNode} onClose={closeInspector} /></EditorPanelBoundary> : null}
+        {panelMode === "create-zone" || selectedZone ? <EditorPanelBoundary><ZoneInspector zone={selectedZone} onCreate={createZone} onUpdate={updateZone} onDelete={deleteNode} onClose={closeInspector} /></EditorPanelBoundary> : null}
+        {panelMode === "create-stair" || selectedStair ? <EditorPanelBoundary><StairInspector stair={selectedStair} onCreate={createStair} onUpdate={updateStair} onDelete={deleteNode} onClose={closeInspector} /></EditorPanelBoundary> : null}
+        {panelMode === "create-fence" || selectedFence ? <EditorPanelBoundary><FenceInspector fence={selectedFence} onCreate={createFence} onUpdate={updateFence} onDelete={deleteNode} onClose={closeInspector} /></EditorPanelBoundary> : null}
         {panelMode === "create-door" || selectedDoor ? (
-          <DoorInspector door={selectedDoor} walls={walls} onCreate={createDoor} onUpdate={updateDoor} onDelete={deleteNode} onClose={closeInspector} />
+          <EditorPanelBoundary><DoorInspector door={selectedDoor} walls={walls} onCreate={createDoor} onUpdate={updateDoor} onDelete={deleteNode} onClose={closeInspector} /></EditorPanelBoundary>
         ) : null}
         {panelMode === "create-window" || selectedWindow ? (
-          <WindowInspector window={selectedWindow} walls={walls} onCreate={createWindow} onUpdate={updateWindow} onDelete={deleteNode} onClose={closeInspector} />
+          <EditorPanelBoundary><WindowInspector window={selectedWindow} walls={walls} onCreate={createWindow} onUpdate={updateWindow} onDelete={deleteNode} onClose={closeInspector} /></EditorPanelBoundary>
         ) : null}
-        {selectedAsset ? <AssetInspector asset={selectedAsset} onUpdate={updateAsset} onDelete={deleteNode} onClose={closeInspector} /> : null}
+        {selectedAsset ? <EditorPanelBoundary><AssetInspector asset={selectedAsset} onUpdate={updateAsset} onDelete={deleteNode} onClose={closeInspector} /></EditorPanelBoundary> : null}
       </div>
     </section>
   );
+}
+
+function EditorPanelBoundary({ children }: { children: JSX.Element }): JSX.Element {
+  return <Suspense fallback={null}>{children}</Suspense>;
 }
 
 function CameraPresetMenu({
