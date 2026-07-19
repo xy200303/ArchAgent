@@ -1,14 +1,13 @@
 <div align="center">
   <img src="build/icon.png" alt="ArchAgent" width="128" />
   <h1>ArchAgent</h1>
-  <p>基于对话的桌面空间设计智能体，支持建筑/房间/室内 3D 建模、实时预览和模型导出。</p>
-  <p>Hy3 作为默认模型品牌，底层通过 OpenAI-compatible Chat Completions 接入；基于 Pascal Editor 与 React Three Fiber 构建 3D 场景，结合自研编辑工具与 MCP 工具集，把空间设计收进同一个桌面工作台。</p>
+  <p>面向建筑与室内设计的本地桌面智能体，结合对话、可编辑 3D 场景、资源管理和构件库完成空间方案工作。</p>
   <p>
     <a href="#快速开始">快速开始</a> ·
-    <a href="#产品亮点">产品亮点</a> ·
-    <a href="#配置说明">配置说明</a> ·
-    <a href="#可用脚本">可用脚本</a> ·
-    <a href="docs/design/README.md">设计文档</a>
+    <a href="#核心能力">核心能力</a> ·
+    <a href="#使用边界">使用边界</a> ·
+    <a href="#配置">配置</a> ·
+    <a href="#贡献">贡献</a>
   </p>
   <p>
     <img src="https://img.shields.io/badge/version-0.2.1-6E56CF" alt="version" />
@@ -23,90 +22,96 @@
     <img src="https://img.shields.io/badge/OpenAI-compatible-111827" alt="OpenAI-compatible" />
     <img src="https://img.shields.io/badge/Windows-supported-0078D4?logo=windows&amp;logoColor=white" alt="Windows" />
     <img src="https://img.shields.io/badge/Local-first-0F766E" alt="Local-first" />
+    <img src="https://img.shields.io/badge/AGPL--3.0--only-00913A" alt="AGPL-3.0-only" />
   </p>
 </div>
 
 ## 产品概览
 
-ArchAgent 是一款基于 Electron、React 19、Redux Toolkit、Radix UI、Pi Agent SDK、OpenAI-compatible SDK、Tencent Hunyuan Hy3、React Three Fiber 和 Pascal Editor 的桌面端空间设计智能体，面向自然语言驱动的建筑/房间/室内场景建模、实时 3D 预览、交互式编辑和模型导出。
+ArchAgent 基于 Electron、React 和 Hy3 构建。用户可新建或打开本地项目，通过对话和 3D 编辑器共同创建、检查和调整建筑场景；场景、会话、资源与导出产物均由本机应用管理。
 
-模型侧默认面向 Hy3，接口通过 OpenAI-compatible Chat Completions 接入。3D 场景基于 `@pascal-app/core` 的节点数据模型和 `@pascal-app/viewer` 的渲染能力；编辑工具参考 Aedifex 的 `packages/editor` 与 `packages/mcp` 自研实现。
+场景模型由 `src/shared/modeling3d` 的自定义契约和 reducer 定义。Main 进程负责执行场景命令、维护撤销重做、管理项目持久化和受限文件访问；Renderer 使用 Three.js、React Three Fiber、React Three Drei 及自研场景图层渲染建筑元素与导入资产。
 
-## 产品亮点
+## 核心能力
 
-- 对话即设计：用自然语言描述空间需求，Agent 自动创建墙体、门窗、楼板、家具等节点。
-- Blender 风格 3D 编辑器：中间主区域提供选择、移动、旋转、缩放、画墙、放门窗、放家具等工具。
-- 实时预览：基于 React Three Fiber 与 Pascal Editor 实时渲染建筑场景，支持撤销重做。
-- 多格式导出：支持 GLB、STL、OBJ、JSON 等格式，可用于 3D 打印、游戏引擎或进一步设计。
-- 图像转 3D：可调用混元图像转 3D API，将参考照片转换为 3D 模型。
-- 本地优先：场景数据、模型文件和配置默认留在本机。
-- 安全桥接：Renderer 通过 preload 暴露的 `window.archAgent` 与 Main 进程通信，API Key 只在 Electron Main 侧读取。
+- 项目与会话：创建或打开项目目录，保存项目会话、场景快照和最近项目记录。
+- 对话式建模：Agent 可基于当前会话资源和场景状态创建、更新或删除建筑元素，并返回可追踪的工具结果。
+- 可编辑 3D 场景：支持场地、建筑、楼层、墙、门、窗、楼板、天花、柱、房间分区、楼梯、围栏和导入资产；提供选择、画墙、属性检查、拖拽移动、撤销重做及自由、顶、正、右等视图。
+- 场景导入导出：支持可编辑的 `scene-json`，以及 `GLB`、`GLTF`、`OBJ`、`STL` 交换格式。
+- 全局构件库：将模型纳入当前应用的本机构件库，按名称、类别、标签和描述检索、预览、编辑元数据并实例化到不同项目的场景中。
+- 资源与文件工作区：导入文件或剪贴板附件，浏览项目目录，创建、重命名、编辑、删除和打开工作区文件；会话资源、产物历史和常见文档、图像、3D 文件支持预览。
+- 参考重建流程：从复杂图片提取单件物体参考图，生成二维设计预览，创建带假设和必答项的重建计划，并在用户确认后生成和摆放资产。
+- 场景核验：Agent 可读取场景快照、预览资产落点与几何关系，并获取不同视角的 WebGL 场景预览用于检查摆放。
+- 运行设置：在应用内配置 Hy3 模型、图像与 3D 服务、外观、输出和高级执行项；支持恢复默认配置与运行时自检。
 
-## 典型场景
+## 使用边界
 
-- 快速设计房间布局和户型方案。
-- 根据照片或草图生成 3D 空间参考。
-- 导出 STL/OBJ 用于 3D 打印原型。
-- 与 Agent 反复对话调整空间尺寸和家具摆放。
-
-## 典型流程
-
-1. 新建或打开一个项目工作区。
-2. 通过右侧对话面板描述空间需求，例如“创建一个 5m×4m 的卧室，南墙开一扇门一扇窗”。
-3. Agent 调用建模工具创建或修改场景节点。
-4. 中间 3D 编辑器实时预览结果，用户可直接拖拽调整。
-5. 导出 GLB / STL / OBJ / JSON 产物，用于后续使用。
+- 3D 资产生成面向边界完整、可独立摆放的单个资产，例如家具、陈设或设备；建筑元素应通过场景工具创建。
+- 设计预览用于确认布局和风格，不代表精确尺寸，也不会自动授权后续 3D 生成。
+- 复杂照片会先拆分为单件资源和待确认的重建计划；确认前不会执行计划中的资产生成或摆放。
+- 资产库是当前应用、本机用户范围内的共享库；摆放到场景后的实例仍属于各自项目。
+- `exec_bash` 默认关闭。开启后仅用于可信任务，且需要明确用途和预期产物。
 
 ## 快速开始
 
-```bash
+在 Windows PowerShell 中执行：
+
+```powershell
 npm install
-copy .env.example .env.local
+Copy-Item .env.example .env.local
 npm run dev
 ```
 
-开发态启动后，渲染端通过 Electron preload 暴露的 `window.archAgent` 与 Main 进程通信。不要直接用浏览器打开渲染页，否则无法使用 IPC、文件、Agent 和 3D 能力。
+应用以 Electron 运行。不要直接在浏览器中打开 Renderer 页面，否则无法使用 preload IPC、项目文件、会话资源和场景能力。
 
-## 配置说明
+## 配置
 
-`.env.local` 会优先于 `.env` 加载。也可以在应用内“设置”面板保存模型与工具配置，配置会写入本地 `.env.local`。
+`.env.local` 优先于 `.env` 加载；也可以通过应用内“运行设置”保存配置。复制 [`.env.example`](.env.example) 后至少填写 `HY3_API_KEY`。
 
-完整示例和中文说明见 [.env.example](./.env.example)。常用配置分为三类：
+- 对话模型：`HY3_API_KEY`、`HY3_BASE_URL`、`HY3_CHAT_MODEL`、`HY3_THINKING_ENABLED`、`HY3_REASONING_EFFORT`、`HY3_REQUEST_TIMEOUT_S`、`HY3_CONTEXT_WINDOW_TOKENS`、`HY3_MAX_OUTPUT_TOKENS`。
+- 图像服务：`HY3_IMAGE_ENDPOINT`、`HY3_IMAGE_MODEL`、`HY3_IMAGE_REQUEST_TIMEOUT_S`，用于设计预览与参考物体提取。
+- 3D 服务：`HY3_3D_SUBMIT_ENDPOINT`、`HY3_3D_QUERY_ENDPOINT`、`HY3_3D_MODEL`、`HY3_3D_FACE_COUNT` 及超时、轮询配置，用于单件 3D 资产生成。
+- 高级执行与输出：`AGENT_EXEC_BASH_ENABLED`、`AGENT_SCRIPT_TIMEOUT_S`、`AGENT_AUTO_PDF_EXPORT`、`LIBREOFFICE_PATH`。
 
-- 模型接入：`HY3_API_KEY`、`HY3_BASE_URL`、`HY3_CHAT_MODEL`、`HY3_THINKING_ENABLED`（Hy3 主模型固定支持图片输入）
-- 运行控制：`AGENT_EXEC_BASH_ENABLED`
+`HY3_*` 是推荐配置名；程序对部分 `OPENAI_*` 历史变量保留兼容读取。
 
-项目仍兼容部分历史 `OPENAI_*` 环境变量作为迁移兜底，但新配置应优先使用 `HY3_*`。
+## Agent 工具
 
-## 当前内置工具
+Agent 使用受限的应用内工具，而非直接获得任意本机路径访问权限：
 
-- `remember_project`：记录会话中的关键设计事实。
-- `time`：获取当前时间。
-- `create_site` / `create_building` / `create_level`：创建场景层级。
-- `create_wall` / `update_wall` / `delete_wall`：墙体操作。
-- `place_door` / `update_door`：放置和修改门。
-- `place_window` / `update_window`：放置和修改窗。
-- `create_slab` / `create_zone` / `place_item`：楼板、房间区域、家具。
-- `update_node` / `delete_node`：通用节点操作。
-- `export_scene`：导出场景为 GLB / STL / OBJ / JSON。
-- `image_to_3d`：调用混元图像转 3D API。
-- `web_search`：按需检索公开网页信息。
-- `view_resources`：按资源类型读取会话资料；图片以多模态内容直接回传模型。
-- `write_file` / `send_file`：写入并发送产物。
-- `exec_bash`：可选命令执行工具，默认用于可信本地任务。
+- 资源与交付：`search_resources`、`view_resources`、`send_file`。
+- 构件库与资产：`search_library_assets`、`generate_3d_asset`、`place_library_asset`、`place_library_assets`、`preview_library_asset_placement`。
+- 场景：`inspect_scene`、`view_scene_preview`、`update_scene_object`，以及单个或批量的建筑元素创建、更新和删除工具。
+- 重建：`extract_reference_object`、`create_reconstruction_plan`、`generate_design_preview`。
+- 扩展：仅在启用高级开关后提供 `exec_bash`。
 
-建模能力以场景节点、通用 Mesh 资产和可验证的场景命令为核心；详细边界见 [设计文档](docs/design/README.md)。
+## 架构
+
+```text
+Renderer
+  React 工作台、文件编辑器、资源面板、对话面板和 R3F 3D 视图
+       |
+       |  window.archAgent（preload 暴露的受限 IPC）
+       v
+Electron Main
+  项目与会话、Agent 编排、场景命令、构件库、文件与资源服务、设置和导出
+       |
+       v
+本地数据
+  项目目录、应用 data/、会话资源、场景快照、构件库和导出产物
+```
+
+Renderer 不启用 Node 集成，不直接读取 API Key 或任意文件路径。场景更新经 Main 进程验证后广播给 Renderer；每个项目拥有自己的场景快照与历史记录。
 
 ## 技术栈
 
-- 桌面端：Electron、electron-vite、electron-builder
+- 桌面与构建：Electron、electron-vite、electron-builder
 - 前端：React 19、TypeScript、Redux Toolkit、React Redux
-- UI：Radix UI、lucide-react、Incremark
-- 3D：Three.js、@react-three/fiber@9、@react-three/drei@10
-- 建筑场景：@pascal-app/core、@pascal-app/viewer
-- 参数化建模补充：JSCAD
-- Agent：`@mariozechner/pi-coding-agent`
-- 模型：Tencent Hunyuan Hy3，OpenAI-compatible SDK
+- UI 与编辑：Radix UI、lucide-react、Monaco Editor、Incremark、Mermaid
+- 3D：Three.js、React Three Fiber、React Three Drei
+- 场景与几何：自研场景契约/reducer、JSCAD、replicad
+- Agent 与模型：`@mariozechner/pi-coding-agent`、OpenAI-compatible SDK、Tencent Hunyuan Hy3
+- 文件处理：Mammoth、pdf-parse、Sharp
 - 测试：Vitest
 
 ## 目录结构
@@ -114,31 +119,20 @@ npm run dev
 ```text
 src/
   main/
-    agent/      会话编排、Pi 模型桥、工具注册与上下文压缩
-    app/        Electron 窗口、Renderer 事件总线与 IPC 装配
-    config/     环境变量和应用设置
-    files/      附件、产物预览与受限文件访问
-    projects/   项目目录、会话状态和持久化
-    runtime/    随包 Python 发现与运行时诊断
-    modeling3d/ Main 侧 3D 领域边界
-  preload/     安全 IPC Bridge，暴露 window.archAgent
-  renderer/src/
-    app/        React 应用壳、工作台导航和 Redux Store
-    platform/   Preload Bridge 解析与错误边界
-    features/   chat、files、modeling3d、projects、settings、workspace
-    shared/     Renderer 内复用的无状态组件与展示工具
-    styles/     按工作台区域拆分且保持固定级联顺序的样式
-  shared/      跨进程 API 类型、附件限制和应用元信息
-docs/design/   ArchAgent 设计方案、接口文档和 UI 设计文档
-tests/         按 Main/Renderer 源码领域镜像组织的单元测试
+    agent/        Agent 编排、工具注册、上下文和重建流程
+    app/          Electron 窗口、IPC 注册和安全响应头
+    config/       环境变量与应用设置
+    files/        附件、产物预览和受限文件操作
+    modeling3d/   场景服务、导入导出、构件库与 3D 服务
+    projects/     项目、会话和持久化
+    resources/    会话资源注册与检索
+    runtime/      随包运行时发现与诊断
+  preload/        window.archAgent 的受限 IPC bridge
+  renderer/src/   React 工作台、对话、文件、设置和 3D 编辑器
+  shared/         跨进程类型、场景契约与 reducer
+docs/design/      设计、接口和 UI 文档
+tests/            Main、Renderer 与共享逻辑的测试
 ```
-
-## 环境要求
-
-- Node.js 20+ 推荐
-- npm
-- Windows 桌面环境用于完整打包验收
-- 支持 WebGPU 的显卡和驱动（推荐），或回退到 WebGL
 
 ## 可用脚本
 
@@ -146,26 +140,22 @@ tests/         按 Main/Renderer 源码领域镜像组织的单元测试
 npm run dev           # 开发模式启动 Electron + Vite
 npm run build         # 类型检查并构建 Main / Preload / Renderer
 npm run pack          # 构建并生成 win-unpacked 目录
-npm run dist          # 构建安装包
+npm run dist          # 构建 NSIS 与 ZIP 安装产物
 npm run preview       # 预览构建产物
-npm test              # 运行全部 Vitest 单测
+npm test              # 运行全部 Vitest 测试
 npm run test:watch    # 监听模式运行测试
 npm run typecheck     # TypeScript 类型检查
 npm run icon:generate # 生成应用图标
 ```
 
-## 打包与资源
+## 数据与安全
 
-`electron-builder` 会把以下目录或文件作为 `extraResources` 复制到安装包资源目录：
+- 开发态数据存放在项目根目录的 `data/`；打包后可写数据存放在 Electron `userData` 目录。
+- API Key 仅在 Main 进程加载；preload 只向 Renderer 暴露明确列出的 IPC API。
+- 文件与资源服务限制在项目、应用数据和用户授权的附件范围内。
+- `exec_bash` 默认关闭；打开前请评估外部命令、文件与网络访问风险。
 
-- `build/icon.png`、`build/icon.ico`：应用图标。
-- `.env`：可选默认环境配置。
-
-开发态数据和生成文件位于项目本地 `data/`；打包态会使用 Electron `userData` 目录存储可写数据。
-
-## 测试与验收
-
-推荐提交前运行：
+## 验证
 
 ```bash
 npm run typecheck
@@ -173,36 +163,13 @@ npm test
 git diff --check
 ```
 
-## 安全说明
+## 贡献
 
-- Renderer 不直接读取 API Key，密钥只由 Electron Main 进程加载。
-- IPC 通过 preload bridge 暴露有限 API，Renderer 不启用 Node 集成。
-- 生产态 CSP 保持严格策略；开发态仅为 Vite React Refresh 放行必要能力。
-- `exec_bash` 默认启用以满足本地任务需求，建议只在可信任务中使用。
-- 工具文件访问限制在允许目录和用户附件范围内，避免任意路径读取。
-
-## 参与贡献
-
-欢迎提交与空间建模、Agent 交互、资源管理、稳定性和文档相关的改进。完整流程、代码约定、验证要求、提交规则和许可证说明见 [贡献指南](CONTRIBUTING.md)。
-
-开始前请先阅读相关设计文档与活动规格。涉及共享协议、IPC、场景契约或用户可见工作流的改动，应同步补充或更新相应测试和文档。提交前至少运行：
-
-```bash
-npm run typecheck
-npm test
-git diff --check
-```
-
-## PR 规范
-
-- PR 前检查 `git status --short --branch`，确认分支、上游和与本次工作相关的改动；不要提交工作区中的无关文件。
-- PR 必须按 [PR 模板](.github/PULL_REQUEST_TEMPLATE.md) 填写改动摘要、验证结果和必要的补充说明。
-- PR 标题应简洁且以动词开头，提交信息与 PR 正文使用相同语言；不得把未运行的测试写成已通过。
-- 提交前仅暂存本次 PR 涉及的文件。不要使用强制推送、破坏性 Git 命令，或在 PR 描述、日志和配置中泄露 API Key、`.env` 内容或其他敏感信息。
+贡献流程、代码约定、验证和提交规则见 [CONTRIBUTING.md](CONTRIBUTING.md)。PR 请使用 [PR 模板](.github/PULL_REQUEST_TEMPLATE.md)。
 
 ## 许可证
 
-本项目采用 [GNU Affero General Public License v3.0 only](LICENSE)（`AGPL-3.0-only`）许可。分发、修改或以网络服务形式提供修改版本时，须遵循该许可证的相应义务。
+本项目采用 [GNU Affero General Public License v3.0 only](LICENSE)（`AGPL-3.0-only`）许可。
 
 ## 文档
 
