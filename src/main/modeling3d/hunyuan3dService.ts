@@ -130,35 +130,8 @@ function readConfiguredFaceCount(): number {
 
 function containsChineseText(value: string): boolean { return /[\u3400-\u9fff]/.test(value); }
 
-const ARCHITECTURE_OR_SCENE_TERMS = ["户型", "平面图", "场景", "空间", "房间", "客厅", "卧室", "厨房", "卫生间", "建筑", "隔墙", "墙体", "内墙", "外墙", "布局", "套房"];
-const ABSTRACT_OR_FUNCTIONAL_ENTITY_TERMS = ["入口标识", "出口标识", "重建设计", "设计方案", "重建方案", "工作流", "流程", "动线", "导向", "指引", "定位"];
-const MULTI_ENTITY_NAME_SEPARATOR = /[、，,；;]|(?:和|与|及|以及|并且)/;
-const INTERACTION_PATTERN = /(?:互动|坐在|站在|拿着|手持|倚靠|拥抱|骑着|推着|拉着|使用|操作|握住|抱着)/;
-const PLACEMENT_OR_CONTEXT_PATTERN = /(?:放置|摆放|置于|设置在|安装在|北侧|南侧|东侧|西侧|中点|墙边|门口|(?:朝向|面向|面朝)(?:北|南|东|西|墙|门|窗))/;
-const FUNCTIONAL_CONTEXT_PATTERN = /(?:用于|用途(?:为|是|：)|功能(?:为|是|：)|营造氛围|作为(?:入口|出口|导向|定位))/;
-
-/** Hunyuan 3D only receives one placeable entity; architectural space stays in the scene model. */
-export function assertSingleEntityAsset(name: string, prompt?: string): void {
-  const entityName = name.trim();
-  const combined = `${entityName}\n${prompt ?? ""}`;
-  const abstractNameTerm = ABSTRACT_OR_FUNCTIONAL_ENTITY_TERMS.find((term) => entityName.includes(term));
-  if (abstractNameTerm) throw new Error(`生3D需要可单独摆放的具体实物；资产名称命中“${abstractNameTerm}”，它表示功能、行为或方案。请改为一个最小实体，例如“单扇入户门”或“壁挂式指示牌”。`);
-  const functionalMatch = prompt?.match(FUNCTIONAL_CONTEXT_PATTERN)?.[0];
-  if (functionalMatch) throw new Error(`生3D的 prompt 不能描述用途或方案；命中“${functionalMatch}”。请仅保留资产的形状、材质、颜色和风格。`);
-  const abstractTerm = ABSTRACT_OR_FUNCTIONAL_ENTITY_TERMS.find((term) => combined.includes(term));
-  if (abstractTerm) throw new Error(`生3D需要可单独摆放的具体实物；prompt 命中“${abstractTerm}”，它表示功能、行为或方案。请改为一个最小实体，例如“单扇入户门”或“壁挂式指示牌”。`);
-  const placementMatch = prompt?.match(PLACEMENT_OR_CONTEXT_PATTERN)?.[0];
-  if (placementMatch) {
-    throw new Error(`生3D的 prompt 只能描述实体外观，不能包含摆放位置、朝向或场景上下文；命中摆放或场景上下文词“${placementMatch}”。请把定位信息传给场景放置工具。`);
-  }
-  const architectureTerm = ARCHITECTURE_OR_SCENE_TERMS.find((term) => combined.includes(term));
-  if (architectureTerm) throw new Error(`生3D只支持单个独立实体；${entityName.includes(architectureTerm) ? "资产名称" : "prompt"} 命中“${architectureTerm}”，它表示房间、墙体或混合场景。请使用建筑场景工具，或改为单件家具/构件。`);
-  if (MULTI_ENTITY_NAME_SEPARATOR.test(entityName) && !INTERACTION_PATTERN.test(combined)) {
-    throw new Error("生3D资产包含多个实体时，必须明确它们构成一个完整互动组合；否则请拆成独立资产逐个生成。");
-  }
-  if (/(?:一套|套装|成套|多件|多个|若干)/.test(entityName)) {
-    throw new Error("生3D不能生成松散套装或多件组合；请拆成独立资产，或明确描述为一个完整互动组合。");
-  }
+export function assertSingleEntityAsset(name: string, _prompt?: string): void {
+  if (!name.trim()) throw new Error("生3D需要资产名称。");
 }
 
 export function buildSingleEntityPrompt(name: string, prompt: string): string {
@@ -167,7 +140,7 @@ export function buildSingleEntityPrompt(name: string, prompt: string): string {
     `目标资产：${name}。`,
     "可包含人物、动物、工具或多个物件之间明确且完整的互动，只要它们共同构成一个自包含资产；所有组成部分必须完整可见，不能截断、悬挂或延伸到资产边界之外。",
     "独立展示，纯白或透明背景，无地面、无背景、无建筑环境、无无关物件、无文字、无图标、无重复主体。",
-    "摆放位置、朝向、用途、场景和工作流仅由场景工具处理，绝不能具象化到这个模型中。",
+    "如提示词包含环境、用途或摆放语境，仅将其作为目标资产的外观和比例参考；输出始终聚焦目标资产本体。",
     `外观细节：${prompt}`
   ].join("\n");
 }

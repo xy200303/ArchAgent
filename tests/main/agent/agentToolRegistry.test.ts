@@ -65,16 +65,16 @@ describe("agentToolRegistry", () => {
     expect(prompt).toContain("library_asset_id");
     expect(prompt).toContain("严禁复用失败参数");
     expect(prompt).toContain("create_reconstruction_plan");
-    expect(prompt).toContain("绝不将摆放位置、朝向、用途、标签、分类、工作流或场景描述写进生成 prompt");
+    expect(prompt).toContain("不做关键词拦截");
     expect(workflowTool?.function.description).toContain("必答问题");
   });
 
   it("defines 3D generation as one smallest physical entity", () => {
     const tool = buildAgentChatTools({ includeExecBash: false }).find((item) => item.function.name === "generate_3d_asset");
 
-    expect(tool?.function.description).toContain("最小单实体");
-    expect(JSON.stringify(tool?.function.parameters)).toContain("入口标识");
-    expect(JSON.stringify(tool?.function.parameters)).toContain("位置、朝向、用途");
+    expect(tool?.function.description).toContain("边界干净");
+    expect(JSON.stringify(tool?.function.parameters)).not.toContain("入口标识");
+    expect(JSON.stringify(tool?.function.parameters)).toContain("环境或摆放语境");
     expect(JSON.stringify(tool?.function.parameters)).toContain("target_dimensions_meters");
   });
 
