@@ -1,5 +1,5 @@
 /** Composes the renderer shell and coordinates state across domain features. */
-import { useCallback, useEffect, useRef, useState, type JSX } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type JSX } from "react";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { X } from "lucide-react";
 import { shallowEqual, useDispatch, useSelector } from "react-redux";
@@ -29,11 +29,16 @@ import {
 import type { BuiltInComponentId, ComponentLibraryRequest } from "../features/modeling3d/editor/componentLibraryContracts";
 import { useResizableChatPanel } from "../features/layout/useResizableChatPanel";
 import { ProjectPicker } from "../features/projects/ProjectPicker";
-import { SettingsPanel } from "../features/settings/SettingsPanel";
 import { ResourceExplorer } from "../features/workspace/ResourceExplorer";
-import { CurrentResourcesPanel } from "../features/workspace/CurrentResourcesPanel";
 import { getErrorMessage, resolveArchAgentApi } from "../platform/bridge";
 import { getInitialProjectFromUrl } from "../shared/presentation";
+
+const SettingsPanel = lazy(() =>
+  import("../features/settings/SettingsPanel").then((module) => ({ default: module.SettingsPanel }))
+);
+const CurrentResourcesPanel = lazy(() =>
+  import("../features/workspace/CurrentResourcesPanel").then((module) => ({ default: module.CurrentResourcesPanel }))
+);
 
 export function App(): JSX.Element {
   const dispatch = useDispatch<AppDispatch>();
@@ -305,13 +310,15 @@ export function App(): JSX.Element {
           onOpenSettings={() => dispatch(setSettingsOpen(true))}
         />
         {settingsOpen ? (
-          <SettingsPanel
-            api={api}
-            settings={settings}
-            onClose={() => dispatch(setSettingsOpen(false))}
-            onSaved={(next) => dispatch(setSettings(next))}
-            onError={(message) => setAppError(message)}
-          />
+          <Suspense fallback={null}>
+            <SettingsPanel
+              api={api}
+              settings={settings}
+              onClose={() => dispatch(setSettingsOpen(false))}
+              onSaved={(next) => dispatch(setSettings(next))}
+              onError={(message) => setAppError(message)}
+            />
+          </Suspense>
         ) : null}
         {appError ? <AppNotice message={appError} onClose={() => setAppError("")} /> : null}
       </Tooltip.Provider>
@@ -354,11 +361,13 @@ export function App(): JSX.Element {
           />
         ) : null}
         {activeSidePanel === "resources" ? (
-          <CurrentResourcesPanel
-            api={api}
-            artifacts={artifacts.filter((artifact) => artifact.sessionId === currentSessionId)}
-            onPreviewArtifact={handlePreviewArtifact}
-          />
+          <Suspense fallback={null}>
+            <CurrentResourcesPanel
+              api={api}
+              artifacts={artifacts.filter((artifact) => artifact.sessionId === currentSessionId)}
+              onPreviewArtifact={handlePreviewArtifact}
+            />
+          </Suspense>
         ) : null}
         <main className="editor-area">
           <EditorHeader
@@ -410,13 +419,15 @@ export function App(): JSX.Element {
           onDeleteSession={deleteConversation}
         />
         {settingsOpen ? (
-          <SettingsPanel
-            api={api}
-            settings={settings}
-            onClose={() => dispatch(setSettingsOpen(false))}
-            onSaved={(next) => dispatch(setSettings(next))}
-            onError={(message) => setAppError(message)}
-          />
+          <Suspense fallback={null}>
+            <SettingsPanel
+              api={api}
+              settings={settings}
+              onClose={() => dispatch(setSettingsOpen(false))}
+              onSaved={(next) => dispatch(setSettings(next))}
+              onError={(message) => setAppError(message)}
+            />
+          </Suspense>
         ) : null}
         {appError ? <AppNotice message={appError} onClose={() => setAppError("")} /> : null}
       </div>
