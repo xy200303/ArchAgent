@@ -106,7 +106,9 @@ flowchart LR
 
 ## 演示视频 / GIF
 
-> **待补充**：仓库当前未包含可公开引用的演示视频或 GIF。建议补充上述两个 Demo 的短视频或动图，并展示“对话 → 3D 场景 → 导出”的关键界面。
+
+https://github.com/user-attachments/assets/70d12865-68c8-47de-a149-1023449379df
+
 
 ## 快速开始
 
