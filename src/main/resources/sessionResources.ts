@@ -1,7 +1,7 @@
 /** Converts legacy UI projections to the authoritative session resource records. */
 import { existsSync } from "node:fs";
 import { extname } from "node:path";
-import type { ArtifactKind, ArtifactSummary, AttachmentRef, ChatSession, SessionResource, SessionResourceKind } from "../../shared/types";
+import type { ArtifactKind, ArtifactSummary, AttachmentRef, ChatSession, SessionResource, SessionResourceKind, SessionResourceSummary } from "../../shared/types";
 
 export function linkSessionResource(session: ChatSession, resourceId: string, now: string): void {
   const links = session.resourceLinks ?? (session.resourceLinks = []);
@@ -19,6 +19,30 @@ export function inferSessionResourceKind(fileName: string): SessionResourceKind 
   if ([".glb", ".gltf", ".obj", ".stl", ".3mf", ".step", ".iges", ".dxf"].includes(extension)) return "model3d";
   if ([".txt", ".md", ".log"].includes(extension)) return "text";
   if ([".zip", ".rar", ".7z", ".tar", ".gz"].includes(extension)) return "archive";
+  return "other";
+}
+
+export function getSessionResources(resources: Iterable<SessionResource>, session: ChatSession): SessionResource[] {
+  const links = new Map((session.resourceLinks ?? []).map((link) => [link.resourceId, link]));
+  return Array.from(resources)
+    .flatMap((resource) => {
+      if (resource.sessionId !== session.id || !links.has(resource.id)) return [];
+      const link = links.get(resource.id)!;
+      return [{ ...resource, confirmed: link.confirmed, pinned: link.pinned }];
+    })
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+}
+
+export function toSessionResourceSummary(resource: SessionResource): SessionResourceSummary {
+  const { path: _path, metadata: _metadata, ...summary } = resource;
+  return summary;
+}
+
+export function inferArtifactKind(fileName: string): ArtifactKind {
+  const extension = extname(fileName).slice(1).toLowerCase();
+  if (["docx", "pdf", "png", "jpg", "jpeg", "webp", "svg", "json", "md", "txt", "log", "stl", "obj", "glb", "gltf", "3mf", "step", "iges", "dxf"].includes(extension)) {
+    return extension as ArtifactKind;
+  }
   return "other";
 }
 

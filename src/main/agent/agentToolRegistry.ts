@@ -672,7 +672,7 @@ async function executeGenerate3dAsset(args: Record<string, unknown>, context: Ag
     imageBase64 = readFileSync(resolvedPath).toString("base64");
   }
   const outputDir = join(context.outputDir, "assets");
-  const generated = await generateHunyuanGlb({ name, prompt: prompt || undefined, imageBase64, detailLevel }, outputDir);
+  const generated = await generateHunyuanGlb({ name, prompt: prompt || undefined, imageBase64, detailLevel, signal: context.signal }, outputDir);
   const faceBudget = generated.faceCount ? `，目标 ${generated.faceCount.toLocaleString("en-US")} 面` : "";
   return {
     toolName: "generate_3d_asset",
@@ -1317,7 +1317,8 @@ async function executeGenerateSingleAsset(args: Record<string, unknown>, context
     const generated = await generateHunyuanGlb({
       name,
       ...(source === "text" ? { prompt } : { imageBase64: readFileSync(resource!.path).toString("base64") }),
-      generateType: "low_poly"
+      generateType: "low_poly",
+      signal: context.signal
     }, join(context.outputDir, "assets"));
     const component = importGlobalComponent(context.componentLibraryRootDir ?? context.rootDir, generated.path, {
       name,
@@ -1334,6 +1335,7 @@ async function executeGenerateSingleAsset(args: Record<string, unknown>, context
       ...(resource ? { parentResourceIds: [resource.id] } : {})
     };
   } catch (error) {
+    if (isAbortError(error, context.signal)) throw error;
     return providerToolFailure("generate_3d_asset", "生成单实体失败", error);
   }
 }
@@ -1382,7 +1384,7 @@ async function executeEditLibraryAsset(args: Record<string, unknown>, context: A
   const baseDescription = component.prompt || component.description || component.name;
   const prompt = `${baseDescription}。在保持同一完整、可独立摆放单实体且边界干净的前提下，调整为：${editPrompt}`;
   try {
-    const generated = await generateHunyuanGlb({ name: editedName, prompt, generateType: "low_poly" }, join(context.outputDir, "assets"));
+    const generated = await generateHunyuanGlb({ name: editedName, prompt, generateType: "low_poly", signal: context.signal }, join(context.outputDir, "assets"));
     const updated = importGlobalComponent(libraryRoot, generated.path, {
       name: editedName,
       description: prompt,
@@ -1398,8 +1400,13 @@ async function executeEditLibraryAsset(args: Record<string, unknown>, context: A
       artifactPath: generated.path
     };
   } catch (error) {
+    if (isAbortError(error, context.signal)) throw error;
     return providerToolFailure("edit_library_asset", "生成资产调整版失败", error);
   }
+}
+
+function isAbortError(error: unknown, signal?: AbortSignal): boolean {
+  return Boolean(signal?.aborted || (error instanceof Error && error.name === "AbortError"));
 }
 
 function providerToolFailure(

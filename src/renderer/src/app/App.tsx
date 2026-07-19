@@ -1,5 +1,5 @@
 /** Composes the renderer shell and coordinates state across domain features. */
-import { lazy, Suspense, useCallback, useEffect, useRef, useState, type JSX } from "react";
+import { lazy, Suspense, useCallback, useEffect, useEffectEvent, useRef, useState, type JSX } from "react";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { X } from "lucide-react";
 import { shallowEqual, useDispatch, useSelector } from "react-redux";
@@ -18,7 +18,7 @@ import {
   type RootState
 } from "./store";
 import { FALLBACK_APP_METADATA } from "../../../shared/appMetadata";
-import type { AppMetadata, ArtifactKind, ArtifactSummary, ArchAgentApi, ChatSession, WorkspaceFileItem } from "../../../shared/types";
+import type { AppMetadata, ArtifactKind, ArtifactSummary, ArchAgentApi, ChatSession, RendererEvent, SessionResourceSummary, WorkspaceFileItem } from "../../../shared/types";
 import { ChatWorkspace } from "../features/chat/ChatWorkspace";
 import {
   EditorHeader,
@@ -69,6 +69,7 @@ export function App(): JSX.Element {
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | undefined>();
   const [activeSidePanel, setActiveSidePanel] = useState<"explorer" | "resources" | "scene" | "components" | undefined>("explorer");
   const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFileItem[]>([]);
+  const [sessionResources, setSessionResources] = useState<SessionResourceSummary[]>([]);
   const [componentRequest, setComponentRequest] = useState<ComponentLibraryRequest>();
   const workbenchRef = useRef<HTMLDivElement>(null);
   const chatPanelResize = useResizableChatPanel({
@@ -103,6 +104,18 @@ export function App(): JSX.Element {
     document.title = currentProject ? `${currentProject.name} - ${metadata.title}` : metadata.title;
   }, [metadata.title, currentProject?.name]);
   const api = bridge.api;
+
+  const refreshSessionResources = useCallback(async (): Promise<void> => {
+    if (!api || !currentSessionId) {
+      setSessionResources([]);
+      return;
+    }
+    try {
+      setSessionResources(await api.resource.list({ sessionId: currentSessionId }));
+    } catch (error) {
+      setAppError(`读取会话资源失败：${getErrorMessage(error)}`);
+    }
+  }, [api, currentSessionId]);
 
   const refreshWorkspaceFiles = useCallback(async (): Promise<void> => {
     if (!api || !currentProject) {
@@ -157,6 +170,10 @@ export function App(): JSX.Element {
   useEffect(() => {
     void refreshWorkspaceFiles();
   }, [refreshWorkspaceFiles]);
+
+  useEffect(() => {
+    void refreshSessionResources();
+  }, [refreshSessionResources]);
 
   useEffect(() => {
     if (!api || !currentProject) return;
@@ -223,6 +240,20 @@ export function App(): JSX.Element {
     return unsubscribe;
   }, [api, dispatch, currentProject?.path]);
 
+  const refreshResourcesForEvent = useEffectEvent((event: RendererEvent): void => {
+    if (
+      (event.type === "resource.created" || event.type === "resource.deleted" || event.type === "artifact.created") &&
+      event.sessionId === currentSessionId
+    ) {
+      void refreshSessionResources();
+    }
+  });
+
+  useEffect(() => {
+    if (!api) return;
+    return api.events.subscribe(refreshResourcesForEvent);
+  }, [api]);
+
   async function openProject(): Promise<void> {
     if (!api) return;
     try {
@@ -280,6 +311,18 @@ export function App(): JSX.Element {
     }
   }, [api]);
 
+  const previewResource = useCallback(async (resourceId: string): Promise<void> => {
+    if (!api) return;
+    setSelectedArtifactId(undefined);
+    setPreviewError("");
+    try {
+      setPreview(await api.resource.preview(resourceId));
+    } catch (error) {
+      setPreview(undefined);
+      setPreviewError(getErrorMessage(error));
+    }
+  }, [api]);
+
   const savePreviewContent = useCallback(async (path: string, content: string): Promise<void> => {
     if (!api) return;
     await api.file.writeText({ path, content });
@@ -292,6 +335,9 @@ export function App(): JSX.Element {
   const handlePreviewArtifact = useCallback((artifactId: string): void => {
     void previewArtifact(artifactId);
   }, [previewArtifact]);
+  const handlePreviewResource = useCallback((resourceId: string): void => {
+    void previewResource(resourceId);
+  }, [previewResource]);
   const handleWorkspacePreviewFile = useCallback((file: WorkspaceFileItem): void => {
     void previewWorkspaceFile(file);
   }, [previewWorkspaceFile]);
@@ -370,8 +416,8 @@ export function App(): JSX.Element {
           <Suspense fallback={null}>
             <CurrentResourcesPanel
               api={api}
-              artifacts={artifacts.filter((artifact) => artifact.sessionId === currentSessionId)}
-              onPreviewArtifact={handlePreviewArtifact}
+              resources={sessionResources}
+              onPreviewResource={handlePreviewResource}
             />
           </Suspense>
         ) : null}

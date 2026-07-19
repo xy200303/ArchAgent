@@ -28,6 +28,17 @@ describe("hunyuan3dService", () => {
     }, process.cwd())).rejects.toThrow("不能同时提交 prompt 和图片");
   });
 
+  it("aborts before submitting a 3D generation request", async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(generateHunyuanGlb({
+      name: "现代沙发",
+      prompt: "现代三人位沙发",
+      signal: controller.signal
+    }, process.cwd())).rejects.toMatchObject({ name: "AbortError" });
+  });
+
   it("accepts asset requests with natural functional and scene context", () => {
     expect(() => assertSingleEntityAsset("内部隔墙", "主卧与次卧之间的内部隔墙，包含房间布局")).not.toThrow();
     expect(() => assertSingleEntityAsset("入口标识", "用于北侧外墙入口定位")).not.toThrow();

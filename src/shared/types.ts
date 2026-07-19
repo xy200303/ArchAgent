@@ -330,6 +330,18 @@ export interface SessionResource {
   createdAt: string;
 }
 
+/** Renderer-safe projection of a session resource. */
+export type SessionResourceSummary = Omit<SessionResource, "path" | "metadata">;
+
+export interface SessionResourceListInput {
+  sessionId: string;
+}
+
+export interface ResourcePreview extends Omit<ArtifactPreview, "artifactId" | "path"> {
+  resourceId: string;
+  path?: undefined;
+}
+
 export interface ClipboardAttachmentInput {
   sessionId?: string;
   source?: "clipboard" | "drop";
@@ -482,6 +494,18 @@ export type RendererEvent =
     }
   | {
       id: string;
+      type: "resource.created";
+      sessionId: string;
+      payload: SessionResourceSummary;
+    }
+  | {
+      id: string;
+      type: "resource.deleted";
+      sessionId: string;
+      resourceId: string;
+    }
+  | {
+      id: string;
       type: "scene.command.applied";
       payload: Extract<SceneCommandResult, { accepted: true }>;
     }
@@ -540,6 +564,12 @@ export interface ArchAgentApi {
     open(artifactId: string): Promise<void>;
     reveal(artifactId: string): Promise<void>;
     preview(artifactId: string): Promise<ArtifactPreview>;
+  };
+  resource: {
+    list(input: SessionResourceListInput): Promise<SessionResourceSummary[]>;
+    open(resourceId: string): Promise<void>;
+    reveal(resourceId: string): Promise<void>;
+    preview(resourceId: string): Promise<ResourcePreview>;
   };
   file: {
     readText(input: ReadTextFileInput): Promise<ReadTextFileResult>;

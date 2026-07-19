@@ -27,6 +27,7 @@ describe("renderer bridge", () => {
       chat: { prompt() {} },
       attachment: { pick() {} },
       artifact: { list() {} },
+      resource: { list() {} },
       runtime: { status() {}, scan() {} },
       settings: { get() {} },
       scene: { getSnapshot() {} },

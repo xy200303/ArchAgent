@@ -27,12 +27,15 @@ import type {
   ReadTextFileInput,
   RenameFileInput,
   RenameSessionInput,
+  SessionResource,
+  SessionResourceListInput,
   UpdateAppSettingsInput,
   WorkspaceFileItem,
   WriteTextFileInput
 } from "../../shared/types";
 import type { SceneAssetPayload, SceneCommandInput, SceneCommandResult, SceneExchangeFormat, SceneExportTarget, SceneHistoryResult, SceneHistoryState, SceneImportResult, SceneSnapshot } from "../../shared/modeling3d/sceneContracts";
 import { buildArtifactPreview } from "../files/artifactPreview";
+import { getSessionResources, inferArtifactKind, toSessionResourceSummary } from "../resources/sessionResources";
 import { checkRuntime } from "../runtime/runtimeDiagnostics";
 import type { GlobalComponentRecord } from "../modeling3d/componentLibraryService";
 import type { GlobalComponentSummary } from "../../shared/types";
@@ -60,8 +63,10 @@ export function registerIpcHandlers(options: {
   pickAttachments: (input: PickAttachmentInput) => Promise<AttachmentRef[]>;
   importClipboardAttachments: (input: ClipboardAttachmentInput) => AttachmentRef[];
   pasteAttachmentsFromClipboard: (input: PasteAttachmentInput) => AttachmentRef[];
+  removeAttachment: (attachmentId: string) => void;
   attachments: Map<string, AttachmentRef>;
   artifacts: Map<string, ArtifactSummary>;
+  resources: Map<string, SessionResource>;
   schedulePersistState: () => void;
   listArtifacts: (input?: ArtifactListInput) => ArtifactSummary[];
   readTextFile: (input: ReadTextFileInput) => Promise<{ content: string; size: number }>;
@@ -126,10 +131,7 @@ export function registerIpcHandlers(options: {
     options.pasteAttachmentsFromClipboard(input)
   );
   ipcMain.handle("clipboard:write-text", (_event, text: string) => clipboard.writeText(String(text)));
-  ipcMain.handle("attachment:remove", (_event, attachmentId: string) => {
-    options.attachments.delete(attachmentId);
-    options.schedulePersistState();
-  });
+  ipcMain.handle("attachment:remove", (_event, attachmentId: string) => options.removeAttachment(attachmentId));
   ipcMain.handle("artifact:list", (_event, input?: ArtifactListInput) => options.listArtifacts(input));
   ipcMain.handle("artifact:open", async (_event, artifactId: string) => {
     const artifact = requireArtifact(options.artifacts, artifactId);
@@ -142,6 +144,30 @@ export function registerIpcHandlers(options: {
   ipcMain.handle("artifact:preview", (_event, artifactId: string) =>
     buildArtifactPreview(requireArtifact(options.artifacts, artifactId))
   );
+  ipcMain.handle("resource:list", (_event, input: SessionResourceListInput) =>
+    getSessionResources(options.resources.values(), requireSession(options.sessions, input.sessionId)).map(toSessionResourceSummary)
+  );
+  ipcMain.handle("resource:open", async (_event, resourceId: string) => {
+    const errorMessage = await shell.openPath(requireResource(options.resources, resourceId).path);
+    if (errorMessage) throw new Error(errorMessage);
+  });
+  ipcMain.handle("resource:reveal", (_event, resourceId: string) => {
+    shell.showItemInFolder(requireResource(options.resources, resourceId).path);
+  });
+  ipcMain.handle("resource:preview", async (_event, resourceId: string) => {
+    const resource = requireResource(options.resources, resourceId);
+    const preview = await buildArtifactPreview({
+      id: resource.id,
+      sessionId: resource.sessionId,
+      name: resource.name,
+      kind: inferArtifactKind(resource.name),
+      path: resource.path,
+      size: resource.size,
+      createdAt: resource.createdAt
+    });
+    const { artifactId: _artifactId, path: _path, ...resourcePreview } = preview;
+    return { resourceId: resource.id, ...resourcePreview };
+  });
   ipcMain.handle("file:read-text", (_event, input: ReadTextFileInput) => options.readTextFile(input));
   ipcMain.handle("file:read-binary", (_event, input: ReadBinaryFileInput) => options.readBinaryFile(input));
   ipcMain.handle("file:write-text", (_event, input: WriteTextFileInput) => options.writeTextFile(input));
@@ -191,4 +217,16 @@ function requireArtifact(artifacts: Map<string, ArtifactSummary>, artifactId: st
   const artifact = artifacts.get(artifactId);
   if (!artifact) throw new Error("Artifact not found");
   return artifact;
+}
+
+function requireSession(sessions: Map<string, ChatSession>, sessionId: string): ChatSession {
+  const session = sessions.get(sessionId);
+  if (!session) throw new Error("Session not found");
+  return session;
+}
+
+function requireResource(resources: Map<string, SessionResource>, resourceId: string): SessionResource {
+  const resource = resources.get(resourceId);
+  if (!resource) throw new Error("Resource not found");
+  return resource;
 }

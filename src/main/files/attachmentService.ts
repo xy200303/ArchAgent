@@ -9,8 +9,8 @@ import type {
   PasteAttachmentInput,
   PickAttachmentInput
 } from "../../shared/types";
-import type { SessionResource } from "../../shared/types";
-import { linkSessionResource, resourceFromAttachment } from "../resources/sessionResources";
+import type { RendererEvent, SessionResource } from "../../shared/types";
+import { linkSessionResource, resourceFromAttachment, toSessionResourceSummary } from "../resources/sessionResources";
 import { prepareImportedAttachments, sanitizeAttachmentName } from "./attachmentImport";
 
 const { clipboard, dialog } = electron;
@@ -25,7 +25,39 @@ export function createAttachmentService(options: {
   createId: (prefix: string) => string;
   now: () => string;
   schedulePersistState: () => void;
+  sendEvent: (event: RendererEvent) => void;
 }) {
+  function addAttachmentResource(attachment: AttachmentRef): void {
+    const session = options.sessions.get(attachment.sessionId!);
+    const resource = resourceFromAttachment(attachment, session!.projectPath)!;
+    options.resources.set(attachment.id, resource);
+    linkSessionResource(session!, attachment.id, options.now());
+    options.sendEvent({
+      id: options.createId("event"),
+      type: "resource.created",
+      sessionId: session!.id,
+      payload: toSessionResourceSummary(resource)
+    });
+  }
+
+  function removeAttachment(attachmentId: string): void {
+    const attachment = options.attachments.get(attachmentId);
+    if (!attachment) return;
+    options.attachments.delete(attachmentId);
+    options.resources.delete(attachmentId);
+    const session = attachment.sessionId ? options.sessions.get(attachment.sessionId) : undefined;
+    if (session) {
+      session.resourceLinks = session.resourceLinks?.filter((link) => link.resourceId !== attachmentId);
+      options.sendEvent({
+        id: options.createId("event"),
+        type: "resource.deleted",
+        sessionId: session.id,
+        resourceId: attachmentId
+      });
+    }
+    options.schedulePersistState();
+  }
+
   async function pickAttachments(input: PickAttachmentInput): Promise<AttachmentRef[]> {
     const sessionId = input.sessionId;
     if (!sessionId || !options.sessions.has(sessionId)) {
@@ -80,8 +112,7 @@ export function createAttachmentService(options: {
         createdAt: options.now()
       };
       options.attachments.set(attachment.id, attachment);
-      options.resources.set(attachment.id, resourceFromAttachment(attachment, options.sessions.get(sessionId)!.projectPath)!);
-      linkSessionResource(options.sessions.get(sessionId)!, attachment.id, options.now());
+      addAttachmentResource(attachment);
       options.schedulePersistState();
       return attachment;
     });
@@ -111,8 +142,7 @@ export function createAttachmentService(options: {
         createdAt: options.now()
       };
       options.attachments.set(attachment.id, attachment);
-      options.resources.set(attachment.id, resourceFromAttachment(attachment, options.sessions.get(sessionId)!.projectPath)!);
-      linkSessionResource(options.sessions.get(sessionId)!, attachment.id, options.now());
+      addAttachmentResource(attachment);
       options.schedulePersistState();
       return attachment;
     });
@@ -186,8 +216,7 @@ export function createAttachmentService(options: {
         createdAt: options.now()
       };
       options.attachments.set(attachment.id, attachment);
-      options.resources.set(attachment.id, resourceFromAttachment(attachment, options.sessions.get(sessionId)!.projectPath)!);
-      linkSessionResource(options.sessions.get(sessionId)!, attachment.id, options.now());
+      addAttachmentResource(attachment);
       imported.push(attachment);
     }
 
@@ -199,6 +228,7 @@ export function createAttachmentService(options: {
   return {
     pickAttachments,
     importClipboardAttachments,
-    pasteAttachmentsFromClipboard
+    pasteAttachmentsFromClipboard,
+    removeAttachment
   };
 }

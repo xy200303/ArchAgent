@@ -17,6 +17,7 @@ import type {
   ReadTextFileInput,
   RenameFileInput,
   RenameSessionInput,
+  SessionResourceListInput,
   RendererEvent,
   UpdateAppSettingsInput,
   WorkspaceFileItem,
@@ -71,6 +72,12 @@ const api: ArchAgentApi = {
     open: (artifactId: string) => ipcRenderer.invoke("artifact:open", artifactId),
     reveal: (artifactId: string) => ipcRenderer.invoke("artifact:reveal", artifactId),
     preview: (artifactId: string) => ipcRenderer.invoke("artifact:preview", artifactId)
+  },
+  resource: {
+    list: (input: SessionResourceListInput) => ipcRenderer.invoke("resource:list", input),
+    open: (resourceId: string) => ipcRenderer.invoke("resource:open", resourceId),
+    reveal: (resourceId: string) => ipcRenderer.invoke("resource:reveal", resourceId),
+    preview: (resourceId: string) => ipcRenderer.invoke("resource:preview", resourceId)
   },
   file: {
     readText: (input: ReadTextFileInput) => ipcRenderer.invoke("file:read-text", input),

@@ -2,31 +2,31 @@
 import type { JSX } from "react";
 import * as ScrollArea from "@radix-ui/react-scroll-area";
 import { ExternalLink, FolderOpen, PackageOpen } from "lucide-react";
-import type { ArchAgentApi, ArtifactSummary } from "../../../../shared/types";
+import type { ArchAgentApi, SessionResourceSummary } from "../../../../shared/types";
 import { formatBytes, getWorkspaceFileIconSpec } from "../../shared/presentation";
 import { SidePanelHeader } from "../../shared/SidePanelHeader";
 
 export function CurrentResourcesPanel({
   api,
-  artifacts,
-  onPreviewArtifact
+  resources,
+  onPreviewResource
 }: {
   api: ArchAgentApi;
-  artifacts: ArtifactSummary[];
-  onPreviewArtifact: (artifactId: string) => void;
+  resources: SessionResourceSummary[];
+  onPreviewResource: (resourceId: string) => void;
 }): JSX.Element {
   return (
     <aside className="resource-sidebar current-resources-panel" aria-label="当前资源">
-      <SidePanelHeader title="当前资源" icon={PackageOpen} meta={`${artifacts.length} 个会话资源`} />
+      <SidePanelHeader title="当前资源" icon={PackageOpen} meta={`${resources.length} 个会话资源`} />
       <ScrollArea.Root className="explorer-scroll">
         <ScrollArea.Viewport className="explorer-viewport">
           <div className="current-resource-list">
-            {artifacts.length ? artifacts.map((artifact) => (
+            {resources.length ? resources.map((resource) => (
               <CurrentResourceRow
                 api={api}
-                artifact={artifact}
-                key={artifact.id}
-                onPreviewArtifact={onPreviewArtifact}
+                resource={resource}
+                key={resource.id}
+                onPreviewResource={onPreviewResource}
               />
             )) : <div className="explorer-empty">当前会话尚无资源</div>}
           </div>
@@ -41,41 +41,47 @@ export function CurrentResourcesPanel({
 
 function CurrentResourceRow({
   api,
-  artifact,
-  onPreviewArtifact
+  resource,
+  onPreviewResource
 }: {
   api: ArchAgentApi;
-  artifact: ArtifactSummary;
-  onPreviewArtifact: (artifactId: string) => void;
+  resource: SessionResourceSummary;
+  onPreviewResource: (resourceId: string) => void;
 }): JSX.Element {
-  const { Icon, className } = getWorkspaceFileIconSpec(artifact.name);
+  const { Icon, className } = getWorkspaceFileIconSpec(resource.name);
   return (
     <div className="current-resource-row">
-      <button type="button" className="current-resource-main" onClick={() => onPreviewArtifact(artifact.id)}>
+      <button type="button" className="current-resource-main" onClick={() => onPreviewResource(resource.id)}>
         <Icon size={16} className={className} />
         <span>
-          <strong title={artifact.name}>{artifact.name}</strong>
-          <small>{artifact.kind.toUpperCase()} · {formatBytes(artifact.size)}</small>
+          <strong title={resource.name}>{resource.name}</strong>
+          <small>{getResourceSourceLabel(resource.source)} · {formatBytes(resource.size)}</small>
         </span>
       </button>
       <button
         type="button"
         className="current-resource-action"
-        aria-label={`在系统中显示 ${artifact.name}`}
+        aria-label={`在系统中显示 ${resource.name}`}
         title="在系统中显示"
-        onClick={() => void api.artifact.reveal(artifact.id)}
+        onClick={() => void api.resource.reveal(resource.id)}
       >
         <FolderOpen size={14} />
       </button>
       <button
         type="button"
         className="current-resource-action"
-        aria-label={`打开 ${artifact.name}`}
+        aria-label={`打开 ${resource.name}`}
         title="在系统中打开"
-        onClick={() => void api.artifact.open(artifact.id)}
+        onClick={() => void api.resource.open(resource.id)}
       >
         <ExternalLink size={14} />
       </button>
     </div>
   );
+}
+
+function getResourceSourceLabel(source: SessionResourceSummary["source"]): string {
+  if (source === "user_upload") return "用户上传";
+  if (source === "generated") return "生成资源";
+  return "派生资源";
 }

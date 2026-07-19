@@ -30,6 +30,7 @@ export interface HunyuanImageTo3dInput {
   enablePbr?: boolean;
   detailLevel?: Hunyuan3dDetailLevel;
   faceCount?: number;
+  signal?: AbortSignal;
 }
 
 export interface Hunyuan3dSubmittedJob {
@@ -40,11 +41,13 @@ export interface Hunyuan3dSubmittedJob {
 }
 
 export async function generateHunyuanGlb(input: HunyuanImageTo3dInput, outputDir: string): Promise<{ path: string; previewImageUrl?: string; faceCount?: number }> {
+  throwIfAborted(input.signal);
   const submitted = await submitHunyuan3dJob(input);
-  return collectHunyuanGlb(submitted, { name: input.name, prompt: input.prompt }, outputDir);
+  return collectHunyuanGlb(submitted, { name: input.name, prompt: input.prompt }, outputDir, input.signal);
 }
 
 export async function submitHunyuan3dJob(input: HunyuanImageTo3dInput): Promise<Hunyuan3dSubmittedJob> {
+  throwIfAborted(input.signal);
   const model = input.model ?? resolveHunyuan3dModel();
   const imageBase64 = input.imageBase64?.trim();
   const prompt = input.prompt?.trim();
@@ -64,7 +67,7 @@ export async function submitHunyuan3dJob(input: HunyuanImageTo3dInput): Promise<
     generate_type: generateType,
     enable_pbr: input.enablePbr ?? true,
     ...(faceCount ? { face_count: faceCount } : {})
-  }, readTimeoutSeconds("HY3_3D_SUBMIT_TIMEOUT_S", DEFAULT_SUBMIT_TIMEOUT_SECONDS));
+  }, readTimeoutSeconds("HY3_3D_SUBMIT_TIMEOUT_S", DEFAULT_SUBMIT_TIMEOUT_SECONDS), input.signal);
   if (job.status === "failed" || job.status === "fail") throw new Error(readJobFailureMessage(job));
   const taskId = readString(job.id);
   if (!taskId) throw new Error("TokenHub 混元生3D未返回任务 ID。");
@@ -74,16 +77,17 @@ export async function submitHunyuan3dJob(input: HunyuanImageTo3dInput): Promise<
 export async function collectHunyuanGlb(
   job: Hunyuan3dSubmittedJob,
   asset: Pick<HunyuanImageTo3dInput, "name" | "prompt">,
-  outputDir: string
+  outputDir: string,
+  signal?: AbortSignal
 ): Promise<{ path: string; previewImageUrl?: string; faceCount?: number }> {
-  const result = await waitForResult(requireTokenHubApiKey(), job.taskId, job.model);
+  const result = await waitForResult(requireTokenHubApiKey(), job.taskId, job.model, signal);
   const glb = result.data.find((item) => item.type.toLowerCase() === "glb");
   if (!glb?.url) throw new Error("TokenHub 混元生3D任务完成但未返回 GLB 文件。");
   const timeoutSeconds = readTimeoutSeconds("HY3_3D_SUBMIT_TIMEOUT_S", DEFAULT_SUBMIT_TIMEOUT_SECONDS);
-  const response = await fetchWithTimeout(glb.url, timeoutSeconds);
+  const response = await fetchWithTimeout(glb.url, timeoutSeconds, signal);
   if (!response.ok) throw new Error(`下载 TokenHub GLB 失败：HTTP ${response.status}`);
   const glbBytes = Buffer.from(await response.arrayBuffer());
-  const preview = await downloadHunyuanPreview(glb.preview_image_url, timeoutSeconds);
+  const preview = await downloadHunyuanPreview(glb.preview_image_url, timeoutSeconds, signal);
   if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
   const destination = join(outputDir, `${safeName(asset.name)}.glb`);
   const previewFile = `${destination}.preview.${preview.extension}`;
@@ -149,20 +153,21 @@ function toHunyuanGenerateType(value: NonNullable<HunyuanImageTo3dInput["generat
   return generateTypes[value];
 }
 
-async function waitForResult(apiKey: string, id: string, model: string): Promise<{ data: Array<{ type: string; url: string; preview_image_url?: string }> }> {
+async function waitForResult(apiKey: string, id: string, model: string, signal?: AbortSignal): Promise<{ data: Array<{ type: string; url: string; preview_image_url?: string }> }> {
   const deadline = Date.now() + toMilliseconds(readTimeoutSeconds("HY3_3D_JOB_TIMEOUT_S", DEFAULT_JOB_TIMEOUT_SECONDS, 30, 3_600));
   const intervalSeconds = readTimeoutSeconds("HY3_3D_POLL_INTERVAL_S", DEFAULT_POLL_INTERVAL_SECONDS, 1, 60);
   while (Date.now() < deadline) {
-    const result = await postJson(resolveQueryUrl(), apiKey, { model, id }, readTimeoutSeconds("HY3_3D_SUBMIT_TIMEOUT_S", DEFAULT_SUBMIT_TIMEOUT_SECONDS));
+    throwIfAborted(signal);
+    const result = await postJson(resolveQueryUrl(), apiKey, { model, id }, readTimeoutSeconds("HY3_3D_SUBMIT_TIMEOUT_S", DEFAULT_SUBMIT_TIMEOUT_SECONDS), signal);
     if (result.status === "completed" && Array.isArray(result.data)) return result as { data: Array<{ type: string; url: string; preview_image_url?: string }> };
     if (result.status === "failed" || result.status === "fail") throw new Error(readJobFailureMessage(result));
-    await delay(intervalSeconds);
+    await delay(intervalSeconds, signal);
   }
   throw new Error("TokenHub 混元生3D任务超时，请稍后在构件库重试。");
 }
 
-async function postJson(url: string, apiKey: string, body: Record<string, unknown>, timeoutSeconds: number): Promise<Record<string, any>> {
-  const response = await fetch(url, { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(toMilliseconds(timeoutSeconds)) });
+async function postJson(url: string, apiKey: string, body: Record<string, unknown>, timeoutSeconds: number, signal?: AbortSignal): Promise<Record<string, any>> {
+  const response = await fetch(url, { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify(body), signal: createRequestSignal(timeoutSeconds, signal) });
   const payload: unknown = await response.json().catch(() => undefined);
   if (!response.ok) throw createHunyuanApiError(payload, response.status, response.headers.get("retry-after"));
   if (!payload || typeof payload !== "object") throw new Error("TokenHub 混元生3D返回了无效响应。");
@@ -196,9 +201,9 @@ function getApiErrorDetails(payload: unknown): { code?: string; message?: string
 
 function readJobFailureMessage(payload: unknown): string { return getApiErrorDetails(payload).message ?? "TokenHub 混元生3D任务失败。"; }
 
-async function downloadHunyuanPreview(previewUrl: string | undefined, timeoutSeconds: number): Promise<{ bytes: Buffer; extension: "png" | "jpg" | "webp" }> {
+async function downloadHunyuanPreview(previewUrl: string | undefined, timeoutSeconds: number, signal?: AbortSignal): Promise<{ bytes: Buffer; extension: "png" | "jpg" | "webp" }> {
   if (!previewUrl) throw new Error("TokenHub 混元生3D任务未返回 preview_image_url，无法生成可预览资产。");
-  const response = await fetchWithTimeout(previewUrl, timeoutSeconds);
+  const response = await fetchWithTimeout(previewUrl, timeoutSeconds, signal);
   if (!response.ok) throw new Error(`下载 TokenHub 预览图失败：HTTP ${response.status}`);
   const bytes = Buffer.from(await response.arrayBuffer());
   if (!bytes.byteLength) throw new Error("下载 TokenHub 预览图失败：响应为空。");
@@ -216,6 +221,18 @@ function getImageExtension(contentType: string | null, bytes: Buffer): "png" | "
 function safeName(value: string): string { return value.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").trim() || "hunyuan-model"; }
 function readString(value: unknown): string | undefined { return typeof value === "string" && value.trim() ? value.trim() : undefined; }
 function readTimeoutSeconds(key: string, fallback: number, minimum = 1, maximum = 600): number { const value = Number(process.env[key]?.trim()); return Math.min(Math.max(Number.isFinite(value) ? Math.trunc(value) : fallback, minimum), maximum); }
-function delay(seconds: number): Promise<void> { return new Promise((resolve) => setTimeout(resolve, toMilliseconds(seconds))); }
+function delay(seconds: number, signal?: AbortSignal): Promise<void> {
+  throwIfAborted(signal);
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(resolve, toMilliseconds(seconds));
+    signal?.addEventListener("abort", () => {
+      clearTimeout(timeout);
+      reject(createAbortError());
+    }, { once: true });
+  });
+}
 function toMilliseconds(seconds: number): number { return Math.max(1, Math.trunc(seconds)) * 1_000; }
-function fetchWithTimeout(url: string, timeoutSeconds: number): Promise<Response> { return fetch(url, { signal: AbortSignal.timeout(toMilliseconds(timeoutSeconds)) }); }
+function fetchWithTimeout(url: string, timeoutSeconds: number, signal?: AbortSignal): Promise<Response> { return fetch(url, { signal: createRequestSignal(timeoutSeconds, signal) }); }
+function createRequestSignal(timeoutSeconds: number, signal?: AbortSignal): AbortSignal { return signal ? AbortSignal.any([signal, AbortSignal.timeout(toMilliseconds(timeoutSeconds))]) : AbortSignal.timeout(toMilliseconds(timeoutSeconds)); }
+function throwIfAborted(signal?: AbortSignal): void { if (signal?.aborted) throw createAbortError(); }
+function createAbortError(): Error { return Object.assign(new Error("生成已取消。"), { name: "AbortError" }); }

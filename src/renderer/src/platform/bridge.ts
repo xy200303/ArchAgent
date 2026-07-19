@@ -13,6 +13,7 @@ const REQUIRED_BRIDGE_METHODS = [
   "chat.prompt",
   "attachment.pick",
   "artifact.list",
+  "resource.list",
   "settings.get",
   "scene.getSnapshot",
   "events.subscribe"

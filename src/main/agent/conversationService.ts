@@ -669,6 +669,10 @@ export function createConversationService(options: {
         if (!options.sessions.has(input.sessionId)) {
           return;
         }
+        if (controller.signal.aborted) {
+          setSessionStatus(input.sessionId, "idle");
+          return;
+        }
         const failure = toAgentFailure(error);
         if (assistantItem?.kind === "message") {
           assistantItem.isFinished = true;

@@ -4,7 +4,7 @@ import * as ScrollArea from "@radix-ui/react-scroll-area";
 import * as Tabs from "@radix-ui/react-tabs";
 import { IncremarkContent } from "@incremark/react";
 import { ChevronRight, Eye, File, Files, FolderOpen, Image, PencilLine, X, XCircle } from "lucide-react";
-import type { ArchAgentApi, ArtifactPreview } from "../../../../shared/types";
+import type { ArchAgentApi, ArtifactPreview, ResourcePreview } from "../../../../shared/types";
 import { ErrorBoundary } from "../../platform/ErrorBoundary";
 import { getErrorMessage } from "../../platform/bridge";
 import { formatBytes, getWorkspaceFileIconSpec, resolveMonacoLanguage } from "../../shared/presentation";
@@ -19,7 +19,7 @@ const SpatialEditor = lazy(() =>
 );
 
 export type WorkspacePreview = Omit<ArtifactPreview, "artifactId">;
-export type PreviewContent = ArtifactPreview | WorkspacePreview;
+export type PreviewContent = ArtifactPreview | ResourcePreview | WorkspacePreview;
 
 export const EditorHeader = memo(function EditorHeader({
   preview,
@@ -170,7 +170,7 @@ export const EditorWorkspace = memo(function EditorWorkspace({
 });
 
 export function getPreviewKey(preview: PreviewContent): string {
-  return ("artifactId" in preview && preview.artifactId) || preview.path || preview.name;
+  return ("artifactId" in preview && preview.artifactId) || ("resourceId" in preview && preview.resourceId) || preview.path || preview.name;
 }
 
 function InlineArtifactPreview({

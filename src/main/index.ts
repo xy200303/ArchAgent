@@ -176,12 +176,14 @@ const attachmentService = createAttachmentService({
   ensureSessionImportDir,
   createId,
   now,
-  schedulePersistState
+  schedulePersistState,
+  sendEvent
 });
 const {
   pickAttachments,
   importClipboardAttachments,
-  pasteAttachmentsFromClipboard
+  pasteAttachmentsFromClipboard,
+  removeAttachment
 } = attachmentService;
 const reconstructionWorkflowService = createReconstructionWorkflowService({
   rootDir,
@@ -316,8 +318,10 @@ function registerIpc(): void {
     pickAttachments,
     importClipboardAttachments,
     pasteAttachmentsFromClipboard,
+    removeAttachment,
     attachments,
     artifacts,
+    resources,
     schedulePersistState,
     listArtifacts,
     readTextFile,
