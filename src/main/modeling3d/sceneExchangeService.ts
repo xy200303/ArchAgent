@@ -80,11 +80,11 @@ export function createSceneExchangeService(options: {
     const assetsPath = resolve(projectPath, ".agent", "assets");
     if (!filePath.startsWith(`${assetsPath}\\`) && filePath !== assetsPath) throw new Error("参考模型路径无效。");
     if (!existsSync(filePath) || !statSync(filePath).isFile()) throw new Error("参考模型文件不存在。");
-    return { id: asset.id, format: asset.format, data: readFileAsArrayBuffer(filePath) };
+    return { id: asset.id, format: asset.format, data: readFileAsArrayBuffer(filePath), cacheKey: asset.sourcePath };
   }
   /** Copies one library asset into the active project and creates its scene node atomically. */
   function placeGlobalComponent(
-    component: { name: string; file: string },
+    component: { id?: string; name: string; file: string },
     placement: Partial<Pick<Extract<SceneCommandInput, { type: "asset.create" }>, "name" | "parentId" | "position" | "rotation" | "scale" | "footprint">> = {}
   ): SceneCommandResult {
     const projectPath = requireProjectPath(options.getActiveProjectPath());
@@ -93,8 +93,10 @@ export function createSceneExchangeService(options: {
     const format = getMeshFormat(component.file);
     const assetsDir = join(projectPath, ".agent", "assets");
     if (!existsSync(assetsDir)) mkdirSync(assetsDir, { recursive: true });
-    const destinationName = `${id}.${format}`;
-    copyFileSync(component.file, join(assetsDir, destinationName));
+    const sourceKey = component.id && /^[a-z0-9_-]+$/i.test(component.id) ? `library-${component.id}` : id;
+    const destinationName = `${sourceKey}.${format}`;
+    const destinationPath = join(assetsDir, destinationName);
+    if (!existsSync(destinationPath)) copyFileSync(component.file, destinationPath);
     return options.executeSceneCommand({
       type: "asset.create",
       id,

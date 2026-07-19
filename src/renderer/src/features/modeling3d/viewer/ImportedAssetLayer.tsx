@@ -51,7 +51,7 @@ function ImportedAsset({
     void api.scene.loadAsset(asset.id)
       .then(async (payload) => {
         await yieldToNextPaint();
-        return loadMeshObjectForScene(payload.format, payload.data);
+        return loadMeshObjectForScene(payload.format, payload.data, payload.cacheKey);
       })
       .then((nextObject) => { if (!disposed) setObject(nextObject); })
       .catch((error: unknown) => {

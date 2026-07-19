@@ -23,14 +23,14 @@ export async function loadMeshObject(format: SceneAssetNode["format"], data: Arr
 }
 
 /** Reuses parsed geometry for repeated library instances while preserving independent transforms. */
-export async function loadMeshObjectForScene(format: SceneAssetNode["format"], data: ArrayBuffer): Promise<Object3D> {
+export async function loadMeshObjectForScene(format: SceneAssetNode["format"], data: ArrayBuffer, stableCacheKey?: string): Promise<Object3D> {
   let templates = sceneAssetTemplates.get(format);
   if (!templates) {
     templates = new Map();
     sceneAssetTemplates.set(format, templates);
   }
 
-  const cacheKey = await createAssetCacheKey(data);
+  const cacheKey = stableCacheKey ?? await createAssetCacheKey(data);
   let template = templates.get(cacheKey);
   if (!template) {
     template = loadMeshObject(format, data).then(normalizeMeshObjectForScene);
