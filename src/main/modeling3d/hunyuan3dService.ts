@@ -131,22 +131,28 @@ function readConfiguredFaceCount(): number {
 function containsChineseText(value: string): boolean { return /[\u3400-\u9fff]/.test(value); }
 
 const ARCHITECTURE_OR_SCENE_TERMS = ["户型", "平面图", "场景", "空间", "房间", "客厅", "卧室", "厨房", "卫生间", "建筑", "隔墙", "墙体", "内墙", "外墙", "布局", "套房"];
-const ABSTRACT_OR_FUNCTIONAL_ENTITY_TERMS = ["入口标识", "出口标识", "重建设计", "设计方案", "重建方案", "工作流", "流程", "动线", "导向", "指引", "定位", "用途", "功能", "氛围"];
+const ABSTRACT_OR_FUNCTIONAL_ENTITY_TERMS = ["入口标识", "出口标识", "重建设计", "设计方案", "重建方案", "工作流", "流程", "动线", "导向", "指引", "定位"];
 const MULTI_ENTITY_NAME_SEPARATOR = /[、，,；;]|(?:和|与|及|以及|并且)/;
 const INTERACTION_PATTERN = /(?:互动|坐在|站在|拿着|手持|倚靠|拥抱|骑着|推着|拉着|使用|操作|握住|抱着)/;
 const PLACEMENT_OR_CONTEXT_PATTERN = /(?:放置|摆放|置于|设置在|安装在|北侧|南侧|东侧|西侧|中点|墙边|门口|(?:朝向|面向|面朝)(?:北|南|东|西|墙|门|窗))/;
+const FUNCTIONAL_CONTEXT_PATTERN = /(?:用于|用途(?:为|是|：)|功能(?:为|是|：)|营造氛围|作为(?:入口|出口|导向|定位))/;
 
 /** Hunyuan 3D only receives one placeable entity; architectural space stays in the scene model. */
 export function assertSingleEntityAsset(name: string, prompt?: string): void {
   const entityName = name.trim();
   const combined = `${entityName}\n${prompt ?? ""}`;
+  const abstractNameTerm = ABSTRACT_OR_FUNCTIONAL_ENTITY_TERMS.find((term) => entityName.includes(term));
+  if (abstractNameTerm) throw new Error(`生3D需要可单独摆放的具体实物；资产名称命中“${abstractNameTerm}”，它表示功能、行为或方案。请改为一个最小实体，例如“单扇入户门”或“壁挂式指示牌”。`);
+  const functionalMatch = prompt?.match(FUNCTIONAL_CONTEXT_PATTERN)?.[0];
+  if (functionalMatch) throw new Error(`生3D的 prompt 不能描述用途或方案；命中“${functionalMatch}”。请仅保留资产的形状、材质、颜色和风格。`);
   const abstractTerm = ABSTRACT_OR_FUNCTIONAL_ENTITY_TERMS.find((term) => combined.includes(term));
-  if (abstractTerm) throw new Error(`生3D需要可单独摆放的具体实物，不能把“${abstractTerm}”这类功能、行为或方案当作模型生成；请改为一个最小实体，例如“单扇入户门”或“壁挂式指示牌”。`);
-  if (prompt && PLACEMENT_OR_CONTEXT_PATTERN.test(prompt)) {
-    throw new Error("生3D的 prompt 只能描述实体外观，不能包含摆放位置、朝向或场景上下文；请把定位信息传给场景放置工具。");
+  if (abstractTerm) throw new Error(`生3D需要可单独摆放的具体实物；prompt 命中“${abstractTerm}”，它表示功能、行为或方案。请改为一个最小实体，例如“单扇入户门”或“壁挂式指示牌”。`);
+  const placementMatch = prompt?.match(PLACEMENT_OR_CONTEXT_PATTERN)?.[0];
+  if (placementMatch) {
+    throw new Error(`生3D的 prompt 只能描述实体外观，不能包含摆放位置、朝向或场景上下文；命中摆放或场景上下文词“${placementMatch}”。请把定位信息传给场景放置工具。`);
   }
   const architectureTerm = ARCHITECTURE_OR_SCENE_TERMS.find((term) => combined.includes(term));
-  if (architectureTerm) throw new Error(`生3D只支持单个独立实体，不能生成“${architectureTerm}”等房间、墙体或混合场景；请使用建筑场景工具，或改为单件家具/构件。`);
+  if (architectureTerm) throw new Error(`生3D只支持单个独立实体；${entityName.includes(architectureTerm) ? "资产名称" : "prompt"} 命中“${architectureTerm}”，它表示房间、墙体或混合场景。请使用建筑场景工具，或改为单件家具/构件。`);
   if (MULTI_ENTITY_NAME_SEPARATOR.test(entityName) && !INTERACTION_PATTERN.test(combined)) {
     throw new Error("生3D资产包含多个实体时，必须明确它们构成一个完整互动组合；否则请拆成独立资产逐个生成。");
   }
@@ -185,7 +191,7 @@ async function waitForResult(apiKey: string, id: string, model: string): Promise
 async function postJson(url: string, apiKey: string, body: Record<string, unknown>, timeoutSeconds: number): Promise<Record<string, any>> {
   const response = await fetch(url, { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(toMilliseconds(timeoutSeconds)) });
   const payload: unknown = await response.json().catch(() => undefined);
-  if (!response.ok) throw new Error(readApiError(payload, response.status));
+  if (!response.ok) throw createHunyuanApiError(payload, response.status, response.headers.get("retry-after"));
   if (!payload || typeof payload !== "object") throw new Error("TokenHub 混元生3D返回了无效响应。");
   return payload as Record<string, any>;
 }
@@ -193,6 +199,16 @@ async function postJson(url: string, apiKey: string, body: Record<string, unknow
 function readApiError(payload: unknown, status: number): string {
   const details = getApiErrorDetails(payload);
   return details.message ? `TokenHub 混元生3D请求失败${details.code ? `（${details.code}）` : ""}：${details.message}` : `TokenHub 混元生3D请求失败：HTTP ${status}`;
+}
+
+function createHunyuanApiError(payload: unknown, status: number, retryAfter: string | null): Error {
+  const details = getApiErrorDetails(payload);
+  const error = Object.assign(new Error(readApiError(payload, status)), {
+    status,
+    ...(details.code ? { code: details.code } : {}),
+    ...(retryAfter && Number.isFinite(Number(retryAfter)) ? { retryAfterSeconds: Math.ceil(Number(retryAfter)) } : {})
+  });
+  return error;
 }
 
 function getApiErrorDetails(payload: unknown): { code?: string; message?: string } {

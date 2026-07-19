@@ -3,6 +3,7 @@ import electron from "electron";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, extname, join, resolve } from "node:path";
 import type { SceneAssetPayload, SceneCommandInput, SceneCommandResult, SceneExchangeFormat, SceneExportTarget, SceneImportResult, SceneSnapshot } from "../../shared/modeling3d/sceneContracts";
+import type { SceneBatchResult } from "./sceneService";
 
 const { dialog } = electron;
 const MESH_FORMATS = ["glb", "gltf", "obj", "stl"] as const;
@@ -13,6 +14,7 @@ export function createSceneExchangeService(options: {
   getSnapshot: () => SceneSnapshot;
   replaceSnapshot: (snapshot: SceneSnapshot) => SceneSnapshot;
   executeSceneCommand: (command: Extract<SceneCommandInput, { type: "asset.create" }>) => SceneCommandResult;
+  executeSceneBatch: (commands: Extract<SceneCommandInput, { type: "asset.create" }>[]) => SceneBatchResult;
 }) {
   async function importFromDialog(): Promise<SceneImportResult | undefined> {
     const projectPath = requireProjectPath(options.getActiveProjectPath());
@@ -112,7 +114,40 @@ export function createSceneExchangeService(options: {
     });
   }
 
-  return { importFromDialog, selectExportTarget, saveExport, loadAsset, placeGlobalComponent };
+  function placeGlobalComponents(inputs: Array<{
+    component: { id?: string; name: string; file: string; targetDimensions?: [number, number, number] };
+    placement?: Partial<Pick<Extract<SceneCommandInput, { type: "asset.create" }>, "name" | "parentId" | "position" | "rotation" | "scale" | "targetDimensions" | "footprint">>;
+  }>): SceneBatchResult {
+    const projectPath = requireProjectPath(options.getActiveProjectPath());
+    const assetsDir = join(projectPath, ".agent", "assets");
+    if (!existsSync(assetsDir)) mkdirSync(assetsDir, { recursive: true });
+    const defaultParentId = findDefaultLevelId(options.getSnapshot());
+    const commands = inputs.map(({ component, placement = {} }) => {
+      if (!existsSync(component.file)) throw new Error("全局构件模型文件不存在。");
+      const format = getMeshFormat(component.file);
+      const id = `asset_${options.createId("library")}`;
+      const sourceKey = component.id && /^[a-z0-9_-]+$/i.test(component.id) ? `library-${component.id}` : id;
+      const destinationName = `${sourceKey}.${format}`;
+      const destinationPath = join(assetsDir, destinationName);
+      if (!existsSync(destinationPath)) copyFileSync(component.file, destinationPath);
+      return {
+        type: "asset.create" as const,
+        id,
+        parentId: placement.parentId ?? defaultParentId,
+        name: placement.name ?? component.name,
+        format,
+        sourcePath: join("assets", destinationName),
+        ...(placement.position ? { position: placement.position } : {}),
+        ...(placement.rotation ? { rotation: placement.rotation } : {}),
+        ...(placement.scale ? { scale: placement.scale } : {}),
+        ...(placement.targetDimensions ?? component.targetDimensions ? { targetDimensions: placement.targetDimensions ?? component.targetDimensions } : {}),
+        ...(placement.footprint ? { footprint: placement.footprint } : {})
+      };
+    });
+    return options.executeSceneBatch(commands);
+  }
+
+  return { importFromDialog, selectExportTarget, saveExport, loadAsset, placeGlobalComponent, placeGlobalComponents };
 }
 
 function requireProjectPath(projectPath: string | undefined): string {

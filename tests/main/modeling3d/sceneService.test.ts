@@ -28,6 +28,28 @@ describe("sceneService", () => {
     expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({ type: "scene.snapshot.restored" }));
   });
 
+  it("commits a validated command batch as one scene revision", () => {
+    const service = createSceneService({ createId: (prefix) => `${prefix}_test`, broadcast: vi.fn() });
+    const result = service.executeBatch([
+      { type: "wall.create", id: "wall_batch_a", parentId: "level_default", start: [0, 0], end: [2, 0] },
+      { type: "wall.create", id: "wall_batch_b", parentId: "level_default", start: [2, 0], end: [2, 2] }
+    ]);
+
+    expect(result).toMatchObject({ accepted: true, snapshot: { revision: 1 } });
+    expect(service.getSnapshot().nodes).toMatchObject({ wall_batch_a: { type: "wall" }, wall_batch_b: { type: "wall" } });
+  });
+
+  it("rejects a batch without applying its earlier commands", () => {
+    const service = createSceneService({ createId: (prefix) => `${prefix}_test`, broadcast: vi.fn() });
+    const result = service.executeBatch([
+      { type: "wall.create", id: "wall_valid", parentId: "level_default", start: [0, 0], end: [2, 0] },
+      { type: "wall.create", id: "wall_invalid", parentId: "missing", start: [2, 0], end: [2, 2] }
+    ]);
+
+    expect(result).toMatchObject({ accepted: false, failedIndex: 1 });
+    expect(service.getSnapshot().nodes.wall_valid).toBeUndefined();
+  });
+
   it("persists each active project scene independently", () => {
     const snapshots = new Map();
     const service = createSceneService({

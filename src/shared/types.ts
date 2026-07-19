@@ -50,6 +50,9 @@ export interface AppMetadata {
 export interface AgentFailure {
   code?: string;
   message: string;
+  category?: "auth" | "rate_limit" | "gateway" | "request" | "unknown";
+  retryable?: boolean;
+  retryAfterSeconds?: number;
 }
 
 export type AgentResponseEvent =

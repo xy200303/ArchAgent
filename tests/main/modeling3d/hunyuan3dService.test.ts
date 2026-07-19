@@ -43,6 +43,12 @@ describe("hunyuan3dService", () => {
     expect(() => assertSingleEntityAsset("人物与单椅", "人物坐在单椅上，蓝色工装，低多边形风格")).not.toThrow();
   });
 
+  it("returns the matched prompt term without rejecting a bare descriptive word", () => {
+    expect(() => assertSingleEntityAsset("展示灯", "现代简约风格，适合多种用途")).not.toThrow();
+    expect(() => assertSingleEntityAsset("展示灯", "放置于北侧墙边")).toThrow("命中摆放或场景上下文词“放置”");
+    expect(() => assertSingleEntityAsset("展示灯", "用于入口导向")).toThrow("命中“用于”");
+  });
+
   it("builds a provider prompt that separates one asset from placement semantics", () => {
     const prompt = buildSingleEntityPrompt("单扇深蓝色入户门", "深蓝色木门，银色把手，低多边形风格");
 

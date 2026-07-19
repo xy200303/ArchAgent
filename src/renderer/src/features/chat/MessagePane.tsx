@@ -455,8 +455,12 @@ function AgentFailureCard({
   onError: (message: string) => void;
 }): JSX.Element {
   const apiKeyRejected = failure.code === "401" || failure.code === "401002";
+  const isRateLimited = failure.category === "rate_limit" || /^429/.test(failure.code ?? "");
+  const retryAfter = failure.retryAfterSeconds ? `请在约 ${failure.retryAfterSeconds} 秒后重试。` : "请稍后重试。";
   const summary = apiKeyRejected
     ? "TokenHub API Key 无效、已撤销或不属于当前服务。请在 TokenHub 控制台创建/确认密钥后，在运行设置中替换。"
+    : isRateLimited
+      ? `服务当前限流，${retryAfter}`
     : failure.code === "404"
       ? "当前模型不可用，或服务商未向该密钥授予访问权限。请在设置中确认模型和权限。"
       : "本次生成未完成。请检查模型配置、网络连接或服务商权限后重试。";

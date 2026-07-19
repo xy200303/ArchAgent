@@ -758,6 +758,24 @@ describe("agentToolRegistry", () => {
     }
   });
 
+  it("expands line and grid placement arrays before validation", async () => {
+    const preview = await executeAgentToolCall(
+      createToolCall("preview_library_asset_placement", {
+        items: [{
+          library_asset_id: "cube",
+          position: [0, 0, 0],
+          footprint_meters: [0.2, 0.2],
+          array: { mode: "grid", rows: 2, columns: 3, offset_meters: [0.5, 0.4] }
+        }]
+      }),
+      createContext({ getSceneSnapshot: () => ({ revision: 1, rootNodeIds: ["site_default"], nodes: {} }) })
+    );
+
+    expect(preview.summary).toContain("已预览 6 个落点");
+    expect(preview.content).toContain("预览落点：[1, 0, 0]");
+    expect(preview.content).toContain("预览落点：[0, 0, 0.4]");
+  });
+
   it("builds architecture from semantic element records", async () => {
     const sceneService = createSceneService({ createId: () => "agent", broadcast: vi.fn() });
     const result = await executeAgentToolCall(
@@ -765,12 +783,34 @@ describe("agentToolRegistry", () => {
         expected_revision: sceneService.getSnapshot().revision,
         elements: [{ kind: "wall", reference: "客厅北墙", properties: { start: [0, 0], end: [4, 0], height: 2.8 } }]
       }),
-      createContext({ getSceneSnapshot: sceneService.getSnapshot, executeSceneCommand: sceneService.execute })
+      createContext({ getSceneSnapshot: sceneService.getSnapshot, executeSceneCommand: sceneService.execute, executeSceneBatch: sceneService.executeBatch })
     );
 
     expect(result.toolName).toBe("create_architecture_elements");
     expect(result.summary).toContain("1 个建筑元素");
     expect(Object.values(sceneService.getSnapshot().nodes)).toContainEqual(expect.objectContaining({ type: "wall", name: "客厅北墙" }));
+  });
+
+  it("deletes multiple architecture elements atomically without stale revisions", async () => {
+    const sceneService = createSceneService({ createId: (prefix) => `${prefix}_${Date.now()}`, broadcast: vi.fn() });
+    sceneService.execute({ type: "wall.create", id: "wall_batch_north", parentId: "level_default", start: [0, 0], end: [4, 0] });
+    sceneService.execute({ type: "wall.create", id: "wall_batch_east", parentId: "level_default", start: [4, 0], end: [4, 4] });
+    const revision = sceneService.getSnapshot().revision;
+    const result = await executeAgentToolCall(
+      createToolCall("update_architecture_elements", {
+        expected_revision: revision,
+        items: [
+          { element_id: "wall_batch_north", action: "delete" },
+          { element_id: "wall_batch_east", action: "delete" }
+        ]
+      }),
+      createContext({ getSceneSnapshot: sceneService.getSnapshot, executeSceneCommand: sceneService.execute, executeSceneBatch: sceneService.executeBatch })
+    );
+
+    expect(result.summary).toContain("2 个建筑元素");
+    expect(sceneService.getSnapshot().revision).toBe(revision + 1);
+    expect(sceneService.getSnapshot().nodes.wall_batch_north).toBeUndefined();
+    expect(sceneService.getSnapshot().nodes.wall_batch_east).toBeUndefined();
   });
 
   const itWindows = process.platform === "win32" ? it : it.skip;

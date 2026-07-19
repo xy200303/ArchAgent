@@ -49,8 +49,10 @@ export interface AgentRuntimeHost {
   getSessionResources(sessionId: string): SessionResource[];
   getBundledPythonRuntime(): BundledPythonRuntime | undefined;
   getSceneSnapshot(): SceneSnapshot;
+  replaceSceneSnapshot?(snapshot: SceneSnapshot): SceneSnapshot;
   captureScenePreview(view?: ScenePreviewView): Promise<string>;
   executeSceneCommand(command: SceneCommandInput): SceneCommandResult;
+  executeSceneBatch?(commands: SceneCommandInput[]): { accepted: boolean; snapshot: SceneSnapshot; message?: string };
   placeComponentLibraryItem(input: {
     componentId: string;
     name?: string;
@@ -61,6 +63,16 @@ export interface AgentRuntimeHost {
     targetDimensions?: [number, number, number];
     footprint?: [number, number];
   }): SceneCommandResult;
+  placeComponentLibraryItems?(inputs: Array<{
+    componentId: string;
+    name?: string;
+    parentId?: string;
+    position?: [number, number, number];
+    rotation?: [number, number, number];
+    scale?: [number, number, number];
+    targetDimensions?: [number, number, number];
+    footprint?: [number, number];
+  }>): { accepted: boolean; snapshot: SceneSnapshot; message?: string; commands?: Array<{ type: string; id?: string }> };
   createReconstructionWorkflow(sessionId: string, input: CreateReconstructionWorkflowInput): ReconstructionWorkflow;
   createArtifact(sessionId: string, filePath: string, parentResourceIds?: string[]): ArtifactSummary;
   sendArtifact(sessionId: string, resourceId: string): ArtifactSummary;

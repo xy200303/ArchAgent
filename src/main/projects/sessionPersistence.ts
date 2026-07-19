@@ -68,7 +68,7 @@ export function loadPersistedState(filePath: string): PersistedStateSnapshot | n
   const parsed = JSON.parse(readFileSync(filePath, "utf-8")) as Partial<PersistedStateFile>;
   if (parsed.version !== 2) return EMPTY_SNAPSHOT;
   return {
-    sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
+    sessions: recoverInterruptedSessions(Array.isArray(parsed.sessions) ? parsed.sessions : []),
     attachments: Array.isArray(parsed.attachments) ? parsed.attachments : [],
     artifacts: Array.isArray(parsed.artifacts) ? parsed.artifacts : [],
     resources: Array.isArray(parsed.resources) ? parsed.resources : [],
@@ -103,7 +103,7 @@ export function loadProjectState(projectPath: string): ProjectStateSnapshot | nu
   const parsed = JSON.parse(readFileSync(filePath, "utf-8")) as Partial<ProjectStateFile>;
   if (parsed.version !== 1) return { ...EMPTY_PROJECT_SNAPSHOT };
   return {
-    sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
+    sessions: recoverInterruptedSessions(Array.isArray(parsed.sessions) ? parsed.sessions : []),
     attachments: Array.isArray(parsed.attachments) ? parsed.attachments : [],
     artifacts: Array.isArray(parsed.artifacts) ? parsed.artifacts : [],
     ...(() => {
@@ -160,4 +160,39 @@ function isMemoryRecord(value: unknown): value is Record<string, SessionMemoryEn
           typeof (entry as SessionMemoryEntry).content === "string"
       )
   );
+}
+
+function recoverInterruptedSessions(sessions: ChatSession[]): ChatSession[] {
+  return sessions.map((session) => {
+    const hasInterruptedItems = session.items.some(
+      (item) => (item.kind === "message" && item.role === "assistant" && !item.isFinished) || (item.kind === "tool" && item.status === "running")
+    );
+    if (session.status !== "running" && !hasInterruptedItems) return session;
+
+    return {
+      ...session,
+      status: "idle",
+      items: session.items.map((item) => {
+        if (item.kind === "message" && item.role === "assistant" && !item.isFinished) {
+          return {
+            ...item,
+            isFinished: true,
+            failure: {
+              code: "interrupted_by_restart",
+              category: "unknown",
+              message: "应用重启时生成已中断，请重新发送你的请求。"
+            }
+          };
+        }
+        if (item.kind === "tool" && item.status === "running") {
+          return {
+            ...item,
+            status: "failed",
+            errorPreview: "应用重启时工具执行已中断。"
+          };
+        }
+        return item;
+      })
+    };
+  });
 }

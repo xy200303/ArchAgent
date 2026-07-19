@@ -89,7 +89,9 @@ export function createConversationService(options: {
   replaceSceneSnapshot?: AgentRuntimeHost["replaceSceneSnapshot"];
   captureScenePreview?: AgentRuntimeHost["captureScenePreview"];
   executeSceneCommand: (command: SceneCommandInput) => SceneCommandResult;
+  executeSceneBatch?: AgentRuntimeHost["executeSceneBatch"];
   placeComponentLibraryItem: AgentRuntimeHost["placeComponentLibraryItem"];
+  placeComponentLibraryItems?: AgentRuntimeHost["placeComponentLibraryItems"];
   createReconstructionWorkflow: AgentRuntimeHost["createReconstructionWorkflow"];
 }) {
   const abortControllers = new Map<string, AbortController>();
@@ -588,7 +590,9 @@ export function createConversationService(options: {
       replaceSceneSnapshot: options.replaceSceneSnapshot,
       captureScenePreview: options.captureScenePreview ?? (() => Promise.reject(new Error("当前应用未连接 WebGL 预览服务。"))),
       executeSceneCommand: options.executeSceneCommand,
+      executeSceneBatch: options.executeSceneBatch,
       placeComponentLibraryItem: options.placeComponentLibraryItem,
+      placeComponentLibraryItems: options.placeComponentLibraryItems,
       createReconstructionWorkflow: options.createReconstructionWorkflow,
       createArtifact: (sessionId, filePath, parentResourceIds) => {
         return createArtifact(sessionId, filePath, parentResourceIds);

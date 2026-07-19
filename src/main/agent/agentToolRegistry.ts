@@ -7,6 +7,7 @@ import OpenAI from "openai";
 import type { ChatCompletionFunctionTool, ChatCompletionMessageParam, ChatCompletionMessageToolCall, ChatCompletionTool } from "openai/resources/chat/completions";
 import type { AppSettings, ReconstructionWorkflowPlacement, SessionResource } from "../../shared/types";
 import type { SceneAssetNode, SceneCommandInput, SceneCommandResult, ScenePoint, SceneSnapshot, SceneWallNode, WallMaterialPreset } from "../../shared/modeling3d/sceneContracts";
+import { applySceneCommand } from "../../shared/modeling3d/sceneReducer";
 import { getSceneCoordinateContext } from "../../shared/modeling3d/sceneCoordinates";
 import { summarizeSceneForAgent } from "../modeling3d/sceneSummary";
 import {
@@ -30,6 +31,7 @@ import type { CreateReconstructionWorkflowInput } from "./reconstructionWorkflow
 import { extractObjectReference, generateDesignPreview } from "./designPreviewService";
 import { cropReferenceObjects } from "./referenceCropService";
 import { findGlobalComponent, importGlobalComponent, listGlobalComponents, updateGlobalComponent } from "../modeling3d/componentLibraryService";
+import { toAgentFailure } from "./agentFailure";
 
 export { parseDuckDuckGoHtml, searchWeb } from "./webSearch";
 export type { WebSearchResult } from "./webSearch";
@@ -60,8 +62,10 @@ export interface AgentToolExecutionContext {
   execBashEnabled: boolean;
   bundledPythonRuntime?: BundledPythonRuntime;
   getSceneSnapshot?: () => SceneSnapshot;
+  replaceSceneSnapshot?: (snapshot: SceneSnapshot) => SceneSnapshot;
   captureScenePreview?: (view?: import("./agentRuntime").ScenePreviewView) => Promise<string>;
   executeSceneCommand?: (command: SceneCommandInput) => SceneCommandResult;
+  executeSceneBatch?: (commands: SceneCommandInput[]) => { accepted: boolean; snapshot: SceneSnapshot; message?: string };
   placeComponentLibraryItem?: (input: {
     componentId: string;
     name?: string;
@@ -72,6 +76,16 @@ export interface AgentToolExecutionContext {
     targetDimensions?: [number, number, number];
     footprint?: [number, number];
   }) => SceneCommandResult;
+  placeComponentLibraryItems?: (inputs: Array<{
+    componentId: string;
+    name?: string;
+    parentId?: string;
+    position?: [number, number, number];
+    rotation?: [number, number, number];
+    scale?: [number, number, number];
+    targetDimensions?: [number, number, number];
+    footprint?: [number, number];
+  }>) => { accepted: boolean; snapshot: SceneSnapshot; message?: string; commands?: Array<{ type: string; id?: string }> };
   createReconstructionWorkflow?: (input: CreateReconstructionWorkflowInput) => unknown;
 }
 
@@ -269,16 +283,16 @@ function buildRefactoredAgentChatTools(options: { includeExecBash: boolean }): C
     { type: "function", function: { name: "search_resources", description: "按名称、类型、来源或状态搜索当前会话资源，返回后续 view_resources、图生 3D 或 send_file 可使用的 resource_id。", parameters: searchResourcesSchema } },
     { type: "function", function: { name: "view_resources", description: "按 resource_id 查看项目资源，或按 search_library_assets 返回的 library_asset_id 查看资产库模型。图片和可用 3D 预览直接回传给模型；文档返回相关文字。不得传本机路径。", parameters: viewResourcesSchema } },
     { type: "function", function: { name: "search_library_assets", description: "按名称、类别、标签或描述搜索全局资产库，返回可直接用于实例化的 library_asset_id、名称、参数与预览状态。", parameters: componentLibrarySearchSchema } },
-    { type: "function", function: { name: "place_library_asset", description: "将一个 library_asset_id 实例化到当前场景。用于单件精确摆放；参数与 place_library_assets.items 的单项一致，必须携带 expected_revision。", parameters: placeLibraryAssetSchema } },
+    { type: "function", function: { name: "place_library_asset", description: "将一个 library_asset_id 实例化到当前场景。用于单件精确摆放；参数与 place_library_assets.items 的单项一致。expected_revision 可选，携带时才校验版本。", parameters: placeLibraryAssetSchema } },
     { type: "function", function: { name: "preview_library_asset_placement", description: "预览一个或多个资产的落点与几何校验，不修改场景。anchor.side=room_interior（inside 兼容别名）会按房间/楼板边界自动判定室内侧，不依赖墙体绘制方向。", parameters: previewLibraryAssetPlacementSchema } },
-    { type: "function", function: { name: "place_library_assets", description: "将 search_library_assets 返回的 library_asset_id 实例化到当前场景。position 为世界米制坐标，或使用 anchor 锚定墙体；anchor.side=room_interior（inside 兼容别名）自动落在室内侧，不依赖墙体绘制方向。朝向优先使用 look_at 或 facing，rotation_degrees 仅作精确兜底。返回 scene_object_id、显示名和几何校验结果。", parameters: placeLibraryAssetsSchema } },
+    { type: "function", function: { name: "place_library_assets", description: "将 search_library_assets 返回的 library_asset_id 实例化到当前场景。position 为世界米制坐标，或使用 anchor 锚定墙体；可选 array.mode=line 或 grid 规则阵列（仅支持 position）。朝向优先使用 look_at 或 facing，rotation_degrees 仅作精确兜底。返回 scene_object_id、显示名和几何校验结果。", parameters: placeLibraryAssetsSchema } },
     { type: "function", function: { name: "inspect_scene", description: "读取当前场景的建筑元素和已放置物件，返回可用于后续操作的公开 ID、显示名、参数与版本。", parameters: emptyObjectSchema } },
     { type: "function", function: { name: "view_scene_preview", description: "获取当前 3D 工作台的 WebGL 预览图并直接返回给 Agent。可选 view 指定 current、perspective、top、front、right、left、back 或 bottom，以核对不同方向的摆放和明显穿模；只读，不修改场景数据。若要把截图展示给用户，必须再用本工具结果中的 resource_id 调用 send_file。", parameters: scenePreviewSchema } },
     { type: "function", function: { name: "update_scene_object", description: "按 scene_object_id 或唯一显示名调整或删除一个已放置物件。可用世界 position，或 anchor 锚定墙体加 local 偏移；朝向优先 look_at 或 facing，rotation_degrees 仅作精确兜底。", parameters: updateSceneObjectsSchema } },
-    { type: "function", function: { name: "create_architecture_element", description: "创建一个建筑元素（墙、门、窗、楼板、房间等）。用于单元素精确创建；必须携带 kind、properties 和 expected_revision。", parameters: createArchitectureElementSchema } },
-    { type: "function", function: { name: "create_architecture_elements", description: "批量创建多个明确的建筑元素；元素可使用 reference 作为唯一显示名，工具返回公开元素 ID。", parameters: buildArchitectureSchema } },
+    { type: "function", function: { name: "create_architecture_element", description: "创建一个建筑元素（墙、门、窗、楼板、房间等）。用于单元素精确创建；携带 expected_revision 时校验版本。", parameters: createArchitectureElementSchema } },
+    { type: "function", function: { name: "create_architecture_elements", description: "原子创建多个明确建筑元素；全部预检成功后一次提交，失败不会创建任何元素。", parameters: buildArchitectureSchema } },
     { type: "function", function: { name: "update_architecture_element", description: "更新或删除一个指定类型的建筑元素。用于单元素精确修改；kind 必须与目标元素一致。", parameters: updateArchitectureElementSchema } },
-    { type: "function", function: { name: "update_architecture_elements", description: "批量更新或删除建筑元素。", parameters: updateArchitectureSchema } },
+    { type: "function", function: { name: "update_architecture_elements", description: "原子批量更新或删除建筑元素。items 全部预检成功后一次提交，失败不会修改任何元素。", parameters: updateArchitectureSchema } },
     { type: "function", function: { name: "create_reconstruction_plan", description: "创建待用户确认的重建计划，记录假设、必答问题、可复用与待生成物件及其语义摆放；不会生成 3D。", parameters: reconstructionWorkflowSchema } },
     { type: "function", function: { name: "generate_design_preview", description: "根据已知事实和明确假设生成二维效果预览，供用户确认布局与风格。", parameters: designPreviewSchema } },
     { type: "function", function: { name: "send_file", description: "把效果图、提取图、模型或报告 resource 显式发送给用户。", parameters: sendArtifactSchema } }
@@ -740,55 +754,180 @@ function executeSearchLibraryAssets(args: Record<string, unknown>, context: Agen
 
 function executePlaceLibraryAssets(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
   if (!context.placeComponentLibraryItem) return { toolName: "place_library_assets", summary: "当前应用未连接场景资产服务。", content: "place_library_assets failed: scene asset placement unavailable" };
-  const items = Array.isArray(args.items) ? args.items : [];
-  if (!items.length) return { toolName: "place_library_assets", summary: "请至少提供一个资产。", content: "place_library_assets failed: missing items" };
+  const requestedItems = Array.isArray(args.items) ? args.items : [];
+  if (!requestedItems.length) return { toolName: "place_library_assets", summary: "请至少提供一个资产。", content: "place_library_assets failed: missing items" };
+  const expanded = expandLibraryAssetPlacementItems(requestedItems, "place_library_assets");
+  if ("failure" in expanded) return expanded.failure;
+  const items = expanded.items;
+  const getSceneSnapshot = context.getSceneSnapshot;
+  const snapshot = getSceneSnapshot?.();
+  if (!getSceneSnapshot || !snapshot) return { toolName: "place_library_assets", summary: "当前应用未连接场景服务。", content: "place_library_assets failed: scene unavailable" };
+  const expectedRevision = readOptionalNumberArg(args, "expected_revision");
+  if (expectedRevision !== undefined && snapshot.revision !== expectedRevision) return staleSceneRevisionFailure("place_library_assets", snapshot);
   const library = new Map(listGlobalComponents(context.componentLibraryRootDir ?? context.rootDir).map((item) => [item.id, item]));
-  const references = new Set(Object.values(context.getSceneSnapshot?.().nodes ?? {}).flatMap((node) => node.type === "asset" ? [node.name] : []));
+  const preflightFailure = preflightLibraryAssetPlacements(items, library, snapshot);
+  if (preflightFailure) return preflightFailure;
+  const references = new Set(Object.values(snapshot.nodes).flatMap((node) => node.type === "asset" ? [node.name] : []));
+  if (context.placeComponentLibraryItems) {
+    const batchInputs = items.map((rawItem) => {
+      const item = readRecord(rawItem) ?? {};
+      const component = library.get(readStringArg(item, "library_asset_id"));
+      const placement = resolveAssetPlacement(item, snapshot);
+      if ("error" in placement || !component) throw new Error("资产批量预检结果无效。");
+      const reference = uniqueSceneReference(readStringArg(item, "reference") || component?.name || "场景资产", references);
+      references.add(reference);
+      return {
+        componentId: component!.id,
+        name: reference,
+        ...(placement.position ? { position: placement.position } : {}),
+        ...(placement.rotation ? { rotation: placement.rotation } : {}),
+        ...("scale" in item ? { scale: readPoint3Arg(item, "scale")! } : {}),
+        ...("target_dimensions_meters" in item ? { targetDimensions: readPoint3Arg(item, "target_dimensions_meters")! } : {}),
+        ...("footprint_meters" in item ? { footprint: readPoint2Arg(item, "footprint_meters")! } : {})
+      };
+    });
+    try {
+      const result = context.placeComponentLibraryItems(batchInputs);
+      if (!result.accepted) return { toolName: "place_library_assets", summary: `批量实例化失败：${result.message ?? "场景事务未提交"}`, content: `place_library_assets failed: ${result.message ?? "scene batch rejected"}` };
+      const commands = result.commands ?? [];
+      return {
+        toolName: "place_library_assets",
+        summary: `已原子实例化 ${batchInputs.length} 个场景物件`,
+        content: batchInputs.map((input, index) => `- scene_object_id: ${commands[index]?.id ?? "（已创建）"}；显示名：${input.name}`).join("\n") + `\n场景版本：${result.snapshot.revision}`
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { toolName: "place_library_assets", summary: `批量实例化失败：${message}`, content: `place_library_assets failed: ${message}` };
+    }
+  }
   const created: Array<{ id: string; reference: string; diagnostics: string }> = [];
+  const rollback = (summary: string, content: string): AgentToolExecutionResult => {
+    context.replaceSceneSnapshot?.(snapshot);
+    return { toolName: "place_library_assets", summary, content: `${content}\n已回滚本批次已创建的场景节点。` };
+  };
   for (const rawItem of items) {
     const item = readRecord(rawItem);
     const libraryAssetId = item ? readStringArg(item, "library_asset_id") : "";
     const component = library.get(libraryAssetId);
     if (!component) return { toolName: "place_library_assets", summary: `未找到资产库 ID：${libraryAssetId || "（缺失）"}`, content: "place_library_assets failed: unknown library asset" };
-    if (!context.getSceneSnapshot) return { toolName: "place_library_assets", summary: "当前应用未连接场景服务。", content: "place_library_assets failed: scene unavailable" };
-    const placement = resolveAssetPlacement(item ?? {}, context.getSceneSnapshot());
+    const placement = resolveAssetPlacement(item ?? {}, getSceneSnapshot());
     if ("error" in placement) return { toolName: "place_library_assets", summary: placement.error, content: `place_library_assets failed: ${placement.error}` };
     const { position, rotation } = placement;
     const scale = item && "scale" in item ? readPoint3Arg(item, "scale") : undefined;
     const targetDimensions = item && "target_dimensions_meters" in item ? readPoint3Arg(item, "target_dimensions_meters") : undefined;
     const footprint = item && "footprint_meters" in item ? readPoint2Arg(item, "footprint_meters") : undefined;
+    const ignoreCollision = item ? readBooleanArg(item, "ignore_collision", false) : false;
     if (item && "scale" in item && (!scale || scale.some((value) => value <= 0))) return { toolName: "place_library_assets", summary: `资产“${component.name}”的缩放参数无效。`, content: "place_library_assets failed: invalid scale" };
     if (item && "target_dimensions_meters" in item && (!targetDimensions || targetDimensions.some((value) => value <= 0))) return { toolName: "place_library_assets", summary: `资产“${component.name}”的目标尺寸无效。`, content: "place_library_assets failed: invalid target dimensions" };
     if (item && "footprint_meters" in item && (!footprint || footprint.some((value) => value <= 0))) return { toolName: "place_library_assets", summary: `资产“${component.name}”的占地尺寸无效。`, content: "place_library_assets failed: invalid footprint" };
-    const collision = footprint && position ? findAssetPlacementCollision(context.getSceneSnapshot(), position, rotation ?? [0, 0, 0], footprint, scale ?? [1, 1, 1]) : undefined;
-    if (collision) return { toolName: "place_library_assets", summary: `“${component.name}”会与“${collision.name}”占地碰撞。`, content: `place_library_assets failed: footprint collision with ${collision.name} (${collision.id})` };
-    const architectureCollision = footprint && position ? findArchitecturePlacementCollision(context.getSceneSnapshot(), position, rotation ?? [0, 0, 0], footprint, scale ?? [1, 1, 1]) : undefined;
-    if (architectureCollision) return { toolName: "place_library_assets", summary: `“${component.name}”会与${architectureCollision.wall.name}穿模 ${formatMeters(architectureCollision.overlap)}。`, content: `place_library_assets failed: wall collision with ${architectureCollision.wall.id}` };
+    const collision = footprint && position ? findAssetPlacementCollision(getSceneSnapshot(), position, rotation ?? [0, 0, 0], footprint, scale ?? [1, 1, 1]) : undefined;
+    if (collision && !ignoreCollision) return { toolName: "place_library_assets", summary: `“${component.name}”会与“${collision.name}”占地碰撞。`, content: `place_library_assets failed: footprint collision with ${collision.name} (${collision.id}); overlap_meters: ${formatFootprintOverlap(position!, rotation ?? [0, 0, 0], footprint!, scale ?? [1, 1, 1], collision)}` };
+    const architectureCollision = footprint && position ? findArchitecturePlacementCollision(getSceneSnapshot(), position, rotation ?? [0, 0, 0], footprint, scale ?? [1, 1, 1]) : undefined;
+    if (architectureCollision && !ignoreCollision) return { toolName: "place_library_assets", summary: `“${component.name}”会与${architectureCollision.wall.name}穿模 ${formatMeters(architectureCollision.overlap)}。`, content: `place_library_assets failed: wall collision with ${architectureCollision.wall.id}; overlap_meters: ${formatMeters(architectureCollision.overlap)}` };
     const reference = uniqueSceneReference(item ? readStringArg(item, "reference") || component.name : component.name, references);
     references.add(reference);
     try {
       const result = context.placeComponentLibraryItem({ componentId: component.id, name: reference, ...(position ? { position } : {}), ...(rotation ? { rotation } : {}), ...(scale ? { scale } : {}), ...(targetDimensions ? { targetDimensions } : {}), ...(footprint ? { footprint } : {}) });
-      if (!result.accepted) return { toolName: "place_library_assets", summary: `实例化“${component.name}”失败：${result.message}`, content: `place_library_assets failed: ${result.message}` };
-      if (result.command.type !== "asset.create") return { toolName: "place_library_assets", summary: "实例化未返回场景物件。", content: "place_library_assets failed: unexpected scene command" };
-      created.push({ id: result.command.id, reference, diagnostics: formatPlacementDiagnostics(context.getSceneSnapshot() ?? result.snapshot, position!, rotation ?? [0, 0, 0], footprint, scale ?? [1, 1, 1]) });
+      if (!result.accepted) return rollback(`实例化“${component.name}”失败：${result.message}`, `place_library_assets failed: ${result.message}`);
+      if (result.command.type !== "asset.create") return rollback("实例化未返回场景物件。", "place_library_assets failed: unexpected scene command");
+      created.push({ id: result.command.id, reference, diagnostics: formatPlacementDiagnostics(getSceneSnapshot() ?? result.snapshot, position!, rotation ?? [0, 0, 0], footprint, scale ?? [1, 1, 1]) });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      return { toolName: "place_library_assets", summary: `实例化“${component.name}”失败：${message}`, content: `place_library_assets failed: ${message}` };
+      return rollback(`实例化“${component.name}”失败：${message}`, `place_library_assets failed: ${message}`);
     }
   }
   return { toolName: "place_library_assets", summary: `已实例化 ${created.length} 个场景物件`, content: created.map((item) => `- scene_object_id: ${item.id}；显示名：${item.reference}\n${item.diagnostics}`).join("\n") };
 }
 
+function expandLibraryAssetPlacementItems(
+  items: unknown[],
+  toolName: "place_library_assets" | "preview_library_asset_placement"
+): { items: unknown[] } | { failure: AgentToolExecutionResult } {
+  const expandedItems: unknown[] = [];
+  for (const [itemIndex, rawItem] of items.entries()) {
+    const item = readRecord(rawItem);
+    if (!item) return { failure: { toolName, summary: `第 ${itemIndex + 1} 项不是有效的资产参数。`, content: `${toolName} failed: invalid placement item` } };
+    const array = readRecord(item.array);
+    if (!array) {
+      expandedItems.push(rawItem);
+      continue;
+    }
+    const mode = readStringArg(array, "mode");
+    const position = readPoint3Arg(item, "position");
+    const offset = readPoint2Arg(array, "offset_meters");
+    if (!position || !offset || (mode !== "line" && mode !== "grid")) {
+      return { failure: { toolName, summary: `第 ${itemIndex + 1} 项的 array 参数无效。`, content: `${toolName} failed: invalid array placement` } };
+    }
+    const quantity = readOptionalNumberArg(array, "quantity");
+    const rows = readOptionalNumberArg(array, "rows");
+    const columns = readOptionalNumberArg(array, "columns");
+    const instanceCount = mode === "line" ? quantity : rows && columns ? rows * columns : undefined;
+    if (!instanceCount || !Number.isInteger(instanceCount) || instanceCount < 1 || instanceCount > 100 || (mode === "grid" && (!Number.isInteger(rows) || !Number.isInteger(columns)))) {
+      return { failure: { toolName, summary: `第 ${itemIndex + 1} 项的阵列数量无效。`, content: `${toolName} failed: invalid array count` } };
+    }
+    const { array: _array, ...baseItem } = item;
+    for (let instanceIndex = 0; instanceIndex < instanceCount; instanceIndex += 1) {
+      const column = mode === "grid" ? instanceIndex % columns! : instanceIndex;
+      const row = mode === "grid" ? Math.floor(instanceIndex / columns!) : 0;
+      expandedItems.push({
+        ...baseItem,
+        position: mode === "line"
+          ? [position[0] + instanceIndex * offset[0], position[1], position[2] + instanceIndex * offset[1]]
+          : [position[0] + column * offset[0], position[1], position[2] + row * offset[1]]
+      });
+    }
+  }
+  return { items: expandedItems };
+}
+
+function preflightLibraryAssetPlacements(
+  rawItems: unknown[],
+  library: Map<string, { id: string; name: string }>,
+  snapshot: SceneSnapshot
+): AgentToolExecutionResult | undefined {
+  let validationSnapshot = snapshot;
+  for (const [index, rawItem] of rawItems.entries()) {
+    const item = readRecord(rawItem);
+    const libraryAssetId = item ? readStringArg(item, "library_asset_id") : "";
+    const component = library.get(libraryAssetId);
+    if (!component) return { toolName: "place_library_assets", summary: `第 ${index + 1} 项未找到资产库 ID：${libraryAssetId || "（缺失）"}`, content: `place_library_assets failed: item ${index + 1}: unknown library asset` };
+    const placement = resolveAssetPlacement(item ?? {}, validationSnapshot);
+    if ("error" in placement || !placement.position) {
+      const message = "error" in placement ? placement.error : "无法解析落点。";
+      return { toolName: "place_library_assets", summary: `第 ${index + 1} 项无效：${message}`, content: `place_library_assets failed: item ${index + 1}: ${message}` };
+    }
+    const scale = item && "scale" in item ? readPoint3Arg(item, "scale") : undefined;
+    const targetDimensions = item && "target_dimensions_meters" in item ? readPoint3Arg(item, "target_dimensions_meters") : undefined;
+    const footprint = item && "footprint_meters" in item ? readPoint2Arg(item, "footprint_meters") : undefined;
+    const ignoreCollision = item ? readBooleanArg(item, "ignore_collision", false) : false;
+    if ((item && "scale" in item && (!scale || scale.some((value) => value <= 0))) || (item && "target_dimensions_meters" in item && (!targetDimensions || targetDimensions.some((value) => value <= 0))) || (item && "footprint_meters" in item && (!footprint || footprint.some((value) => value <= 0)))) {
+      return { toolName: "place_library_assets", summary: `第 ${index + 1} 项的尺寸或缩放参数无效。`, content: `place_library_assets failed: item ${index + 1}: invalid placement dimensions` };
+    }
+    const rotation = placement.rotation ?? [0, 0, 0] as [number, number, number];
+    const resolvedScale = scale ?? [1, 1, 1] as [number, number, number];
+    const collision = footprint ? findAssetPlacementCollision(validationSnapshot, placement.position, rotation, footprint, resolvedScale) : undefined;
+    if (collision && !ignoreCollision) return { toolName: "place_library_assets", summary: `第 ${index + 1} 项“${component.name}”会与“${collision.name}”占地碰撞。`, content: `place_library_assets failed: item ${index + 1}: footprint collision with ${collision.name} (${collision.id}); overlap_meters: ${formatFootprintOverlap(placement.position, rotation, footprint!, resolvedScale, collision)}` };
+    const architectureCollision = footprint ? findArchitecturePlacementCollision(validationSnapshot, placement.position, rotation, footprint, resolvedScale) : undefined;
+    if (architectureCollision && !ignoreCollision) return { toolName: "place_library_assets", summary: `第 ${index + 1} 项“${component.name}”会与${architectureCollision.wall.name}穿模。`, content: `place_library_assets failed: item ${index + 1}: wall collision with ${architectureCollision.wall.id}; overlap_meters: ${formatMeters(architectureCollision.overlap)}` };
+    validationSnapshot = appendPlannedAsset(validationSnapshot, `preflight_asset_${index + 1}`, component.name, placement.position, rotation, resolvedScale, footprint);
+  }
+  return undefined;
+}
+
 function executePreviewLibraryAssetPlacement(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
   const snapshot = context.getSceneSnapshot?.();
-  const items = Array.isArray(args.items) ? args.items : [];
+  const requestedItems = Array.isArray(args.items) ? args.items : [];
+  const expanded = expandLibraryAssetPlacementItems(requestedItems, "preview_library_asset_placement");
+  if ("failure" in expanded) return expanded.failure;
+  const items = expanded.items;
   if (!snapshot) return { toolName: "preview_library_asset_placement", summary: "当前应用未连接场景服务。", content: "preview_library_asset_placement failed: scene unavailable" };
   if (!items.length) return { toolName: "preview_library_asset_placement", summary: "请至少提供一个资产。", content: "preview_library_asset_placement failed: missing items" };
 
   const previews: string[] = [];
+  let validationSnapshot = snapshot;
   for (const rawItem of items) {
     const item = readRecord(rawItem) ?? {};
-    const placement = resolveAssetPlacement(item, snapshot);
+    const placement = resolveAssetPlacement(item, validationSnapshot);
     if ("error" in placement || !placement.position) {
       const message = "error" in placement ? placement.error : "无法解析落点。";
       return { toolName: "preview_library_asset_placement", summary: message, content: `preview_library_asset_placement failed: ${message}` };
@@ -798,9 +937,10 @@ function executePreviewLibraryAssetPlacement(args: Record<string, unknown>, cont
     if (!scale || scale.some((value) => value <= 0) || ("footprint_meters" in item && (!footprint || footprint.some((value) => value <= 0)))) {
       return { toolName: "preview_library_asset_placement", summary: "缩放或占地尺寸无效。", content: "preview_library_asset_placement failed: invalid placement dimensions" };
     }
-    const furnitureCollision = footprint ? findAssetPlacementCollision(snapshot, placement.position, placement.rotation ?? [0, 0, 0], footprint, scale) : undefined;
-    const architectureCollision = footprint ? findArchitecturePlacementCollision(snapshot, placement.position, placement.rotation ?? [0, 0, 0], footprint, scale) : undefined;
+    const furnitureCollision = footprint ? findAssetPlacementCollision(validationSnapshot, placement.position, placement.rotation ?? [0, 0, 0], footprint, scale) : undefined;
+    const architectureCollision = footprint ? findArchitecturePlacementCollision(validationSnapshot, placement.position, placement.rotation ?? [0, 0, 0], footprint, scale) : undefined;
     previews.push(`- 预览落点：[${placement.position.map(formatCoordinate).join(", ")}]\n${formatPlacementDiagnostics(snapshot, placement.position, placement.rotation ?? [0, 0, 0], footprint, scale)}${furnitureCollision ? `\n  家具碰撞：与“${furnitureCollision.name}”占地重叠` : ""}${architectureCollision ? `\n  建筑穿模：与${architectureCollision.wall.name}重叠 ${formatMeters(architectureCollision.overlap)}` : ""}`);
+    validationSnapshot = appendPlannedAsset(validationSnapshot, `preview_asset_${previews.length}`, `预览资产 ${previews.length}`, placement.position, placement.rotation ?? [0, 0, 0], scale, footprint);
   }
   return { toolName: "preview_library_asset_placement", summary: `已预览 ${previews.length} 个落点（场景版本 ${snapshot.revision}），未修改场景。`, content: previews.join("\n") };
 }
@@ -808,10 +948,10 @@ function executePreviewLibraryAssetPlacement(args: Record<string, unknown>, cont
 function executePlaceLibraryAsset(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
   const expectedRevision = readOptionalNumberArg(args, "expected_revision");
   const snapshot = context.getSceneSnapshot?.();
-  if (expectedRevision === undefined || !snapshot) return { toolName: "place_library_asset", summary: "需要场景版本。", content: "place_library_asset failed: missing expected_revision" };
-  if (snapshot.revision !== expectedRevision) return staleSceneRevisionFailure("place_library_asset", snapshot);
+  if (!snapshot) return { toolName: "place_library_asset", summary: "当前应用未连接场景服务。", content: "place_library_asset failed: scene unavailable" };
+  if (expectedRevision !== undefined && snapshot.revision !== expectedRevision) return staleSceneRevisionFailure("place_library_asset", snapshot);
   const { expected_revision: _expectedRevision, ...item } = args;
-  return renameToolResult(executePlaceLibraryAssets({ items: [item] }, context), "place_library_asset");
+  return renameToolResult(executePlaceLibraryAssets({ ...(expectedRevision !== undefined ? { expected_revision: expectedRevision } : {}), items: [item] }, context), "place_library_asset");
 }
 
 function executePlaceSceneObjects(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
@@ -842,16 +982,39 @@ function executePlaceSceneObjects(args: Record<string, unknown>, context: AgentT
     placements.push({ componentId: resolved.component.id, reference, ...(position ? { position } : {}), ...(rotation ? { rotation } : {}), ...(scale ? { scale } : {}) });
   }
 
+  if (context.placeComponentLibraryItems) {
+    try {
+      const result = context.placeComponentLibraryItems(placements);
+      if (!result.accepted) return { toolName: "place_scene_objects", summary: `批量放置失败：${result.message ?? "场景事务未提交"}`, content: `place_scene_objects failed: ${result.message ?? "scene batch rejected"}` };
+      return {
+        toolName: "place_scene_objects",
+        summary: `已原子放置 ${placements.length} 个场景物件`,
+        content: `已放置场景物件：\n${placements.map((placement, index) => `- ${placement.reference}：asset_id ${result.commands?.[index]?.id ?? "（已创建）"}`).join("\n")}\n场景版本：${result.snapshot.revision}`
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { toolName: "place_scene_objects", summary: `批量放置失败：${message}`, content: `place_scene_objects failed: ${message}` };
+    }
+  }
+
+  const initialSnapshot = context.getSceneSnapshot?.();
   const created: Array<{ reference: string; id: string }> = [];
   for (const placement of placements) {
     try {
       const result = context.placeComponentLibraryItem({ componentId: placement.componentId, name: placement.reference, ...(placement.position ? { position: placement.position } : {}), ...(placement.rotation ? { rotation: placement.rotation } : {}), ...(placement.scale ? { scale: placement.scale } : {}) });
-      if (!result.accepted) return { toolName: "place_scene_objects", summary: `放置“${placement.reference}”失败：${result.message}`, content: `place_scene_objects failed: ${result.message}` };
-      if (result.command.type !== "asset.create") return { toolName: "place_scene_objects", summary: `放置“${placement.reference}”失败：未创建场景节点`, content: "place_scene_objects failed: asset node was not created" };
+      if (!result.accepted) {
+        if (initialSnapshot) context.replaceSceneSnapshot?.(initialSnapshot);
+        return { toolName: "place_scene_objects", summary: `放置“${placement.reference}”失败：${result.message}`, content: `place_scene_objects failed: ${result.message}\n已回滚本批次已创建的场景节点。` };
+      }
+      if (result.command.type !== "asset.create") {
+        if (initialSnapshot) context.replaceSceneSnapshot?.(initialSnapshot);
+        return { toolName: "place_scene_objects", summary: `放置“${placement.reference}”失败：未创建场景节点`, content: "place_scene_objects failed: asset node was not created\n已回滚本批次已创建的场景节点。" };
+      }
       created.push({ reference: placement.reference, id: result.command.id });
     } catch (error) {
+      if (initialSnapshot) context.replaceSceneSnapshot?.(initialSnapshot);
       const message = error instanceof Error ? error.message : String(error);
-      return { toolName: "place_scene_objects", summary: `放置“${placement.reference}”失败：${message}`, content: `place_scene_objects failed: ${message}` };
+      return { toolName: "place_scene_objects", summary: `放置“${placement.reference}”失败：${message}`, content: `place_scene_objects failed: ${message}\n已回滚本批次已创建的场景节点。` };
     }
   }
   const revision = context.getSceneSnapshot?.().revision;
@@ -1179,8 +1342,7 @@ async function executeGenerateSingleAsset(args: Record<string, unknown>, context
       ...(resource ? { parentResourceIds: [resource.id] } : {})
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return { toolName: "generate_3d_asset", summary: `生成单实体失败：${message}`, content: `generate_3d_asset failed: ${message}` };
+    return providerToolFailure("generate_3d_asset", "生成单实体失败", error);
   }
 }
 
@@ -1244,9 +1406,27 @@ async function executeEditLibraryAsset(args: Record<string, unknown>, context: A
       artifactPath: generated.path
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return { toolName: "edit_library_asset", summary: `生成资产调整版失败：${message}`, content: `edit_library_asset failed: ${message}` };
+    return providerToolFailure("edit_library_asset", "生成资产调整版失败", error);
   }
+}
+
+function providerToolFailure(
+  toolName: "generate_3d_asset" | "edit_library_asset",
+  summaryPrefix: string,
+  error: unknown
+): AgentToolExecutionResult {
+  const failure = toAgentFailure(error);
+  return {
+    toolName,
+    summary: `${summaryPrefix}：${failure.message}`,
+    content: [
+      `${toolName} failed: ${failure.message}`,
+      ...(failure.code ? [`error_code: ${failure.code}`] : []),
+      ...(failure.category ? [`error_category: ${failure.category}`] : []),
+      ...(failure.retryable !== undefined ? [`retryable: ${failure.retryable}`] : []),
+      ...(failure.retryAfterSeconds !== undefined ? [`retry_after_seconds: ${failure.retryAfterSeconds}`] : [])
+    ].join("\n")
+  };
 }
 
 async function executeViewResources(args: Record<string, unknown>, context: AgentToolExecutionContext): Promise<AgentToolExecutionResult> {
@@ -1324,23 +1504,32 @@ function executeSearchResources(args: Record<string, unknown>, context: AgentToo
 
 async function executeApplyScenePlan(args: Record<string, unknown>, context: AgentToolExecutionContext): Promise<AgentToolExecutionResult> {
   const expectedRevision = readOptionalNumberArg(args, "expected_revision");
-  if (expectedRevision !== undefined && context.getSceneSnapshot?.().revision !== expectedRevision) {
-    return { toolName: "apply_scene_plan", summary: "场景版本已变化，请重新读取场景后规划。", content: "apply_scene_plan failed: stale scene revision" };
-  }
+  const snapshot = context.getSceneSnapshot?.();
+  if (!snapshot) return { toolName: "apply_scene_plan", summary: "当前应用未连接场景服务。", content: "apply_scene_plan failed: scene unavailable" };
+  if (expectedRevision !== undefined && snapshot.revision !== expectedRevision) return staleSceneRevisionFailure("apply_scene_plan", snapshot);
   const commands = Array.isArray(args.commands) ? args.commands : [];
   if (!commands.length) return { toolName: "apply_scene_plan", summary: "场景计划不能为空。", content: "apply_scene_plan failed: missing commands" };
-  const results: AgentToolExecutionResult[] = [];
-  for (const item of commands) {
-    const record = readRecord(item);
-    const operation = record ? readStringArg(record, "operation") : "";
-    const input = record ? readRecord(record.input) : undefined;
-    const legacyName = sceneOperationMap[operation];
-    if (!legacyName || !input) return { toolName: "apply_scene_plan", summary: `不支持场景操作：${operation || "unknown"}`, content: `apply_scene_plan failed: unsupported operation ${operation}` };
-    const result = await executeAgentToolCall({ id: `scene_plan_${operation}`, type: "function", function: { name: legacyName, arguments: JSON.stringify(input) } }, context);
-    if (result.content.includes(" failed:")) return { toolName: "apply_scene_plan", summary: `场景计划中断：${result.summary}`, content: result.content };
-    results.push(result);
-  }
-  return { toolName: "apply_scene_plan", summary: `已应用 ${results.length} 项场景操作`, content: results.map((result) => result.content).join("\n\n") };
+  const transaction = executeSceneTransaction(
+    context,
+    (transactionContext) => {
+      const results: AgentToolExecutionResult[] = [];
+      for (const item of commands) {
+        const record = readRecord(item);
+        const operation = record ? readStringArg(record, "operation") : "";
+        const input = record ? readRecord(record.input) : undefined;
+        const legacyName = sceneOperationMap[operation];
+        if (!legacyName || !input) return { toolName: "apply_scene_plan" as const, summary: `不支持场景操作：${operation || "unknown"}`, content: `apply_scene_plan failed: unsupported operation ${operation}` };
+        const result = executeAgentToolCallSync(legacyName, input, transactionContext);
+        if (result.content.includes(" failed:")) return { toolName: "apply_scene_plan" as const, summary: `场景计划中断：${result.summary}`, content: result.content };
+        results.push(result);
+      }
+      return { toolName: "apply_scene_plan" as const, summary: `已应用 ${results.length} 项场景操作`, content: results.map((result) => result.content).join("\n\n") };
+    },
+    (result) => result.content.includes(" failed:")
+  );
+  if (transaction.commitError) return { toolName: "apply_scene_plan", summary: "场景计划未提交。", content: `apply_scene_plan failed: ${transaction.commitError}` };
+  if (transaction.snapshot) return { ...transaction.result, content: `${transaction.result.content}\n场景版本：${transaction.snapshot.revision}` };
+  return transaction.result;
 }
 
 function executeUpdateScene(args: Record<string, unknown>, context: AgentToolExecutionContext): Promise<AgentToolExecutionResult> {
@@ -1568,6 +1757,35 @@ function findAssetPlacementCollision(
   return undefined;
 }
 
+function appendPlannedAsset(
+  snapshot: SceneSnapshot,
+  id: string,
+  name: string,
+  position: [number, number, number],
+  rotation: [number, number, number],
+  scale: [number, number, number],
+  footprint?: [number, number]
+): SceneSnapshot {
+  return {
+    ...snapshot,
+    nodes: {
+      ...snapshot.nodes,
+      [id]: {
+        id,
+        type: "asset",
+        name,
+        parentId: "level_default",
+        format: "glb",
+        sourcePath: "",
+        position,
+        rotation,
+        scale,
+        ...(footprint ? { footprint } : {})
+      }
+    }
+  };
+}
+
 function findArchitecturePlacementCollision(
   snapshot: SceneSnapshot | undefined,
   position: [number, number, number],
@@ -1633,7 +1851,9 @@ function projectedFootprintExtent(yaw: number, footprint: [number, number], scal
     + Math.abs(depthVector[0] * normal[0] + depthVector[1] * normal[1]) * footprint[1] * scale[2] / 2;
 }
 
-function getFootprintCorners(position: [number, number, number], yaw: number, footprint: [number, number], scale: [number, number, number], padding = 0.02): Array<[number, number]> {
+const FOOTPRINT_COLLISION_TOLERANCE_METERS = 0.01;
+
+function getFootprintCorners(position: [number, number, number], yaw: number, footprint: [number, number], scale: [number, number, number], padding = 0): Array<[number, number]> {
   const halfWidth = Math.max(0, footprint[0] * scale[0] / 2) + padding;
   const halfDepth = Math.max(0, footprint[1] * scale[2] / 2) + padding;
   const cosine = Math.cos(yaw);
@@ -1646,8 +1866,32 @@ function orientedRectanglesOverlap(first: Array<[number, number]>, second: Array
   return axes.every((axis) => {
     const firstRange = projectCorners(first, axis);
     const secondRange = projectCorners(second, axis);
-    return firstRange[0] < secondRange[1] && secondRange[0] < firstRange[1];
+    return firstRange[0] < secondRange[1] - FOOTPRINT_COLLISION_TOLERANCE_METERS
+      && secondRange[0] < firstRange[1] - FOOTPRINT_COLLISION_TOLERANCE_METERS;
   });
+}
+
+function formatFootprintOverlap(
+  position: [number, number, number],
+  rotation: [number, number, number],
+  footprint: [number, number],
+  scale: [number, number, number],
+  existing: SceneAssetNode
+): string {
+  const candidateBounds = footprintBounds(getFootprintCorners(position, rotation[1], footprint, scale));
+  const existingBounds = footprintBounds(getFootprintCorners(existing.position, existing.rotation[1], existing.footprint!, existing.scale));
+  const overlapX = Math.max(0, Math.min(candidateBounds.maxX, existingBounds.maxX) - Math.max(candidateBounds.minX, existingBounds.minX));
+  const overlapZ = Math.max(0, Math.min(candidateBounds.maxZ, existingBounds.maxZ) - Math.max(candidateBounds.minZ, existingBounds.minZ));
+  return `${formatMeters(overlapX)} × ${formatMeters(overlapZ)}`;
+}
+
+function footprintBounds(corners: Array<[number, number]>): { minX: number; maxX: number; minZ: number; maxZ: number } {
+  return {
+    minX: Math.min(...corners.map((corner) => corner[0])),
+    maxX: Math.max(...corners.map((corner) => corner[0])),
+    minZ: Math.min(...corners.map((corner) => corner[1])),
+    maxZ: Math.max(...corners.map((corner) => corner[1]))
+  };
 }
 
 function getRectangleAxes(corners: Array<[number, number]>): Array<[number, number]> {
@@ -1721,8 +1965,22 @@ function formatMeters(value: number): string {
 
 async function executeBuildArchitecture(args: Record<string, unknown>, context: AgentToolExecutionContext): Promise<AgentToolExecutionResult> {
   const expectedRevision = readOptionalNumberArg(args, "expected_revision");
-  if (expectedRevision === undefined) return { toolName: "create_architecture_elements", summary: "缺少场景版本。", content: "create_architecture_elements failed: missing expected_revision" };
-  if (context.getSceneSnapshot?.().revision !== expectedRevision) return { toolName: "create_architecture_elements", summary: "场景版本已变化，请重新读取场景。", content: "create_architecture_elements failed: stale scene revision" };
+  const snapshot = context.getSceneSnapshot?.();
+  if (!snapshot) return { toolName: "create_architecture_elements", summary: "当前应用未连接场景服务。", content: "create_architecture_elements failed: scene unavailable" };
+  if (expectedRevision !== undefined && snapshot.revision !== expectedRevision) return staleSceneRevisionFailure("create_architecture_elements", snapshot);
+  const transaction = executeSceneTransaction(
+    context,
+    (transactionContext) => executeBuildArchitectureInSnapshot(args, transactionContext),
+    (result) => result.content.includes(" failed:")
+  );
+  if (transaction.commitError) return { toolName: "create_architecture_elements", summary: "批量创建未提交。", content: `create_architecture_elements failed: ${transaction.commitError}` };
+  if (transaction.snapshot) {
+    return { ...transaction.result, content: `${transaction.result.content}\n场景版本：${transaction.snapshot.revision}` };
+  }
+  return transaction.result;
+}
+
+function executeBuildArchitectureInSnapshot(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
   const elements = Array.isArray(args.elements) ? args.elements : [];
   if (!elements.length) return { toolName: "create_architecture_elements", summary: "请至少提供一个建筑元素。", content: "create_architecture_elements failed: missing elements" };
   const createToolByKind: Record<string, BuiltinToolName> = { wall: "create_wall", slab: "create_slab", ceiling: "create_ceiling", column: "create_column", zone: "create_zone", stair: "create_stair", fence: "create_fence", door: "create_door", window: "create_window" };
@@ -1774,14 +2032,37 @@ function executeArchitectureCreateCommand(toolName: BuiltinToolName, args: Recor
 
 function executeUpdateArchitecture(args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
   const expectedRevision = readOptionalNumberArg(args, "expected_revision");
-  const target = readStringArg(args, "element_id") || readStringArg(args, "reference");
   const snapshot = context.getSceneSnapshot?.();
-  if (expectedRevision === undefined || !target || !snapshot) return { toolName: "update_architecture_elements", summary: "需要场景版本和建筑元素标识。", content: "update_architecture_elements failed: missing arguments" };
-  if (snapshot.revision !== expectedRevision) return { toolName: "update_architecture_elements", summary: "场景版本已变化，请重新读取场景。", content: "update_architecture_elements failed: stale scene revision" };
+  if (!snapshot) return { toolName: "update_architecture_elements", summary: "当前应用未连接场景服务。", content: "update_architecture_elements failed: scene unavailable" };
+  if (expectedRevision !== undefined && snapshot.revision !== expectedRevision) return staleSceneRevisionFailure("update_architecture_elements", snapshot);
+  const items = Array.isArray(args.items) ? args.items : [];
+  if (!items.length) return { toolName: "update_architecture_elements", summary: "请至少提供一个建筑元素变更。", content: "update_architecture_elements failed: missing items" };
+  const transaction = executeSceneTransaction(
+    context,
+    (transactionContext) => {
+      const results: AgentToolExecutionResult[] = [];
+      for (const item of items) {
+        const result = executeUpdateArchitectureItem(readRecord(item), transactionContext);
+        if (result.content.includes(" failed:")) return result;
+        results.push(result);
+      }
+      return { toolName: "update_architecture_elements" as const, summary: `已更新或删除 ${results.length} 个建筑元素`, content: results.map((result) => result.content).join("\n\n") };
+    },
+    (result) => result.content.includes(" failed:")
+  );
+  if (transaction.commitError) return { toolName: "update_architecture_elements", summary: "批量更新未提交。", content: `update_architecture_elements failed: ${transaction.commitError}` };
+  if (transaction.snapshot) return { ...transaction.result, content: `${transaction.result.content}\n场景版本：${transaction.snapshot.revision}` };
+  return transaction.result;
+}
+
+function executeUpdateArchitectureItem(args: Record<string, unknown> | undefined, context: AgentToolExecutionContext): AgentToolExecutionResult {
+  const target = readStringArg(args ?? {}, "element_id") || readStringArg(args ?? {}, "reference");
+  const snapshot = context.getSceneSnapshot?.();
+  if (!target || !snapshot) return { toolName: "update_architecture_elements", summary: "需要建筑元素标识。", content: "update_architecture_elements failed: missing target" };
   const element = Object.values(snapshot.nodes).find((node) => node.id === target || node.name === target);
   if (!element || ["site", "building", "level", "asset"].includes(element.type)) return { toolName: "update_architecture_elements", summary: `未找到建筑元素：${target}`, content: "update_architecture_elements failed: unknown element" };
-  if (readStringArg(args, "action") === "delete") return renameToolResult(executeDeleteNode({ id: element.id }, context), "update_architecture_elements");
-  const changes = readRecord(args.changes);
+  if (readStringArg(args ?? {}, "action") === "delete") return renameToolResult(executeDeleteNode({ id: element.id }, context), "update_architecture_elements");
+  const changes = readRecord(args?.changes);
   if (!changes) return { toolName: "update_architecture_elements", summary: "缺少建筑元素修改内容。", content: "update_architecture_elements failed: missing changes" };
   const toolByType: Partial<Record<typeof element.type, BuiltinToolName>> = { wall: "update_wall", slab: "update_slab", ceiling: "update_ceiling", column: "update_column", zone: "update_zone", stair: "update_stair", fence: "update_fence", door: "update_door", window: "update_window" };
   const toolName = toolByType[element.type];
@@ -1795,12 +2076,21 @@ function executeUpdateArchitectureElement(args: Record<string, unknown>, context
   const snapshot = context.getSceneSnapshot?.();
   const element = snapshot && target ? Object.values(snapshot.nodes).find((node) => node.id === target || node.name === target) : undefined;
   if (!kind || !element || element.type !== kind) return { toolName: "update_architecture_element", summary: "kind 必须与目标建筑元素一致。", content: "update_architecture_element failed: invalid target kind" };
-  const result = executeUpdateArchitecture({ expected_revision: args.expected_revision, element_id: readStringArg(args, "element_id"), reference: readStringArg(args, "reference"), action: readStringArg(args, "action"), changes: args.changes }, context);
+  const result = executeUpdateArchitecture({ expected_revision: args.expected_revision, items: [{ element_id: readStringArg(args, "element_id"), reference: readStringArg(args, "reference"), action: readStringArg(args, "action"), changes: args.changes }] }, context);
   return renameToolResult(result, "update_architecture_element");
 }
 
 function executeAgentToolCallSync(toolName: BuiltinToolName, args: Record<string, unknown>, context: AgentToolExecutionContext): AgentToolExecutionResult {
   switch (toolName) {
+    case "create_wall": return executeCreateWall(args, context);
+    case "create_slab": return executeCreateSlab(args, context);
+    case "create_ceiling": return executeCreateCeiling(args, context);
+    case "create_column": return executeCreateColumn(args, context);
+    case "create_zone": return executeCreateZone(args, context);
+    case "create_stair": return executeCreateStair(args, context);
+    case "create_fence": return executeCreateFence(args, context);
+    case "create_door": return executeCreateDoor(args, context);
+    case "create_window": return executeCreateWindow(args, context);
     case "update_wall": return executeUpdateWall(args, context);
     case "update_slab": return executeUpdateSlab(args, context);
     case "update_ceiling": return executeUpdateCeiling(args, context);
@@ -1810,6 +2100,8 @@ function executeAgentToolCallSync(toolName: BuiltinToolName, args: Record<string
     case "update_fence": return executeUpdateFence(args, context);
     case "update_door": return executeUpdateDoor(args, context);
     case "update_window": return executeUpdateWindow(args, context);
+    case "update_asset": return executeUpdateAsset(args, context);
+    case "delete_node": return executeDeleteNode(args, context);
     default: return { toolName, summary: "不支持该建筑更新。", content: `${toolName} failed: unsupported update` };
   }
 }
@@ -1875,6 +2167,37 @@ function executeSceneTool(
 
 function sceneToolFailure(toolName: Extract<BuiltinToolName, "create_wall" | "update_wall" | "create_slab" | "update_slab" | "create_ceiling" | "update_ceiling" | "create_column" | "update_column" | "create_zone" | "update_zone" | "create_stair" | "update_stair" | "create_fence" | "update_fence" | "create_door" | "update_door" | "create_window" | "update_window" | "update_asset" | "delete_node">, message: string): AgentToolExecutionResult {
   return { toolName, summary: message, content: `${toolName} failed: ${message}` };
+}
+
+function executeSceneTransaction<T>(
+  context: AgentToolExecutionContext,
+  run: (transactionContext: AgentToolExecutionContext) => T,
+  hasFailed: (result: T) => boolean
+): { result: T; snapshot?: SceneSnapshot; commitError?: string } {
+  const initialSnapshot = context.getSceneSnapshot?.();
+  if (!initialSnapshot || !context.executeSceneBatch) return { result: run(context) };
+
+  let virtualSnapshot = initialSnapshot;
+  const commands: SceneCommandInput[] = [];
+  const transactionContext: AgentToolExecutionContext = {
+    ...context,
+    getSceneSnapshot: () => virtualSnapshot,
+    executeSceneCommand: (command) => {
+      const result = applySceneCommand(virtualSnapshot, command, (prefix) => `transaction_${prefix}_${commands.length + 1}`);
+      if (result.accepted) {
+        virtualSnapshot = result.snapshot;
+        commands.push(result.command);
+      }
+      return result;
+    },
+    executeSceneBatch: undefined
+  };
+  const result = run(transactionContext);
+  if (hasFailed(result) || !commands.length) return { result };
+
+  const committed = context.executeSceneBatch(commands);
+  if (committed.accepted) return { result, snapshot: committed.snapshot };
+  return { result, commitError: committed.message ?? "场景在提交时发生变化" };
 }
 
 function sceneAssetNodeNotFoundFailure(toolName: "update_asset" | "update_scene", id: string): AgentToolExecutionResult {
@@ -2619,16 +2942,18 @@ const rotationDegreesSchema = { type: "array", description: "欧拉角 [pitch,ya
 const wallAnchorSchema = { type: "object", description: "锚定墙体的室内/室外侧。room_interior（inside 兼容别名）根据房间或楼板轮廓自动确定室内侧，不依赖墙体绘制方向；against_wall 等同 room_interior。distance 是从墙面起算的垂直间距。", properties: { element_id: { type: "string", description: "墙体 element_id，或唯一墙体显示名。" }, side: { type: "string", enum: ["room_interior", "against_wall", "inside", "outside"] }, distance: { type: "number", minimum: 0, description: "垂直离墙面距离，单位米。" } }, required: ["element_id", "side", "distance"], additionalProperties: false } as const;
 const assetPlacementProperties = { position: worldPositionSchema, anchor: wallAnchorSchema, local: localPlacementSchema, facing: { type: "string", enum: ["north", "south", "east", "west", "wall_inward", "wall_outward"], description: "资产规范正前方为 +Z；wall_inward/outward 只能与 anchor 一起使用。" }, look_at: { ...worldPositionSchema, description: "使资产正前方看向的世界坐标 [x,y,z]；朝向优先级为 look_at、facing、rotation_degrees。" }, rotation_degrees: rotationDegreesSchema } as const;
 const targetDimensionsMetersSchema = { type: "array", description: "目标可见尺寸 [宽(X),高(Y),深(Z)]，单位米。加载模型后会按实际包围盒自动校准；用于需要精确物理尺寸的资产。", items: { type: "number", exclusiveMinimum: 0 }, minItems: 3, maxItems: 3 } as const;
-const placeLibraryAssetItemSchema = { type: "object", properties: { library_asset_id: { type: "string" }, reference: { type: "string" }, ...assetPlacementProperties, scale: point3Schema, target_dimensions_meters: targetDimensionsMetersSchema, footprint_meters: footprintMetersSchema }, required: ["library_asset_id"], anyOf: [{ required: ["position"] }, { required: ["anchor"] }], additionalProperties: false } as const;
-const placeLibraryAssetsSchema = { type: "object", properties: { items: { type: "array", minItems: 1, items: placeLibraryAssetItemSchema } }, required: ["items"], additionalProperties: false } as const;
+const placementArraySchema = { type: "object", description: "规则阵列；仅可配合 position 使用。line 按 offset_meters 复制 quantity 次；grid 以 offset_meters 作为列 X 间距和行 Z 间距，复制 rows×columns 次。", properties: { mode: { type: "string", enum: ["line", "grid"] }, quantity: { type: "integer", minimum: 1, maximum: 100 }, rows: { type: "integer", minimum: 1, maximum: 100 }, columns: { type: "integer", minimum: 1, maximum: 100 }, offset_meters: { type: "array", description: "line 为每件 [X,Z] 偏移；grid 为 [列 X 间距, 行 Z 间距]。", items: { type: "number" }, minItems: 2, maxItems: 2 } }, required: ["mode", "offset_meters"], additionalProperties: false } as const;
+const placeLibraryAssetItemSchema = { type: "object", properties: { library_asset_id: { type: "string" }, reference: { type: "string" }, ...assetPlacementProperties, scale: point3Schema, target_dimensions_meters: targetDimensionsMetersSchema, footprint_meters: footprintMetersSchema, ignore_collision: { type: "boolean", description: "显式允许与已知家具占地或墙体重叠；仅在用户确认需要相交摆放时使用。" }, array: placementArraySchema }, required: ["library_asset_id"], anyOf: [{ required: ["position"] }, { required: ["anchor"] }], additionalProperties: false } as const;
+const placeLibraryAssetsSchema = { type: "object", properties: { expected_revision: { type: "integer", minimum: 0, description: "可选。携带时校验场景版本；省略时直接基于最新场景放置。" }, items: { type: "array", minItems: 1, items: placeLibraryAssetItemSchema } }, required: ["items"], additionalProperties: false } as const;
 const previewLibraryAssetPlacementSchema = { type: "object", properties: { items: { type: "array", minItems: 1, items: placeLibraryAssetItemSchema } }, required: ["items"], additionalProperties: false } as const;
-const placeLibraryAssetSchema = { type: "object", properties: { expected_revision: { type: "integer", minimum: 0 }, ...placeLibraryAssetItemSchema.properties }, required: ["expected_revision", "library_asset_id"], anyOf: placeLibraryAssetItemSchema.anyOf, additionalProperties: false } as const;
+const placeLibraryAssetSchema = { type: "object", properties: { expected_revision: { type: "integer", minimum: 0, description: "可选。携带时校验场景版本；省略时直接基于最新场景放置。" }, ...placeLibraryAssetItemSchema.properties }, required: ["library_asset_id"], anyOf: placeLibraryAssetItemSchema.anyOf, additionalProperties: false } as const;
 const updateSceneObjectsSchema = { type: "object", properties: { expected_revision: { type: "integer", minimum: 0 }, scene_object_id: { type: "string" }, reference: { type: "string" }, action: { type: "string", enum: ["update", "delete"] }, ...assetPlacementProperties, scale: point3Schema, target_dimensions_meters: targetDimensionsMetersSchema, footprint_meters: footprintMetersSchema }, required: ["expected_revision"], additionalProperties: false } as const;
 const architectureElementSchema = { type: "object", properties: { kind: { type: "string", enum: ["wall", "slab", "ceiling", "column", "zone", "stair", "fence", "door", "window"] }, reference: { type: "string" }, properties: { type: "object", additionalProperties: true } }, required: ["kind", "properties"], additionalProperties: false } as const;
-const buildArchitectureSchema = { type: "object", properties: { expected_revision: { type: "integer", minimum: 0 }, elements: { type: "array", minItems: 1, items: architectureElementSchema } }, required: ["expected_revision", "elements"], additionalProperties: false } as const;
-const createArchitectureElementSchema = { type: "object", properties: { expected_revision: { type: "integer", minimum: 0 }, ...architectureElementSchema.properties }, required: ["expected_revision", "kind", "properties"], additionalProperties: false } as const;
-const updateArchitectureSchema = { type: "object", properties: { expected_revision: { type: "integer", minimum: 0 }, element_id: { type: "string" }, reference: { type: "string" }, action: { type: "string", enum: ["update", "delete"] }, changes: { type: "object", additionalProperties: true } }, required: ["expected_revision"], additionalProperties: false } as const;
-const updateArchitectureElementSchema = { type: "object", properties: { expected_revision: { type: "integer", minimum: 0 }, kind: architectureElementSchema.properties.kind, element_id: { type: "string" }, reference: { type: "string" }, action: { type: "string", enum: ["update", "delete"] }, changes: { type: "object", additionalProperties: true } }, required: ["expected_revision", "kind"], anyOf: [{ required: ["element_id"] }, { required: ["reference"] }], additionalProperties: false } as const;
+const buildArchitectureSchema = { type: "object", properties: { expected_revision: { type: "integer", minimum: 0, description: "可选。携带时校验场景版本；整批操作只校验一次。" }, elements: { type: "array", minItems: 1, items: architectureElementSchema } }, required: ["elements"], additionalProperties: false } as const;
+const createArchitectureElementSchema = { type: "object", properties: { expected_revision: { type: "integer", minimum: 0, description: "可选。携带时校验场景版本。" }, ...architectureElementSchema.properties }, required: ["kind", "properties"], additionalProperties: false } as const;
+const updateArchitectureItemSchema = { type: "object", properties: { element_id: { type: "string" }, reference: { type: "string" }, action: { type: "string", enum: ["update", "delete"] }, changes: { type: "object", additionalProperties: true } }, required: ["action"], anyOf: [{ required: ["element_id"] }, { required: ["reference"] }], additionalProperties: false } as const;
+const updateArchitectureSchema = { type: "object", properties: { expected_revision: { type: "integer", minimum: 0, description: "可选。携带时校验场景版本；整批操作只校验一次。" }, items: { type: "array", minItems: 1, items: updateArchitectureItemSchema } }, required: ["items"], additionalProperties: false } as const;
+const updateArchitectureElementSchema = { type: "object", properties: { expected_revision: { type: "integer", minimum: 0, description: "可选。携带时校验场景版本。" }, kind: architectureElementSchema.properties.kind, ...updateArchitectureItemSchema.properties }, required: ["kind", "action"], anyOf: updateArchitectureItemSchema.anyOf, additionalProperties: false } as const;
 const sceneObjectPlacementSchema = { type: "object", properties: { query: { type: "string", description: "待放置物件的中文名称或检索词。" }, reference: { type: "string", description: "可选的唯一场景显示名；未提供时自动编号，例如现代沙发_2。" }, position: point3Schema, rotation: point3Schema, scale: point3Schema }, required: ["query"], additionalProperties: false } as const;
 const placeSceneObjectsSchema = { type: "object", properties: { items: { type: "array", minItems: 1, items: sceneObjectPlacementSchema } }, required: ["items"], additionalProperties: false } as const;
 const adjustSceneObjectSchema = { type: "object", properties: { expected_revision: { type: "integer", minimum: 0 }, reference: { type: "string" }, position: point3Schema, rotation: point3Schema, scale: point3Schema }, required: ["expected_revision", "reference"], additionalProperties: false } as const;

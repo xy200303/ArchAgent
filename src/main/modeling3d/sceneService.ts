@@ -5,6 +5,7 @@ import {
   createDefaultScene
 } from "../../shared/modeling3d/sceneReducer";
 import type {
+  SceneCommand,
   SceneCommandInput,
   SceneCommandResult,
   SceneHistoryResult,
@@ -16,6 +17,7 @@ import { resolve } from "node:path";
 export interface SceneService {
   getSnapshot(): SceneSnapshot;
   execute(command: SceneCommandInput): SceneCommandResult;
+  executeBatch(commands: SceneCommandInput[]): SceneBatchResult;
   getHistoryState(): SceneHistoryState;
   undo(): SceneHistoryResult;
   redo(): SceneHistoryResult;
@@ -23,6 +25,10 @@ export interface SceneService {
   getActiveProjectPath(): string | undefined;
   replaceSnapshot(nextSnapshot: SceneSnapshot): SceneSnapshot;
 }
+
+export type SceneBatchResult =
+  | { accepted: true; snapshot: SceneSnapshot; commands: SceneCommand[] }
+  | { accepted: false; snapshot: SceneSnapshot; failedIndex: number; message?: string };
 
 export function createSceneService(options: {
   createId: (prefix: string) => string;
@@ -53,6 +59,27 @@ export function createSceneService(options: {
       payload: result
     });
     return result;
+  }
+
+  function executeBatch(commands: SceneCommandInput[]): SceneBatchResult {
+    let nextSnapshot = snapshot;
+    const acceptedCommands: SceneCommand[] = [];
+    for (const [index, command] of commands.entries()) {
+      const result = applySceneCommand(nextSnapshot, command, options.createId);
+      if (!result.accepted) {
+        return { accepted: false, snapshot, failedIndex: index, message: result.message };
+      }
+      nextSnapshot = result.snapshot;
+      acceptedCommands.push(result.command);
+    }
+    if (!acceptedCommands.length) return { accepted: true, snapshot, commands: [] };
+
+    undoStack.push(snapshot);
+    redoStack.length = 0;
+    snapshot = { ...nextSnapshot, revision: snapshot.revision + 1 };
+    persistActiveProject();
+    options.broadcast({ id: options.createId("event"), type: "scene.snapshot.restored", payload: snapshot });
+    return { accepted: true, snapshot, commands: acceptedCommands };
   }
 
   function getHistoryState(): SceneHistoryState {
@@ -100,5 +127,5 @@ export function createSceneService(options: {
     if (activeProjectPath) options.saveProjectSnapshot?.(activeProjectPath, snapshot);
   }
 
-  return { getSnapshot, execute, getHistoryState, undo, redo, activateProject, getActiveProjectPath: () => activeProjectPath, replaceSnapshot };
+  return { getSnapshot, execute, executeBatch, getHistoryState, undo, redo, activateProject, getActiveProjectPath: () => activeProjectPath, replaceSnapshot };
 }

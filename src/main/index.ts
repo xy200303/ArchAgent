@@ -97,7 +97,8 @@ const sceneExchangeService = createSceneExchangeService({
   getActiveProjectPath: sceneService.getActiveProjectPath,
   getSnapshot: sceneService.getSnapshot,
   replaceSnapshot: sceneService.replaceSnapshot,
-  executeSceneCommand: sceneService.execute
+  executeSceneCommand: sceneService.execute,
+  executeSceneBatch: sceneService.executeBatch
 });
 const createWindow = windowManager.createWindow;
 const settingsService = createSettingsService({
@@ -226,6 +227,7 @@ const conversationService = createConversationService({
   now,
   loadEnv,
   getSceneSnapshot: sceneService.getSnapshot,
+  replaceSceneSnapshot: sceneService.replaceSnapshot,
   captureScenePreview: async (view = "current") => {
     const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
     if (!window) throw new Error("当前没有可捕获的应用窗口。");
@@ -249,6 +251,7 @@ const conversationService = createConversationService({
     return (await window.webContents.capturePage(rect)).toPNG().toString("base64");
   },
   executeSceneCommand: sceneService.execute,
+  executeSceneBatch: sceneService.executeBatch,
   placeComponentLibraryItem: (input) => {
     const component = findGlobalComponent(rootDir, input.componentId);
     if (!component) throw new Error("未找到全局构件。");
@@ -261,6 +264,25 @@ const conversationService = createConversationService({
       ...(input.targetDimensions ? { targetDimensions: input.targetDimensions } : {}),
       ...(input.footprint ? { footprint: input.footprint } : {})
     });
+  },
+  placeComponentLibraryItems: (inputs) => {
+    const components = inputs.map((input) => {
+      const component = findGlobalComponent(rootDir, input.componentId);
+      if (!component) throw new Error("未找到全局构件。");
+      return {
+        component,
+        placement: {
+          ...(input.name ? { name: input.name } : {}),
+          ...(input.parentId ? { parentId: input.parentId } : {}),
+          ...(input.position ? { position: input.position } : {}),
+          ...(input.rotation ? { rotation: input.rotation } : {}),
+          ...(input.scale ? { scale: input.scale } : {}),
+          ...(input.targetDimensions ? { targetDimensions: input.targetDimensions } : {}),
+          ...(input.footprint ? { footprint: input.footprint } : {})
+        }
+      };
+    });
+    return sceneExchangeService.placeGlobalComponents(components);
   },
   createReconstructionWorkflow: reconstructionWorkflowService.createPlan
 });

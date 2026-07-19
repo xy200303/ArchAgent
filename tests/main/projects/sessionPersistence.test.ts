@@ -83,6 +83,56 @@ describe("sessionPersistence", () => {
     expect(loadPersistedState(join(tmpdir(), "missing-arch-agent-state.json"))).toBeNull();
   });
 
+  it("marks unfinished sessions as interrupted after an app restart", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "arch-agent-interrupted-state-"));
+    const filePath = join(dir, "state.json");
+
+    try {
+      savePersistedState(filePath, {
+        sessions: [{
+          id: "session_1",
+          title: "进行中的对话",
+          status: "running",
+          projectPath: dir,
+          createdAt: "2026-07-19T00:00:00.000Z",
+          updatedAt: "2026-07-19T00:01:00.000Z",
+          items: [
+            {
+              id: "msg_1",
+              kind: "message",
+              role: "assistant",
+              content: "正在生成",
+              isFinished: false,
+              createdAt: "2026-07-19T00:01:00.000Z"
+            },
+            {
+              id: "tool_1",
+              kind: "tool",
+              toolCallId: "call_1",
+              toolName: "search_resources",
+              status: "running",
+              createdAt: "2026-07-19T00:01:00.000Z"
+            }
+          ]
+        }],
+        attachments: [],
+        artifacts: [],
+        resources: [],
+        sessionMemories: {},
+        recentProjectPaths: []
+      });
+
+      const restored = loadPersistedState(filePath);
+      const [message, tool] = restored!.sessions[0]!.items;
+
+      expect(restored!.sessions[0]!.status).toBe("idle");
+      expect(message).toMatchObject({ kind: "message", isFinished: true, failure: { code: "interrupted_by_restart" } });
+      expect(tool).toMatchObject({ kind: "tool", status: "failed" });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("ignores legacy version 1 state while restoring", async () => {
     const dir = await mkdtemp(join(tmpdir(), "arch-agent-legacy-state-"));
     const filePath = join(dir, "state.json");

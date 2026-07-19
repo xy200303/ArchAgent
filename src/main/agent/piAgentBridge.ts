@@ -561,9 +561,12 @@ function createArchAgentPiTools(
             execBashEnabled: activeSettings.agent.execBashEnabled,
             bundledPythonRuntime: host.getBundledPythonRuntime(),
             getSceneSnapshot: host.getSceneSnapshot,
+            replaceSceneSnapshot: host.replaceSceneSnapshot,
             captureScenePreview: host.captureScenePreview,
             executeSceneCommand: host.executeSceneCommand,
+            executeSceneBatch: host.executeSceneBatch,
             placeComponentLibraryItem: host.placeComponentLibraryItem,
+            placeComponentLibraryItems: host.placeComponentLibraryItems,
             createReconstructionWorkflow: (input) => host.createReconstructionWorkflow(sessionId, input)
           });
 
