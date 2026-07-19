@@ -59,10 +59,7 @@
       "signtoolOptions": {
         "sign": "./scripts/sign-win-skip-runtime.cjs"
       },
-      "target": [
-        "nsis",
-        "zip"
-      ]
+      "target": "nsis"
     },
     "nsis": {
       "oneClick": false,
