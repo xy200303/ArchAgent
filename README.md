@@ -181,6 +181,29 @@ git diff --check
 - `exec_bash` 默认启用以满足本地任务需求，建议只在可信任务中使用。
 - 工具文件访问限制在允许目录和用户附件范围内，避免任意路径读取。
 
+## 参与贡献
+
+欢迎提交与空间建模、Agent 交互、资源管理、稳定性和文档相关的改进。完整流程、代码约定、验证要求、提交规则和许可证说明见 [贡献指南](CONTRIBUTING.md)。
+
+开始前请先阅读相关设计文档与活动规格。涉及共享协议、IPC、场景契约或用户可见工作流的改动，应同步补充或更新相应测试和文档。提交前至少运行：
+
+```bash
+npm run typecheck
+npm test
+git diff --check
+```
+
+## PR 规范
+
+- PR 前检查 `git status --short --branch`，确认分支、上游和与本次工作相关的改动；不要提交工作区中的无关文件。
+- PR 必须按 [PR 模板](.github/PULL_REQUEST_TEMPLATE.md) 填写改动摘要、验证结果和必要的补充说明。
+- PR 标题应简洁且以动词开头，提交信息与 PR 正文使用相同语言；不得把未运行的测试写成已通过。
+- 提交前仅暂存本次 PR 涉及的文件。不要使用强制推送、破坏性 Git 命令，或在 PR 描述、日志和配置中泄露 API Key、`.env` 内容或其他敏感信息。
+
+## 许可证
+
+本项目采用 [GNU Affero General Public License v3.0 only](LICENSE)（`AGPL-3.0-only`）许可。分发、修改或以网络服务形式提供修改版本时，须遵循该许可证的相应义务。
+
 ## 文档
 
 - [设计文档索引](docs/design/README.md)

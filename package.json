@@ -3,6 +3,7 @@
   "version": "0.2.1",
   "description": "Desktop spatial design agent powered by Tencent Hunyuan Hy3",
   "author": "xy200303",
+  "license": "AGPL-3.0-only",
   "private": true,
   "type": "module",
   "main": "out/main/index.js",
