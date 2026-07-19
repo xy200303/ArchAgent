@@ -108,7 +108,7 @@ export function SettingsPanel({
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [resetConfirmationOpen, setResetConfirmationOpen] = useState(false);
-  const [theme, setTheme] = useState<"light" | "dark">(settings?.theme || "dark");
+  const [theme, setTheme] = useState<"light" | "dark">(settings?.theme || "light");
 
   async function save(): Promise<void> {
     setSaving(true);

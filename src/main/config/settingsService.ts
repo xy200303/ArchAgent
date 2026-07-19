@@ -75,7 +75,7 @@ export function createSettingsService(options: {
       return;
     }
     writeFileSync(options.envLocalPath, serializeEnvFile([
-      { key: "ARCH_AGENT_THEME", value: "dark" },
+      { key: "ARCH_AGENT_THEME", value: "light" },
       { key: "HY3_API_KEY", value: "" },
       { key: "HY3_BASE_URL", value: "https://tokenhub.tencentmaas.com/v1" },
       { key: "HY3_CHAT_MODEL", value: "hy3" },
@@ -117,7 +117,7 @@ export function createSettingsService(options: {
     hydrateCompatibleEnv();
 
     return {
-      theme: (process.env.ARCH_AGENT_THEME as "light" | "dark") || "dark",
+      theme: (process.env.ARCH_AGENT_THEME as "light" | "dark") || "light",
       runtime: {
         envFilePath,
         configSource: existsSync(options.envLocalPath) ? ".env.local" : existsSync(options.envPath) ? ".env" : "process",
@@ -161,7 +161,6 @@ export function createSettingsService(options: {
   function save(input: UpdateAppSettingsInput): AppSettings {
     const currentKey = readEnvValue("HY3_API_KEY", "OPENAI_API_KEY", "");
     const content = serializeEnvFile([
-      { key: "ARCH_AGENT_THEME", value: input.theme },
       { key: "HY3_API_KEY", value: input.openai.apiKey ?? currentKey },
       { key: "HY3_BASE_URL", value: input.openai.baseUrl },
       { key: "HY3_CHAT_MODEL", value: input.openai.chatModel },
