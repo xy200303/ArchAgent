@@ -112,7 +112,7 @@ export const MessagePane = memo(function MessagePane({
                 />
               )
             ))}
-            {session.workflow ? <ReconstructionWorkflowCard api={api} sessionId={session.id} workflow={session.workflow} onError={onError} /> : null}
+            {session.workflow && session.workflow.status !== "confirmed" ? <ReconstructionWorkflowCard api={api} sessionId={session.id} workflow={session.workflow} onError={onError} /> : null}
             {shouldShowPendingThinking ? <PendingAssistantRow /> : null}
           </>
         )}
