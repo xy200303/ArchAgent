@@ -1,5 +1,5 @@
 /** Chat transcript rendering, process grouping, tool details, and artifact actions. */
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX, type UIEvent } from "react";
+import { memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type JSX, type UIEvent } from "react";
 import * as Collapsible from "@radix-ui/react-collapsible";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
@@ -391,7 +391,7 @@ const StreamRow = memo(function StreamRow({
           <div className="process-message-body">
             {item.thinking?.trim() ? <ThinkingCard content={item.thinking} isFinished={item.isFinished} /> : null}
             {item.content.trim() ? (
-              <IncremarkContent content={item.content} isFinished={item.isFinished} />
+              <StreamingMarkdown content={item.content} isFinished={item.isFinished} />
             ) : item.isFinished ? null : (
               <ThinkingIndicator />
             )}
@@ -411,7 +411,7 @@ const StreamRow = memo(function StreamRow({
               {failure ? (
                 <AgentFailureCard failure={failure} />
               ) : item.content.trim() ? (
-                <IncremarkContent content={item.content} isFinished={item.isFinished} />
+                <StreamingMarkdown content={item.content} isFinished={item.isFinished} />
               ) : item.isFinished || item.thinking?.trim() ? (
                 null
               ) : (
@@ -507,6 +507,16 @@ function ThinkingCard({ content, isFinished }: { content: string; isFinished: bo
     </details>
   );
 }
+
+/** Keeps expensive rich-text parsing off the urgent streaming and scrolling path. */
+const StreamingMarkdown = memo(function StreamingMarkdown({ content, isFinished }: { content: string; isFinished: boolean }): JSX.Element {
+  const deferredContent = useDeferredValue(content);
+  return <RenderedMarkdown content={isFinished ? content : deferredContent} isFinished={isFinished} />;
+});
+
+const RenderedMarkdown = memo(function RenderedMarkdown({ content, isFinished }: { content: string; isFinished: boolean }): JSX.Element {
+  return <IncremarkContent content={content} isFinished={isFinished} />;
+});
 
 function ToolRow({ item, embedded = false }: { item: Extract<StreamItem, { kind: "tool" }>; embedded?: boolean }): JSX.Element {
   const hasDetails = Boolean(item.inputPreview || item.outputPreview || item.errorPreview);
