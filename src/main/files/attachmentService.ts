@@ -137,21 +137,22 @@ export function createAttachmentService(options: {
       raw.push(...uriList.split("\n"));
     }
 
-    return raw
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0 && !line.startsWith("#"))
-      .map((line) => {
-        try {
-          const url = new URL(line);
-          if (url.protocol === "file:") {
-            return decodeURIComponent(url.pathname);
-          }
-        } catch {
-          // Not a URL, treat as a raw path.
+    const filePaths: string[] = [];
+    for (const rawLine of raw) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith("#")) continue;
+      let filePath = line;
+      try {
+        const url = new URL(line);
+        if (url.protocol === "file:") {
+          filePath = decodeURIComponent(url.pathname);
         }
-        return line;
-      })
-      .filter((filePath) => existsSync(filePath));
+      } catch {
+        // Not a URL, treat as a raw path.
+      }
+      if (existsSync(filePath)) filePaths.push(filePath);
+    }
+    return filePaths;
   }
 
   function pasteAttachmentsFromClipboard(input: PasteAttachmentInput): AttachmentRef[] {

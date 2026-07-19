@@ -12,8 +12,8 @@ export interface SceneCoordinateContext {
 }
 
 export function getSceneCoordinateContext(snapshot: SceneSnapshot): SceneCoordinateContext {
-  const floorPoints = Object.values(snapshot.nodes).filter((node) => node.type === "slab").flatMap((node) => node.polygon);
-  const wallPoints = Object.values(snapshot.nodes).filter((node) => node.type === "wall").flatMap((node) => [node.start, node.end]);
+  const floorPoints = Object.values(snapshot.nodes).flatMap((node) => node.type === "slab" ? node.polygon : []);
+  const wallPoints = Object.values(snapshot.nodes).flatMap((node) => node.type === "wall" ? [node.start, node.end] : []);
   const points = floorPoints.length ? floorPoints : wallPoints;
   return {
     unit: "m",

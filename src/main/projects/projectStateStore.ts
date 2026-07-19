@@ -173,8 +173,7 @@ export function createProjectStateStore(options: {
         saveProjectState(projectPath, snapshotProjectState(projectPath));
         const projectSessionIds = new Set(
           Array.from(options.sessions.values())
-            .filter((session) => resolve(session.projectPath) === projectPath)
-            .map((session) => session.id)
+            .flatMap((session) => resolve(session.projectPath) === projectPath ? [session.id] : [])
         );
         saveProjectResources(projectPath, {
           resources: Array.from(options.resources.values()).filter((resource) => resolve(resource.projectPath) === projectPath)

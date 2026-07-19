@@ -123,8 +123,7 @@ export function listGlobalComponents(rootDir: string, legacyProjectPath?: string
   migrateLegacyProjectComponents(directory, legacyProjectPath);
   if (!existsSync(directory)) return [];
   return readdirSync(directory)
-    .filter((name) => name.endsWith(".semantic.json"))
-    .flatMap((name) => readComponentRecord(join(directory, name)))
+    .flatMap((name) => name.endsWith(".semantic.json") ? readComponentRecord(join(directory, name)) : [])
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
 }
 

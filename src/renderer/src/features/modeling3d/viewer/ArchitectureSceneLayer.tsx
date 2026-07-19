@@ -176,7 +176,7 @@ function buildWallBlocks(length: number, wallHeight: number, openings: OpeningNo
     const height = levels[index + 1] - baseY;
     if (height <= 0) continue;
     const middleY = baseY + height / 2;
-    const gaps = openings.filter((opening) => opening.sillHeight < middleY && opening.sillHeight + opening.height > middleY).map((opening) => [Math.max(-length / 2, -length / 2 + opening.offset), Math.min(length / 2, -length / 2 + opening.offset + opening.width)] as const).sort((first, second) => first[0] - second[0]);
+    const gaps = openings.flatMap((opening) => opening.sillHeight < middleY && opening.sillHeight + opening.height > middleY ? [[Math.max(-length / 2, -length / 2 + opening.offset), Math.min(length / 2, -length / 2 + opening.offset + opening.width)] as const] : []).sort((first, second) => first[0] - second[0]);
     let cursor = -length / 2;
     for (const [gapStart, gapEnd] of gaps) {
       if (gapStart > cursor) blocks.push({ centerX: (cursor + gapStart) / 2, baseY, width: gapStart - cursor, height });

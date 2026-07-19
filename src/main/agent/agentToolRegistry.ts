@@ -4,7 +4,7 @@ import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "
 import { TextDecoder, promisify } from "node:util";
 import { basename, extname, isAbsolute, join, relative, resolve } from "node:path";
 import OpenAI from "openai";
-import type { ChatCompletionMessageParam, ChatCompletionMessageToolCall, ChatCompletionTool } from "openai/resources/chat/completions";
+import type { ChatCompletionFunctionTool, ChatCompletionMessageParam, ChatCompletionMessageToolCall, ChatCompletionTool } from "openai/resources/chat/completions";
 import type { AppSettings, ReconstructionWorkflowPlacement, SessionResource } from "../../shared/types";
 import type { SceneAssetNode, SceneCommandInput, SceneCommandResult, ScenePoint, SceneSnapshot, SceneWallNode, WallMaterialPreset } from "../../shared/modeling3d/sceneContracts";
 import { getSceneCoordinateContext } from "../../shared/modeling3d/sceneCoordinates";
@@ -247,19 +247,17 @@ export function buildAgentChatTools(options: { includeExecBash: boolean; include
   }
 
   const enabledLayers = options.layers ? new Set(options.layers) : undefined;
-  return tools
-    .filter((tool) => tool.type !== "function" || !enabledLayers || enabledLayers.has(resolveAgentToolLayer(tool.function.name)))
-    .map((tool) =>
-    tool.type === "function"
-      ? {
-          ...tool,
-          function: {
-            ...tool.function,
-            strict: true
-          }
-        }
-      : tool
-    );
+  const strictTools: ChatCompletionTool[] = [];
+  for (const tool of tools) {
+    if (tool.type !== "function") {
+      strictTools.push(tool);
+      continue;
+    }
+    const functionTool = tool as ChatCompletionFunctionTool;
+    if (enabledLayers?.has(resolveAgentToolLayer(functionTool.function.name)) === false) continue;
+    strictTools.push({ ...functionTool, function: { ...functionTool.function, strict: true } });
+  }
+  return strictTools;
 }
 
 function buildRefactoredAgentChatTools(options: { includeExecBash: boolean }): ChatCompletionTool[] {
@@ -704,12 +702,11 @@ function executeSearchComponentLibrary(args: Record<string, unknown>, context: A
   const limit = Math.min(Math.max(Math.floor(readNumberArg(args, "limit", 6)), 1), 20);
   const terms = query.toLowerCase().split(/[\s,，、/]+/).filter((term) => term.length > 0);
   const matches = listGlobalComponents(context.componentLibraryRootDir ?? context.rootDir)
-    .map((component) => {
+    .flatMap((component) => {
       const searchable = `${component.name} ${component.category ?? ""} ${component.tags.join(" ")} ${component.description ?? component.prompt ?? ""}`.toLowerCase();
       const score = terms.reduce((total, term) => total + (searchable.includes(term) ? 1 : 0), 0);
-      return { component, score };
+      return score > 0 ? [{ component, score }] : [];
     })
-    .filter((item) => item.score > 0)
     .sort((left, right) => right.score - left.score || right.component.createdAt.localeCompare(left.component.createdAt))
     .slice(0, limit);
   const content = matches.length
@@ -724,11 +721,11 @@ function executeSearchLibraryAssets(args: Record<string, unknown>, context: Agen
   const limit = Math.min(Math.max(Math.floor(readNumberArg(args, "limit", 6)), 1), 20);
   const terms = query.toLowerCase().split(/[\s,，、/]+/).filter(Boolean);
   const matches = listGlobalComponents(context.componentLibraryRootDir ?? context.rootDir)
-    .map((component) => {
+    .flatMap((component) => {
       const searchable = `${component.name} ${component.category ?? ""} ${component.tags.join(" ")} ${component.description ?? component.prompt ?? ""}`.toLowerCase();
-      return { component, score: terms.reduce((total, term) => total + (searchable.includes(term) ? 1 : 0), 0) };
+      const score = terms.reduce((total, term) => total + (searchable.includes(term) ? 1 : 0), 0);
+      return score > 0 ? [{ component, score }] : [];
     })
-    .filter((item) => item.score > 0)
     .sort((left, right) => right.score - left.score || right.component.createdAt.localeCompare(left.component.createdAt))
     .slice(0, limit);
   const content = matches.length
@@ -742,7 +739,7 @@ function executePlaceLibraryAssets(args: Record<string, unknown>, context: Agent
   const items = Array.isArray(args.items) ? args.items : [];
   if (!items.length) return { toolName: "place_library_assets", summary: "请至少提供一个资产。", content: "place_library_assets failed: missing items" };
   const library = new Map(listGlobalComponents(context.componentLibraryRootDir ?? context.rootDir).map((item) => [item.id, item]));
-  const references = new Set(Object.values(context.getSceneSnapshot?.().nodes ?? {}).filter((node) => node.type === "asset").map((node) => node.name));
+  const references = new Set(Object.values(context.getSceneSnapshot?.().nodes ?? {}).flatMap((node) => node.type === "asset" ? [node.name] : []));
   const created: Array<{ id: string; reference: string; diagnostics: string }> = [];
   for (const rawItem of items) {
     const item = readRecord(rawItem);
@@ -816,7 +813,7 @@ function executePlaceSceneObjects(args: Record<string, unknown>, context: AgentT
   const rawItems = Array.isArray(args.items) ? args.items : [];
   if (!rawItems.length) return { toolName: "place_scene_objects", summary: "请至少提供一个待放置物件。", content: "place_scene_objects failed: missing items" };
 
-  const existingReferences = new Set(Object.values(context.getSceneSnapshot?.().nodes ?? {}).filter((node) => node.type === "asset").map((node) => node.name));
+  const existingReferences = new Set(Object.values(context.getSceneSnapshot?.().nodes ?? {}).flatMap((node) => node.type === "asset" ? [node.name] : []));
   const reservedReferences = new Set(existingReferences);
   const components = listGlobalComponents(context.componentLibraryRootDir ?? context.rootDir);
   const placements: Array<{ componentId: string; reference: string; position?: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number] }> = [];
@@ -861,12 +858,12 @@ function executePlaceSceneObjects(args: Record<string, unknown>, context: AgentT
 
 function resolveLibraryComponent(query: string, components: ReturnType<typeof listGlobalComponents>): { component: ReturnType<typeof listGlobalComponents>[number] } | { message: string } {
   const normalized = query.trim().toLowerCase();
-  const scored = components.map((component) => {
+  const scored = components.flatMap((component) => {
     const searchable = `${component.name} ${component.category ?? ""} ${component.tags.join(" ")} ${component.description ?? component.prompt ?? ""}`.toLowerCase();
     const exact = component.name.trim().toLowerCase() === normalized;
     const score = exact ? 100 : normalized.split(/[\s,，、/]+/).filter(Boolean).reduce((total, term) => total + (searchable.includes(term) ? 1 : 0), 0);
-    return { component, score };
-  }).filter((item) => item.score > 0).sort((left, right) => right.score - left.score || right.component.createdAt.localeCompare(left.component.createdAt));
+    return score > 0 ? [{ component, score }] : [];
+  }).sort((left, right) => right.score - left.score || right.component.createdAt.localeCompare(left.component.createdAt));
   if (!scored.length) return { message: `构件库中没有找到“${query}”。请在重建计划中标记为待生成并等待用户确认。` };
   if (scored.length > 1 && scored[0].score === scored[1].score) {
     return { message: `“${query}”存在多个同等候选：${scored.slice(0, 3).map((item) => item.component.name).join("、")}。请向用户确认具体款式后再放置。` };
@@ -1194,16 +1191,18 @@ async function executeViewResources(args: Record<string, unknown>, context: Agen
   const libraryPreviewPaths = libraryAssets.flatMap((asset) => asset?.previewFile ? [asset.previewFile] : []);
   if (imageResources.length + modelPreviewPaths.length + libraryPreviewPaths.length > 4) return { toolName: "view_resources", summary: "一次最多查看 4 张图片或模型预览，请缩小范围。", content: "view_resources failed: too many visuals" };
   const textParts: string[] = [`查看目的：${purpose}`];
-  for (const resource of selected) {
-    if (!resource) continue;
-    textParts.push(`- resource_id: ${resource.id}；名称：${resource.name}；类型：${resource.kind}；来源：${resource.source}`);
+  const resourceTextParts = await Promise.all(selected.map(async (resource) => {
+    if (!resource) return [];
+    const parts = [`- resource_id: ${resource.id}；名称：${resource.name}；类型：${resource.kind}；来源：${resource.source}`];
     if (["document", "table", "database", "text"].includes(resource.kind)) {
       const result = await executeReadFile({ path: resource.path }, context, "read_file");
-      textParts.push(query ? extractRelevantResourceText(result.content, query) : result.content);
+      parts.push(query ? extractRelevantResourceText(result.content, query) : result.content);
     } else if (resource.kind === "model3d") {
-      textParts.push(`  3D 元数据：${JSON.stringify(resource.metadata)}。${typeof resource.metadata.preview_path === "string" ? "已附带缓存预览图。" : "当前没有缓存预览图。"}`);
+      parts.push(`  3D 元数据：${JSON.stringify(resource.metadata)}。${typeof resource.metadata.preview_path === "string" ? "已附带缓存预览图。" : "当前没有缓存预览图。"}`);
     }
-  }
+    return parts;
+  }));
+  textParts.push(...resourceTextParts.flat());
   for (const asset of libraryAssets) {
     if (!asset) continue;
     textParts.push(`- library_asset_id: ${asset.id}；名称：${asset.name}；类别：${asset.category ?? "未分类"}；预览：${asset.previewFile ? "已附带" : "无"}`);
@@ -1235,8 +1234,7 @@ function executeSearchResources(args: Record<string, unknown>, context: AgentToo
   const limit = Math.min(Math.max(Math.floor(readNumberArg(args, "limit", 8)), 1), 20);
   const kinds = new Set(readStringListArg(args, "kinds"));
   const resources = (context.resources ?? [])
-    .filter((resource) => !kinds.size || kinds.has(resource.kind))
-    .filter((resource) => !query || `${resource.id} ${resource.name} ${resource.kind} ${resource.source}`.toLowerCase().includes(query))
+    .filter((resource) => (!kinds.size || kinds.has(resource.kind)) && (!query || `${resource.id} ${resource.name} ${resource.kind} ${resource.source}`.toLowerCase().includes(query)))
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
     .slice(0, limit);
   return {
@@ -1439,7 +1437,7 @@ function findRoomInteriorNormal(snapshot: SceneSnapshot, wall: SceneWallNode, le
   const rightInside = isInside(rightNormal);
   if (leftInside !== rightInside) return leftInside ? leftNormal : rightNormal;
 
-  const wallPoints = Object.values(snapshot.nodes).filter((node): node is SceneWallNode => node.type === "wall").flatMap((node) => [node.start, node.end]);
+  const wallPoints = Object.values(snapshot.nodes).flatMap((node) => node.type === "wall" ? [node.start, node.end] : []);
   if (wallPoints.length < 4) return undefined;
   const center: [number, number] = [wallPoints.reduce((total, point) => total + point[0], 0) / wallPoints.length, wallPoints.reduce((total, point) => total + point[1], 0) / wallPoints.length];
   const towardCenter: [number, number] = [center[0] - midpoint[0], center[1] - midpoint[1]];
@@ -1537,7 +1535,7 @@ function formatPlacementDiagnostics(
 
 function isPointInRoom(snapshot: SceneSnapshot, point: [number, number]): boolean {
   const zones = Object.values(snapshot.nodes).filter((node) => node.type === "zone");
-  const polygons = zones.length ? zones.map((node) => node.polygon) : Object.values(snapshot.nodes).filter((node) => node.type === "slab").map((node) => node.polygon);
+  const polygons = zones.length ? zones.map((node) => node.polygon) : Object.values(snapshot.nodes).flatMap((node) => node.type === "slab" ? [node.polygon] : []);
   return polygons.some((polygon) => isPointInsidePolygon(point, polygon));
 }
 
@@ -2148,10 +2146,10 @@ function resolveExistingOutputToolPath(inputPath: string, context: AgentToolExec
   if (existsSync(exactPath)) return exactPath;
   const requestedName = sanitizeFileName(basename(inputPath.replace(/\\/g, "/")));
   const matches = readdirSync(context.outputDir, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && isGeneratedOutputFileNameMatch(entry.name, requestedName))
-    .map((entry) => {
+    .flatMap((entry) => {
+      if (!entry.isFile() || !isGeneratedOutputFileNameMatch(entry.name, requestedName)) return [];
       const filePath = join(context.outputDir, entry.name);
-      return { filePath, mtimeMs: statSync(filePath).mtimeMs };
+      return [{ filePath, mtimeMs: statSync(filePath).mtimeMs }];
     })
     .sort((left, right) => right.mtimeMs - left.mtimeMs);
   return matches[0]?.filePath ?? exactPath;

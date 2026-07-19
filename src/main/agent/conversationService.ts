@@ -470,10 +470,10 @@ export function createConversationService(options: {
     const projectPath = session.projectPath;
     const links = new Map((session.resourceLinks ?? []).map((link) => [link.resourceId, link]));
     return Array.from(options.resources.values())
-      .filter((resource) => resolve(resource.projectPath) === resolve(projectPath))
-      .map((resource) => {
+      .flatMap((resource) => {
+        if (resolve(resource.projectPath) !== resolve(projectPath)) return [];
         const link = links.get(resource.id);
-        return { ...resource, confirmed: link?.confirmed ?? false, pinned: link?.pinned ?? false };
+        return [{ ...resource, confirmed: link?.confirmed ?? false, pinned: link?.pinned ?? false }];
       })
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   }
@@ -706,12 +706,11 @@ export function createConversationService(options: {
 
 function formatWorkflowContext(workflow: NonNullable<ChatSession["workflow"]>): string {
   const unanswered = workflow.questions
-    .filter((question) => question.required && !question.selectedOptionId)
-    .map((question) => question.id);
+    .flatMap((question) => question.required && !question.selectedOptionId ? [question.id] : []);
   return [
     "当前 3D 重建编排状态（这是权威状态，不要绕过）：",
     `方案：${workflow.title}；版本 ${workflow.revision}；状态 ${workflow.status}。`,
-    `必答问题：${unanswered.length ? unanswered.join("、") : "已全部回答"}。已选项：${workflow.questions.filter((question) => question.selectedOptionId).map((question) => `${question.id}=${question.options.find((option) => option.id === question.selectedOptionId)?.label ?? question.selectedOptionId}`).join("；") || "无"}。`,
+    `必答问题：${unanswered.length ? unanswered.join("、") : "已全部回答"}。已选项：${workflow.questions.flatMap((question) => question.selectedOptionId ? [`${question.id}=${question.options.find((option) => option.id === question.selectedOptionId)?.label ?? question.selectedOptionId}`] : []).join("；") || "无"}。`,
     `资产：${workflow.assets.map((asset) => `${asset.name}:${asset.status}${asset.componentId ? `（library_asset_id=${asset.componentId}）` : ""}${asset.sourceResourceId ? `（resource_id=${asset.sourceResourceId}）` : ""}${asset.prompt ? `（prompt=${asset.prompt}）` : ""}`).join("；")}。`,
     workflow.status === "ready_for_confirmation"
       ? "必须等待用户在逐步确认弹窗中点击“确认并继续”；该操作会把确认写入会话，收到确认消息后再开始资产生成或摆放。"

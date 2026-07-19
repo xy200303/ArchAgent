@@ -14,7 +14,7 @@ import {
   type AgentSessionEvent,
   type ToolDefinition
 } from "@earendil-works/pi-coding-agent";
-import type { Api, AssistantMessage, ImageContent, Model, TextContent, ThinkingContent } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, ImageContent, Message, Model, TextContent, ThinkingContent } from "@earendil-works/pi-ai";
 import { compactText, isSupportedImageFile, MAX_VISION_IMAGE_BYTES, readImageDataUrl } from "./agentTools";
 import { buildAgentChatTools, executeAgentToolCall, type AgentToolExecutionResult, type AgentToolLayer } from "./agentToolRegistry";
 import {
@@ -515,10 +515,10 @@ function createArchAgentPiTools(
     includeArtifactTools: true,
     layers: resolveAgentToolLayers(host.getSession(sessionId)?.workflow?.status, settings.agent.execBashEnabled)
   })
-    .filter((tool) => tool.type === "function")
-    .map((tool) => {
+    .flatMap((tool) => {
+      if (tool.type !== "function") return [];
       const definition = tool.function;
-      return defineTool({
+      return [defineTool({
         name: definition.name,
         label: definition.name,
         description: definition.description || definition.name,
@@ -590,7 +590,7 @@ function createArchAgentPiTools(
             details: result
           };
         }
-      });
+      })];
     });
 }
 
@@ -667,14 +667,13 @@ export function buildArchAgentPiToolSchemaSignature(settings: AppSettings): stri
       includeExecBash: settings.agent.execBashEnabled,
       includeArtifactTools: true
     })
-      .filter((tool) => tool.type === "function")
-      .map((tool) => ({
+      .flatMap((tool) => tool.type === "function" ? [{
         name: tool.function.name,
         description: tool.function.description,
         parameters: tool.function.parameters,
         strict: tool.function.strict,
         executionMode: resolveArchAgentToolExecutionMode(tool.function.name)
-      }))
+      }] : [])
   });
   toolSchemaSignatures.set(cacheKey, signature);
   return signature;
@@ -724,14 +723,16 @@ function buildPiSystemPrompt(host: AgentRuntimeHost, sessionId: string): string 
   const session = host.getSession(sessionId);
   if (!session) return "";
   const messages = host.buildMessages(session);
-  const systemParts = messages
-    .filter((message) => message.role === "system" || message.role === "developer")
-    .map((message) => chatContentToText(message.content))
-    .filter(Boolean);
+  const systemParts: string[] = [];
+  for (const message of messages) {
+    if (message.role !== "system" && message.role !== "developer") continue;
+    const content = chatContentToText(message.content);
+    if (content) systemParts.push(content);
+  }
   return systemParts.join("\n\n");
 }
 
-function buildInitialPiHistory(host: AgentRuntimeHost, sessionId: string, model: Model<Api>) {
+function buildInitialPiHistory(host: AgentRuntimeHost, sessionId: string, model: Model<Api>): Message[] {
   const session = host.getSession(sessionId);
   if (!session) return [];
 
@@ -739,28 +740,26 @@ function buildInitialPiHistory(host: AgentRuntimeHost, sessionId: string, model:
   const lastUserIndex = findLastIndex(messages, (item) => item.role === "user");
   const history = lastUserIndex >= 0 ? messages.slice(0, lastUserIndex) : messages;
 
-  return history
-    .filter((item) => item.content.trim())
-    .map((item) => {
-      const timestamp = Date.parse(item.createdAt) || Date.now();
-      if (item.role === "user") {
-        return {
-          role: "user" as const,
-          content: item.content,
-          timestamp
-        };
-      }
-      return {
-        role: "assistant" as const,
-        content: [{ type: "text" as const, text: item.content }],
-        api: model.api,
-        provider: model.provider,
-        model: model.id,
-        usage: ZERO_USAGE,
-        stopReason: "stop" as const,
-        timestamp
-      };
+  const piHistory: Message[] = [];
+  for (const item of history) {
+    if (!item.content.trim()) continue;
+    const timestamp = Date.parse(item.createdAt) || Date.now();
+    if (item.role === "user") {
+      piHistory.push({ role: "user", content: item.content, timestamp });
+      continue;
+    }
+    piHistory.push({
+      role: "assistant",
+      content: [{ type: "text", text: item.content }],
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      usage: ZERO_USAGE,
+      stopReason: "stop",
+      timestamp
     });
+  }
+  return piHistory;
 }
 
 function getLatestUserPrompt(host: AgentRuntimeHost, sessionId: string): string {

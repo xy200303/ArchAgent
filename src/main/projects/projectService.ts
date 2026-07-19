@@ -106,8 +106,8 @@ export function createProjectService(options: {
     if (depth > MAX_DEPTH || !existsSync(dirPath)) return [];
     const entries = readdirSync(dirPath, { withFileTypes: true });
     return entries
-      .filter((entry) => entry.isFile() || entry.isDirectory())
-      .map((entry) => {
+      .flatMap((entry) => {
+        if (!entry.isFile() && !entry.isDirectory()) return [];
         const itemPath = join(dirPath, entry.name);
         const item: WorkspaceFileItem = {
           name: entry.name,
@@ -118,7 +118,7 @@ export function createProjectService(options: {
         if (entry.isDirectory()) {
           item.children = readWorkspaceDirectory(itemPath, depth + 1);
         }
-        return item;
+        return [item];
       })
       .sort((left, right) => {
         if (left.kind === right.kind) return left.name.localeCompare(right.name);
@@ -130,8 +130,7 @@ export function createProjectService(options: {
   function listRecentProjects(): ProjectInfo[] {
     return options
       .getRecentProjectPaths()
-      .filter((path) => existsSync(path))
-      .map((path) => ({ path, name: basename(path) }));
+      .flatMap((path) => existsSync(path) ? [{ path, name: basename(path) }] : []);
   }
 
   return {

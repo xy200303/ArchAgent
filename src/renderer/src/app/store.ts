@@ -269,8 +269,7 @@ const EMPTY_DRAFT: SessionDraft = {
 function getSessionArtifactIds(session?: ChatSession): Set<string> {
   return new Set(
     session?.items
-      .filter((item) => item.kind === "file")
-      .map((item) => item.artifactId) ?? []
+      .flatMap((item) => item.kind === "file" ? [item.artifactId] : []) ?? []
   );
 }
 
