@@ -1,6 +1,6 @@
 /** Renders persisted external meshes without coupling them to an editor implementation. */
 import { type ThreeEvent } from "@react-three/fiber";
-import { useEffect, useLayoutEffect, useState, type JSX } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type JSX } from "react";
 import { Box3, Box3Helper, type Object3D } from "three";
 import type { ArchAgentApi } from "../../../../../shared/types";
 import type { SceneAssetNode } from "../../../../../shared/modeling3d/sceneContracts";
@@ -45,6 +45,11 @@ function ImportedAsset({
   onObjectChange?: (id: string, object?: Object3D) => void;
 }): JSX.Element | null {
   const [object, setObject] = useState<Object3D>();
+  const assetName = useRef(asset.name);
+
+  useEffect(() => {
+    assetName.current = asset.name;
+  }, [asset.name]);
 
   useEffect(() => {
     let disposed = false;
@@ -55,10 +60,10 @@ function ImportedAsset({
       })
       .then((nextObject) => { if (!disposed) setObject(nextObject); })
       .catch((error: unknown) => {
-        if (!disposed) onError(`参考模型“${asset.name}”加载失败：${error instanceof Error ? error.message : String(error)}`);
+        if (!disposed) onError(`参考模型“${assetName.current}”加载失败：${error instanceof Error ? error.message : String(error)}`);
       });
     return () => { disposed = true; };
-  }, [api, asset.id, asset.name, onError]);
+  }, [api, asset.id, onError]);
 
   useEffect(() => {
     onObjectChange?.(asset.id, object);

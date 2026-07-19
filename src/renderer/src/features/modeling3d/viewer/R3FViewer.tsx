@@ -1,7 +1,7 @@
 /** Mounts the main WebGL editor while preserving the shared scene contract. */
 import { Grid, type CameraControls as CameraControlsHandle } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
-import { lazy, memo, Suspense, useCallback, useRef, type JSX } from "react";
+import { lazy, memo, Suspense, useCallback, useMemo, useRef, type JSX } from "react";
 import type { Quaternion } from "three";
 import type { ArchAgentApi } from "../../../../../shared/types";
 import type { SceneExchangeFormat, SceneSnapshot } from "../../../../../shared/modeling3d/sceneContracts";
@@ -67,7 +67,10 @@ function R3FViewer({
   onExportComplete: (dataBase64: string) => void;
   onCameraPreset: (preset: EditorCameraPreset) => void;
 }): JSX.Element {
-  const assets = Object.values(snapshot.nodes).filter((node): node is Extract<typeof node, { type: "asset" }> => node.type === "asset");
+  const assets = useMemo(
+    () => Object.values(snapshot.nodes).filter((node): node is Extract<typeof node, { type: "asset" }> => node.type === "asset"),
+    [snapshot.nodes]
+  );
   const cameraControls = useRef<CameraControlsHandle>(null);
   const navigationGizmo = useRef<ViewportNavigationGizmoHandle>(null);
 
