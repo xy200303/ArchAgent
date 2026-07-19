@@ -21,6 +21,7 @@ describe("agentToolRegistry", () => {
     expect(names).toContain("search_resources");
     expect(names).toContain("extract_reference_object");
     expect(names).toContain("generate_3d_asset");
+    expect(names).toContain("edit_library_asset");
     expect(names).toContain("search_library_assets");
     expect(names).toContain("place_library_asset");
     expect(names).toContain("place_library_assets");
@@ -69,6 +70,14 @@ describe("agentToolRegistry", () => {
     expect(JSON.stringify(tool?.function.parameters)).toContain("入口标识");
     expect(JSON.stringify(tool?.function.parameters)).toContain("位置、朝向、用途");
     expect(JSON.stringify(tool?.function.parameters)).toContain("target_dimensions_meters");
+  });
+
+  it("defines asset editing as a non-destructive derived generation", () => {
+    const tool = buildAgentChatTools({ includeExecBash: false }).find((item) => item.function.name === "edit_library_asset");
+
+    expect(tool?.function.description).toContain("原资产及已放置实例保持不变");
+    expect(JSON.stringify(tool?.function.parameters)).toContain("regenerate");
+    expect(JSON.stringify(tool?.function.parameters)).toContain("edit_prompt");
   });
 
   it("keeps exec_bash opt-in for local diagnostics", () => {
@@ -517,6 +526,31 @@ describe("agentToolRegistry", () => {
     }
   });
 
+  it("updates an existing library asset's metadata without replacing its model", async () => {
+    const sandbox = mkdtempSync(join(tmpdir(), "arch-agent-library-edit-"));
+    const libraryDir = join(sandbox, "data", "component-library", "assets");
+    const componentFile = join(libraryDir, "chair.glb");
+    mkdirSync(libraryDir, { recursive: true });
+    writeFileSync(componentFile, "original-glb");
+    writeFileSync(`${componentFile}.semantic.json`, JSON.stringify({ id: "lib_chair", name: "单椅", file: componentFile, source: "hunyuan-3d", model: "hy-3d-3.0", prompt: "浅木色单椅", description: "浅木色单椅", category: "家具", tags: ["单椅"], previewAvailable: false, createdAt: "2026-01-01T00:00:00.000Z" }));
+    try {
+      const result = await executeAgentToolCall(
+        createToolCall("edit_library_asset", { library_asset_id: "lib_chair", mode: "metadata", name: "浅木单椅", tags: ["单椅", "木质"], target_dimensions_meters: [0.5, 0.8, 0.55] }),
+        createContext({ componentLibraryRootDir: sandbox })
+      );
+      const record = JSON.parse(readFileSync(`${componentFile}.semantic.json`, "utf8")) as Record<string, unknown>;
+
+      expect(result.toolName).toBe("edit_library_asset");
+      expect(result.content).toContain("GLB 未改变");
+      expect(readFileSync(componentFile, "utf8")).toBe("original-glb");
+      expect(record.name).toBe("浅木单椅");
+      expect(record.tags).toEqual(["单椅", "木质"]);
+      expect(record.targetDimensions).toEqual([0.5, 0.8, 0.55]);
+    } finally {
+      rmSync(sandbox, { recursive: true, force: true });
+    }
+  });
+
   it.skip("adjusts a scene object by its display reference without exposing its node ID", async () => {
     const sceneService = createSceneService({ createId: () => "agent", broadcast: vi.fn() });
     sceneService.execute({ type: "asset.create", id: "asset_internal", parentId: "level_default", name: "现代沙发_1", format: "glb", sourcePath: "assets/modern-sofa.glb" });
@@ -617,7 +651,11 @@ describe("agentToolRegistry", () => {
     mkdirSync(libraryDir, { recursive: true });
     writeFileSync(componentFile, "glb");
     writeFileSync(`${componentFile}.semantic.json`, JSON.stringify({ id: componentFile, name: "边几", file: componentFile, source: "external", model: "external", category: "家具", tags: ["边几"], previewAvailable: false, createdAt: "2026-01-01T00:00:00.000Z" }));
-    const placeComponentLibraryItem = vi.fn();
+    const placeComponentLibraryItem = vi.fn(() => ({
+      accepted: true as const,
+      command: { type: "asset.create" as const, id: "asset_side_table", parentId: "level_default", name: "边几", format: "glb" as const, sourcePath: "assets/side-table.glb", position: [1.2, 0, 1] as [number, number, number], rotation: [0, 0, 0] as [number, number, number], scale: [1, 1, 1] as [number, number, number] },
+      snapshot: { revision: 3, rootNodeIds: ["site_default"], nodes: {} }
+    }));
     try {
       const context = createContext({
         componentLibraryRootDir: sandbox,
@@ -638,6 +676,83 @@ describe("agentToolRegistry", () => {
 
       expect(result.summary).toContain("占地碰撞");
       expect(placeComponentLibraryItem).not.toHaveBeenCalled();
+
+      const overrideResult = await executeAgentToolCall(createToolCall("place_library_assets", {
+        items: [{ library_asset_id: libraryAssetId, position: [1.2, 0, 1], footprint_meters: [0.8, 0.8], ignore_collision: true }]
+      }), context);
+
+      expect(overrideResult.summary).toContain("已实例化 1 个");
+      expect(placeComponentLibraryItem).toHaveBeenCalledOnce();
+    } finally {
+      rmSync(sandbox, { recursive: true, force: true });
+    }
+  });
+
+  it("allows touching footprints and reports collisions within one preview batch", async () => {
+    const result = await executeAgentToolCall(
+      createToolCall("preview_library_asset_placement", {
+        items: [
+          { library_asset_id: "cube_a", position: [0, 0, 0], footprint_meters: [0.3, 0.3] },
+          { library_asset_id: "cube_b", position: [0.3, 0, 0], footprint_meters: [0.3, 0.3] },
+          { library_asset_id: "cube_c", position: [0.5, 0, 0], footprint_meters: [0.3, 0.3] }
+        ]
+      }),
+      createContext({ getSceneSnapshot: () => ({ revision: 3, rootNodeIds: ["site_default"], nodes: {} }) })
+    );
+
+    expect(result.content).toContain("家具碰撞：与“预览资产 2”占地重叠");
+  });
+
+  it("lets a single placement use the latest revision unless one is supplied", async () => {
+    const sandbox = mkdtempSync(join(tmpdir(), "arch-agent-latest-placement-"));
+    const libraryDir = join(sandbox, "data", "component-library", "assets");
+    const componentFile = join(libraryDir, "cube.glb");
+    mkdirSync(libraryDir, { recursive: true });
+    writeFileSync(componentFile, "glb");
+    writeFileSync(`${componentFile}.semantic.json`, JSON.stringify({ id: componentFile, name: "方块", file: componentFile, source: "external", model: "external", tags: [], previewAvailable: false, createdAt: "2026-01-01T00:00:00.000Z" }));
+    const placeComponentLibraryItem = vi.fn(() => ({
+      accepted: true as const,
+      command: { type: "asset.create" as const, id: "asset_cube", parentId: "level_default", name: "方块", format: "glb" as const, sourcePath: "assets/cube.glb", position: [0, 0, 0] as [number, number, number], rotation: [0, 0, 0] as [number, number, number], scale: [1, 1, 1] as [number, number, number] },
+      snapshot: { revision: 4, rootNodeIds: ["site_default"], nodes: {} }
+    }));
+    try {
+      const context = createContext({ componentLibraryRootDir: sandbox, getSceneSnapshot: () => ({ revision: 4, rootNodeIds: ["site_default"], nodes: {} }), placeComponentLibraryItem });
+      const search = await executeAgentToolCall(createToolCall("search_library_assets", { query: "方块" }), context);
+      const libraryAssetId = search.content.match(/library_asset_id: ([^\n]+)/)?.[1];
+      const result = await executeAgentToolCall(createToolCall("place_library_asset", { library_asset_id: libraryAssetId, position: [0, 0, 0] }), context);
+
+      expect(result.toolName).toBe("place_library_asset");
+      expect(placeComponentLibraryItem).toHaveBeenCalledOnce();
+    } finally {
+      rmSync(sandbox, { recursive: true, force: true });
+    }
+  });
+
+  it("rolls back an entire batch when an accepted preflight later fails", async () => {
+    const sandbox = mkdtempSync(join(tmpdir(), "arch-agent-placement-rollback-"));
+    const libraryDir = join(sandbox, "data", "component-library", "assets");
+    const componentFile = join(libraryDir, "cube.glb");
+    mkdirSync(libraryDir, { recursive: true });
+    writeFileSync(componentFile, "glb");
+    writeFileSync(`${componentFile}.semantic.json`, JSON.stringify({ id: componentFile, name: "方块", file: componentFile, source: "external", model: "external", tags: [], previewAvailable: false, createdAt: "2026-01-01T00:00:00.000Z" }));
+    const snapshot = { revision: 4, rootNodeIds: ["site_default"], nodes: {} };
+    const placeComponentLibraryItem = vi.fn()
+      .mockReturnValueOnce({ accepted: true as const, command: { type: "asset.create" as const, id: "asset_first", parentId: "level_default", name: "方块", format: "glb" as const, sourcePath: "assets/cube.glb", position: [0, 0, 0] as [number, number, number], rotation: [0, 0, 0] as [number, number, number], scale: [1, 1, 1] as [number, number, number] }, snapshot })
+      .mockReturnValueOnce({ accepted: false as const, message: "写入失败", snapshot });
+    const replaceSceneSnapshot = vi.fn();
+    try {
+      const context = createContext({ componentLibraryRootDir: sandbox, getSceneSnapshot: () => snapshot, placeComponentLibraryItem, replaceSceneSnapshot });
+      const search = await executeAgentToolCall(createToolCall("search_library_assets", { query: "方块" }), context);
+      const libraryAssetId = search.content.match(/library_asset_id: ([^\n]+)/)?.[1];
+      const result = await executeAgentToolCall(createToolCall("place_library_assets", {
+        items: [
+          { library_asset_id: libraryAssetId, position: [0, 0, 0], footprint_meters: [0.3, 0.3] },
+          { library_asset_id: libraryAssetId, position: [1, 0, 0], footprint_meters: [0.3, 0.3] }
+        ]
+      }), context);
+
+      expect(result.content).toContain("已回滚本批次");
+      expect(replaceSceneSnapshot).toHaveBeenCalledWith(snapshot);
     } finally {
       rmSync(sandbox, { recursive: true, force: true });
     }

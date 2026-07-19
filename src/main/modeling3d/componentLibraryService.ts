@@ -29,10 +29,11 @@ export function findGlobalComponent(rootDir: string, id: string): GlobalComponen
   return listGlobalComponents(rootDir).find((component) => component.id === id);
 }
 
-export function updateGlobalComponent(rootDir: string, id: string, input: Pick<GlobalComponentSummary, "name" | "description" | "category" | "tags" | "placementRule">): GlobalComponentRecord {
+export function updateGlobalComponent(rootDir: string, id: string, input: Pick<GlobalComponentSummary, "name" | "description" | "category" | "tags" | "placementRule"> & { targetDimensions?: [number, number, number] }): GlobalComponentRecord {
   const component = findGlobalComponent(rootDir, id);
   if (!component) throw new Error("未找到全局构件。");
-  const next = { ...component, ...input, tags: input.tags.map((tag) => tag.trim()).filter(Boolean) };
+  const targetDimensions = input.targetDimensions ? readTargetDimensions(input.targetDimensions) : component.targetDimensions;
+  const next = { ...component, ...input, tags: input.tags.map((tag) => tag.trim()).filter(Boolean), ...(targetDimensions ? { targetDimensions } : {}) };
   writeFileSync(`${component.file}.semantic.json`, JSON.stringify(next, null, 2), "utf8");
   return next;
 }

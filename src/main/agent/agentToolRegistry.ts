@@ -29,7 +29,7 @@ import { generateHunyuanGlb, type Hunyuan3dDetailLevel } from "../modeling3d/hun
 import type { CreateReconstructionWorkflowInput } from "./reconstructionWorkflowService";
 import { extractObjectReference, generateDesignPreview } from "./designPreviewService";
 import { cropReferenceObjects } from "./referenceCropService";
-import { findGlobalComponent, importGlobalComponent, listGlobalComponents } from "../modeling3d/componentLibraryService";
+import { findGlobalComponent, importGlobalComponent, listGlobalComponents, updateGlobalComponent } from "../modeling3d/componentLibraryService";
 
 export { parseDuckDuckGoHtml, searchWeb } from "./webSearch";
 export type { WebSearchResult } from "./webSearch";
@@ -265,6 +265,7 @@ function buildRefactoredAgentChatTools(options: { includeExecBash: boolean }): C
   const tools: ChatCompletionTool[] = [
     { type: "function", function: { name: "extract_reference_object", description: "从复杂照片提取指定的单件物体参考图，供用户确认后用于图生 3D。", parameters: extractReferenceObjectSchema } },
     { type: "function", function: { name: "generate_3d_asset", description: "生成一个最小单实体、边界干净且可独立摆放的完整低模 GLB，并自动登记到资产库。name 和 prompt 只描述资产及其外观；可包含完整互动，但不得传功能、方案、场景、摆放说明、截断物体或无关环境。不会摆放；返回 library_asset_id，随后可查看预览或用 place_library_assets 实例化。", parameters: generate3dAssetSchema } },
+    { type: "function", function: { name: "edit_library_asset", description: "编辑已生成的资产库条目。mode=metadata 只调整名称、描述、分类、标签或目标尺寸，不改 GLB；mode=regenerate 基于原资产描述和 edit_prompt 生成新的可摆放单实体版本，原资产及已放置实例保持不变。edit_prompt 只描述外观变化，不能包含场景、位置、朝向或用途。", parameters: editLibraryAssetSchema } },
     { type: "function", function: { name: "search_resources", description: "按名称、类型、来源或状态搜索当前会话资源，返回后续 view_resources、图生 3D 或 send_file 可使用的 resource_id。", parameters: searchResourcesSchema } },
     { type: "function", function: { name: "view_resources", description: "按 resource_id 查看项目资源，或按 search_library_assets 返回的 library_asset_id 查看资产库模型。图片和可用 3D 预览直接回传给模型；文档返回相关文字。不得传本机路径。", parameters: viewResourcesSchema } },
     { type: "function", function: { name: "search_library_assets", description: "按名称、类别、标签或描述搜索全局资产库，返回可直接用于实例化的 library_asset_id、名称、参数与预览状态。", parameters: componentLibrarySearchSchema } },
@@ -316,6 +317,8 @@ export async function executeAgentToolCall(
       return executeExtractReferenceObject(args, context);
     case "generate_3d_asset":
       return executeGenerateSingleAsset(args, context);
+    case "edit_library_asset":
+      return executeEditLibraryAsset(args, context);
     case "search_resources":
       return executeSearchResources(args, context);
     case "view_resources":
@@ -1178,6 +1181,71 @@ async function executeGenerateSingleAsset(args: Record<string, unknown>, context
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return { toolName: "generate_3d_asset", summary: `生成单实体失败：${message}`, content: `generate_3d_asset failed: ${message}` };
+  }
+}
+
+async function executeEditLibraryAsset(args: Record<string, unknown>, context: AgentToolExecutionContext): Promise<AgentToolExecutionResult> {
+  const libraryAssetId = readStringArg(args, "library_asset_id");
+  const mode = readStringArg(args, "mode");
+  const libraryRoot = context.componentLibraryRootDir ?? context.rootDir;
+  const component = libraryAssetId ? findGlobalComponent(libraryRoot, libraryAssetId) : undefined;
+  if (!component) return { toolName: "edit_library_asset", summary: "未找到待编辑资产。", content: "edit_library_asset failed: unknown library asset" };
+
+  const targetDimensions = "target_dimensions_meters" in args ? readPoint3Arg(args, "target_dimensions_meters") : undefined;
+  if ("target_dimensions_meters" in args && (!targetDimensions || targetDimensions.some((value) => value <= 0))) {
+    return { toolName: "edit_library_asset", summary: "目标尺寸必须是三个大于 0 的米制数值。", content: "edit_library_asset failed: invalid target dimensions" };
+  }
+
+  const name = readStringArg(args, "name");
+  const description = readStringArg(args, "description");
+  const category = readStringArg(args, "category");
+  const tags = readStringListArg(args, "tags");
+  if (mode === "metadata") {
+    if (!name && !description && !category && !("tags" in args) && !targetDimensions) {
+      return { toolName: "edit_library_asset", summary: "请至少提供一项要调整的资产元数据。", content: "edit_library_asset failed: missing metadata changes" };
+    }
+    const updated = updateGlobalComponent(libraryRoot, component.id, {
+      name: name || component.name,
+      description: description || component.description || component.prompt,
+      category: category || component.category,
+      tags: "tags" in args ? tags : component.tags,
+      placementRule: component.placementRule,
+      ...(targetDimensions ? { targetDimensions } : {})
+    });
+    return {
+      toolName: "edit_library_asset",
+      summary: `已更新资产“${updated.name}”的元数据。`,
+      content: `已更新资产库条目，GLB 未改变。\nlibrary_asset_id: ${updated.id}${updated.targetDimensions ? `\n目标尺寸：${updated.targetDimensions.join("m × ")}m` : ""}`
+    };
+  }
+
+  const editPrompt = readStringArg(args, "edit_prompt");
+  if (mode !== "regenerate" || !editPrompt) {
+    return { toolName: "edit_library_asset", summary: "需要 mode=metadata，或 mode=regenerate 加 edit_prompt。", content: "edit_library_asset failed: invalid edit request" };
+  }
+
+  const editedName = name || `${component.name}调整版`;
+  const baseDescription = component.prompt || component.description || component.name;
+  const prompt = `${baseDescription}。在保持同一完整、可独立摆放单实体且边界干净的前提下，调整为：${editPrompt}`;
+  try {
+    const generated = await generateHunyuanGlb({ name: editedName, prompt, generateType: "low_poly" }, join(context.outputDir, "assets"));
+    const updated = importGlobalComponent(libraryRoot, generated.path, {
+      name: editedName,
+      description: prompt,
+      category: category || component.category || "未分类",
+      tags: [...component.tags, "agent-edited", ...tags],
+      placementRule: component.placementRule,
+      ...(targetDimensions ?? component.targetDimensions ? { targetDimensions: targetDimensions ?? component.targetDimensions } : {})
+    });
+    return {
+      toolName: "edit_library_asset",
+      summary: `已生成资产“${component.name}”的调整版“${updated.name}”。`,
+      content: `已生成新的派生资产，原资产和已放置实例未改变。\nlibrary_asset_id: ${updated.id}\nsource_library_asset_id: ${component.id}\n下一步可用 view_resources(library_asset_ids) 查看新版本预览，或用 place_library_assets 实例化。`,
+      artifactPath: generated.path
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { toolName: "edit_library_asset", summary: `生成资产调整版失败：${message}`, content: `edit_library_asset failed: ${message}` };
   }
 }
 
@@ -2577,6 +2645,7 @@ const spatialReferenceSchema = { type: "object", properties: { path: { type: "st
 const objectExtractionSchema = { type: "object", properties: { path: { type: "string" }, name: { type: "string" }, instruction: { type: "string" } }, required: ["path", "name", "instruction"], additionalProperties: false } as const;
 const cropReferenceSchema = { type: "object", properties: { path: { type: "string" }, regions: { type: "array", minItems: 1, items: { type: "object", properties: { id: { type: "string" }, name: { type: "string" }, box: { type: "array", items: { type: "number" }, minItems: 4, maxItems: 4 } }, required: ["id", "name", "box"], additionalProperties: false } } }, required: ["path", "regions"], additionalProperties: false } as const;
 const generate3dAssetSchema = { type: "object", properties: { name: { type: "string", description: "一个边界干净、可摆放资产的名称，例如“现代三人位沙发”“站立人物”或“人物坐在单椅上”；不得使用入口标识、重建设计、用途、房间、墙体或松散套装名称。" }, source: { type: "string", enum: ["text", "image"] }, prompt: { type: "string", description: "source=text 时必填：只用中文描述资产的形状、颜色、材质、风格及完整互动；所有组成部分必须完整包含在资产内，不得包含位置、朝向、用途、截断物体、地面、背景、空间、建筑或工作流。" }, resource_id: { type: "string", description: "source=image 时必填：已确认且只包含一个边界完整、可独立摆放资产的资源 ID。" }, target_dimensions_meters: targetDimensionsMetersSchema, category: { type: "string" }, tags: { type: "array", items: { type: "string" }, maxItems: 12 } }, required: ["name", "source"], additionalProperties: false } as const;
+const editLibraryAssetSchema = { type: "object", properties: { library_asset_id: { type: "string", description: "search_library_assets 返回的资产库 ID。" }, mode: { type: "string", enum: ["metadata", "regenerate"] }, edit_prompt: { type: "string", description: "mode=regenerate 时必填：仅描述需要改变的资产外观、结构、颜色、材质或风格；不可包含场景、位置、朝向或用途。" }, name: { type: "string", description: "调整后的资产名称；mode=regenerate 时同时用于新版本名称。" }, description: { type: "string", description: "mode=metadata 时更新资产描述。" }, target_dimensions_meters: targetDimensionsMetersSchema, category: { type: "string" }, tags: { type: "array", items: { type: "string" }, maxItems: 12 } }, required: ["library_asset_id", "mode"], additionalProperties: false } as const;
 const importComponentAssetSchema = { type: "object", properties: { path: { type: "string" }, name: { type: "string" }, description: { type: "string" }, category: { type: "string" }, tags: { type: "array", items: { type: "string" } }, placement_rule: { type: "string" } }, required: ["path"], additionalProperties: false } as const;
 const deleteNodeSchema = {
   type: "object",

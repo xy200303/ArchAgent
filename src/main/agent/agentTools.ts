@@ -9,6 +9,7 @@ export type BuiltinToolName =
   | "search_resources"
   | "view_resources"
   | "search_library_assets"
+  | "edit_library_asset"
   | "place_library_asset"
   | "place_library_assets"
   | "preview_library_asset_placement"
